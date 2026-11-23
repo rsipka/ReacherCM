@@ -180,7 +180,7 @@ fn srp_group_is_rfc_5054_4096() {
 
 /// What the Mac does for type 30: a 512-byte group, then it decrypts.
 async fn fake_mac_dh(mut s: DuplexStream, and_then_desktop: bool) -> (String, String) {
-    use aes::cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit};
+    use aes::cipher::{BlockCipherDecrypt, KeyInit};
 
     s.write_all(RFB_APPLE).await.unwrap();
     let mut version = [0u8; 12];
@@ -202,10 +202,10 @@ async fn fake_mac_dh(mut s: DuplexStream, and_then_desktop: bool) -> (String, St
     let theirs = BigUint::from_bytes_be(&answer[128..]);
     let shared = padded(&theirs.modpow(&secret, &n), len);
     let key = md5::Md5::digest(&shared);
-    let cipher = aes::Aes128::new(GenericArray::from_slice(&key));
+    let cipher = aes::Aes128::new(&key);
     let mut creds = answer[..128].to_vec();
     for block in creds.as_chunks_mut::<16>().0 {
-        cipher.decrypt_block(GenericArray::from_mut_slice(&mut block[..]));
+        cipher.decrypt_block(block.into());
     }
     let field = |b: &[u8]| String::from_utf8(b[..b.iter().position(|c| *c == 0).unwrap()].to_vec()).unwrap();
     let got = (field(&creds[..64]), field(&creds[64..]));

@@ -166,11 +166,10 @@ pub async fn local_open_with(program: String, args: Vec<String>, path: String) -
         .map_err(|e| format!("{program}: {e}"))
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
-    #[cfg(unix)]
     #[test]
     fn finds_executables_only() {
         use std::os::unix::fs::PermissionsExt;
