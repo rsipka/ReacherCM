@@ -3918,6 +3918,7 @@
   "files.queue_clear": "Effacer les terminés",
   "files.queue_remove": "Retirer de la liste",
   "files.upload": "Envoi",
+  "files.stop_upload": "Arrêter après le fichier en cours",
   "files.download": "Téléchargement",
   "files.job_queued": "En attente",
   "files.job_running": "En cours",

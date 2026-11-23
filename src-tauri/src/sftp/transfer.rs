@@ -463,12 +463,7 @@ async fn send_file(
 ) -> Result<u64, TransferError> {
     let Some(proto) = sftp else {
         if fs.is_scp().await {
-            let sent = super::scp::send_file(&fs.handle, local, remote_path, cancel, on_progress).await;
-            if matches!(sent, Err(TransferError::Cancelled)) {
-                // Half a file is no use: removed, as the other ways do.
-                let _ = exec_on_connection_with_exit_code(&fs.handle, &format!("rm -f -- {}", shell_escape(remote_path))).await;
-            }
-            return sent;
+            return super::scp::send_file(&fs.handle, local, remote_path, cancel, on_progress).await;
         }
         let data = read_local(local)?;
         send_bytes(&fs.handle, &data, remote_path, cancel, on_progress).await?;
@@ -479,6 +474,11 @@ async fn send_file(
     let mut file = std::fs::File::open(local).map_err(|e| {
         TransferError::IoError(format!("Failed to read local file {}: {}", local.display(), e))
     })?;
+    // Opening the remote file can truncate it. Finish a file once the
+    // write has started, and honor cancellation before the next one.
+    if cancel.is_cancelled() {
+        return Err(TransferError::Cancelled);
+    }
     let next = |max: usize| -> Result<Option<Vec<u8>>, TransferError> {
         let mut buf = vec![0u8; max];
         let mut filled = 0;
@@ -500,20 +500,13 @@ async fn send_file(
         Ok((filled > 0).then_some(buf))
     };
     let mut last = 0u64;
-    let sent = pipeline::write_file(proto, remote_path, cancel, next, |done| {
+    let sent = pipeline::write_file(proto, remote_path, next, |done| {
         if done - last >= 256 * 1024 {
             last = done;
             on_progress(done);
         }
     })
-    .await;
-    if matches!(sent, Err(TransferError::Cancelled)) {
-        // TRUNCATE has already emptied whatever was there.
-        if let Err(e) = proto.session.remove(remote_path).await {
-            tracing::warn!("Could not remove the cancelled upload {}: {}", remote_path, e);
-        }
-    }
-    let sent = sent?;
+    .await?;
     on_progress(sent);
     Ok(sent)
 }
@@ -536,9 +529,8 @@ pub(crate) struct PlannedFile {
 /// Walk `local` and map it onto `remote`.
 ///
 /// Remote paths are joined with `/` whatever the local separator is. A
-/// symbolic link to a file is uploaded as the file it points to; a link to a
-/// directory is left out, since following it could walk in a circle, and so
-/// is a link that points nowhere. Entries are taken in name order.
+/// folder containing a link is refused before transfer. Otherwise a move
+/// could delete a link it never copied. Entries are taken in name order.
 pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<DirectoryPlan> {
     let mut plan = DirectoryPlan::default();
     let mut pending = vec![(local.to_path_buf(), remote.to_string())];
@@ -555,19 +547,13 @@ pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<Dire
                 remote_dir.trim_end_matches('/'),
                 entry.file_name().to_string_lossy()
             );
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
+            let metadata = entry.metadata()?;
+            crate::local_paths::reject_upload_link(&path, &metadata)?;
+            if metadata.is_dir() {
                 subdirs.push((path, remote_child));
-                continue;
-            }
-            match std::fs::metadata(&path) {
-                Ok(meta) if meta.is_file() => {
-                    plan.total_bytes += meta.len();
-                    plan.files.push(PlannedFile { local: path, remote: remote_child });
-                }
-                Ok(_) => {}
-                Err(_) if file_type.is_symlink() => {}
-                Err(e) => return Err(e),
+            } else if metadata.is_file() {
+                plan.total_bytes += metadata.len();
+                plan.files.push(PlannedFile { local: path, remote: remote_child });
             }
         }
 
@@ -659,8 +645,7 @@ pub(crate) fn emit_progress(
 /// the channel's window and then waited for room that never came. Now its
 /// exit and its message end the upload there and then.
 ///
-/// `cancel` stops the upload: the channel is closed and the partial file
-/// removed, since `>` has already emptied whatever was there.
+/// Honor cancellation before issuing the command that opens the destination.
 async fn send_bytes(
     handle: &SharedHandle,
     data: &[u8],
@@ -669,8 +654,12 @@ async fn send_bytes(
     mut on_progress: impl FnMut(u64),
 ) -> Result<(), TransferError> {
     use russh::ChannelMsg;
+    const WRITE_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
 
     if data.is_empty() {
+        if cancel.is_cancelled() {
+            return Err(TransferError::Cancelled);
+        }
         let command = format!(": > {}", shell_escape(remote_path));
         let (_, stderr, code) = exec_on_connection_with_exit_code(handle, &command).await?;
         return remote_outcome(i64::from(code), &stderr);
@@ -683,6 +672,10 @@ async fn send_bytes(
         guard.channel_open_session().await
             .map_err(|e| SshError::ChannelError(format!("{}", e)))?
     };
+    if cancel.is_cancelled() {
+        let _ = channel.close().await;
+        return Err(TransferError::Cancelled);
+    }
     channel.exec(true, format!("base64 -d > {}", shell_escape(remote_path))).await
         .map_err(|e| SshError::ChannelError(format!("{}", e)))?;
     let (mut rx, tx) = channel.split();
@@ -700,7 +693,8 @@ async fn send_bytes(
             for chunk in data.chunks(48 * 1024) {
                 let mut b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
                 b64.push('\n');
-                tx.data_bytes(b64.into_bytes()).await
+                tokio::time::timeout(WRITE_IDLE, tx.data_bytes(b64.into_bytes())).await
+                    .map_err(|_| TransferError::IoError("The server stopped taking the upload data".into()))?
                     .map_err(|e| TransferError::IoError(format!("Channel write error: {}", e)))?;
                 bytes_sent += chunk.len() as u64;
                 if bytes_sent - last_progress_bytes >= 65536 || bytes_sent == total_bytes {
@@ -709,7 +703,8 @@ async fn send_bytes(
                 }
             }
             // Close stdin so base64 -d finishes.
-            tx.eof().await
+            tokio::time::timeout(WRITE_IDLE, tx.eof()).await
+                .map_err(|_| TransferError::IoError("The server stopped answering before the upload finished".into()))?
                 .map_err(|e| TransferError::IoError(format!("EOF signal error: {}", e)))
         };
         tokio::pin!(send);
@@ -721,7 +716,6 @@ async fn send_bytes(
             // before the last of stderr), so the replies are read to the end.
             let failed = exit_code.is_some_and(|c| c != 0);
             tokio::select! {
-                _ = cancel.cancelled() => break Err(TransferError::Cancelled),
                 result = &mut send, if !sent && !failed => {
                     if let Err(e) = result {
                         break Err(e);
@@ -762,22 +756,16 @@ async fn send_bytes(
             _ if !sent => Err(TransferError::IoError(
                 "The server closed the upload before it finished".to_string(),
             )),
-            _ => return Ok(()),
+            None => Err(TransferError::IoError("The server did not confirm the upload finished".into())),
+            Some(_) => return Ok(()),
         },
     };
     let _ = tx.close().await;
-    if matches!(failed, Err(TransferError::Cancelled)) {
-        let command = format!("rm -f -- {}", shell_escape(remote_path));
-        if let Err(e) = exec_on_connection_with_exit_code(handle, &command).await {
-            tracing::warn!("Could not remove the cancelled upload {}: {}", remote_path, e);
-        }
-    }
     failed
 }
 
-/// The next message from the server. While data is still going out there is
-/// no limit, since a slow link may keep the window shut for a long time;
-/// once all is sent, a server silent for 30 seconds counts as gone.
+/// The next message from the server. The writer enforces its own idle
+/// timeout; once it finishes, wait up to 30 seconds for the server's reply.
 async fn next_reply(rx: &mut russh::ChannelReadHalf, sent: bool) -> Option<russh::ChannelMsg> {
     if sent {
         tokio::time::timeout(std::time::Duration::from_secs(30), rx.wait()).await.ok().flatten()
@@ -901,6 +889,19 @@ mod tests {
     use russh::ChannelMsg;
     use std::collections::VecDeque;
     use std::time::Duration;
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_upload_rejects_links_during_planning() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("selected");
+        std::fs::create_dir(&root).unwrap();
+        let sibling = temp.path().join("other");
+        std::fs::write(&sibling, b"example").unwrap();
+        std::os::unix::fs::symlink(&sibling, root.join("shortcut")).unwrap();
+        let error = plan_directory(&root, "/upload").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
 
     #[test]
     fn a_path_is_never_read_as_an_option() {

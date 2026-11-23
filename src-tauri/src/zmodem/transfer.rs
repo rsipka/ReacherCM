@@ -453,7 +453,7 @@ pub fn safe_path(raw: &str) -> (Vec<String>, String) {
 }
 
 /// Every file to send: a file as itself, a folder's files (all levels) as
-/// "folder/sub/name". Links to folders are not followed.
+/// "folder/sub/name". Folder uploads refuse links.
 fn expand(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
     fn walk(dir: &Path, prefix: &str, out: &mut Vec<(PathBuf, String)>) -> Result<(), String> {
         let mut entries: Vec<_> = std::fs::read_dir(dir)
@@ -463,11 +463,12 @@ fn expand(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
             let name = format!("{prefix}/{}", e.file_name().to_string_lossy());
-            let kind = e.file_type().map_err(|err| format!("{}: {err}", e.path().display()))?;
             let path = e.path();
-            if kind.is_dir() {
+            let metadata = e.metadata().map_err(|err| format!("{}: {err}", path.display()))?;
+            crate::local_paths::reject_upload_link(&path, &metadata).map_err(|err| err.to_string())?;
+            if metadata.is_dir() {
                 walk(&path, &name, out)?;
-            } else if std::fs::metadata(&path).is_ok_and(|m| m.is_file()) {
+            } else if metadata.is_file() {
                 out.push((path, name));
             }
             if out.len() > 100_000 {

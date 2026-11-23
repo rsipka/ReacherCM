@@ -326,7 +326,7 @@ export const defaults: Settings = {
 	fileEditorCommand: '',
 	fileEditorTerminal: false,
 	winboxPath: '',
-	winboxPassword: 'argument',
+	winboxPassword: 'none',
 	setupComplete: false,
 	pendingTursoOrg: '',
 	pendingTursoApiToken: '',
@@ -436,7 +436,9 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	settings.fileEditorCommand = typeof parsed.fileEditorCommand === 'string' ? parsed.fileEditorCommand : defaults.fileEditorCommand;
 	settings.fileEditorTerminal = parsed.fileEditorTerminal ?? defaults.fileEditorTerminal;
 	settings.winboxPath = typeof parsed.winboxPath === 'string' ? parsed.winboxPath : defaults.winboxPath;
-	settings.winboxPassword = parsed.winboxPassword === 'clipboard' || parsed.winboxPassword === 'none' ? parsed.winboxPassword : defaults.winboxPassword;
+	if (parsed.winboxPassword === 'argument' || parsed.winboxPassword === 'clipboard' || parsed.winboxPassword === 'none') {
+		settings.winboxPassword = parsed.winboxPassword;
+	}
 	settings.pendingTursoOrg = parsed.pendingTursoOrg ?? defaults.pendingTursoOrg;
 	settings.launches = parsed.launches ?? defaults.launches;
 	settings.communityPromptDismissed =

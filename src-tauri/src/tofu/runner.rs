@@ -3,7 +3,7 @@ use std::process::Stdio;
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-fn silent_async_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+pub(super) fn silent_async_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
     let cmd = tokio::process::Command::new(program);
     // Windows alone needs the flag, so no console window flashes up.
     #[cfg(windows)]

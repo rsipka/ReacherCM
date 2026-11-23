@@ -109,26 +109,24 @@ pub async fn send_file(
     // a file that is not a folder, and the file lands where asked.
     let mut s = exec(handle, &format!("scp -t {}", shell_path(remote_path))).await?;
     ack(&mut s).await?;
+    // The header lets the server open and truncate the destination.
+    if cancel.is_cancelled() {
+        return Err(TransferError::Cancelled);
+    }
     s.write_all(line.as_bytes()).await.map_err(broken)?;
     ack(&mut s).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut sent = 0u64;
     while sent < size {
-        if cancel.is_cancelled() {
-            return Err(TransferError::Cancelled);
-        }
         let want = (size - sent).min(CHUNK as u64) as usize;
         let n = file.read(&mut buf[..want]).await.map_err(|e| TransferError::IoError(format!("Failed to read local file {}: {e}", local.display())))?;
         if n == 0 {
             return Err(TransferError::IoError(format!("{}: the file got shorter while it was sent", local.display())));
         }
-        tokio::select! {
-            _ = cancel.cancelled() => return Err(TransferError::Cancelled),
-            r = tokio::time::timeout(IDLE, s.write_all(&buf[..n])) => match r {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => return Err(broken(e)),
-                Err(_) => return Err(TransferError::Remote("scp: the server stopped taking the data".into())),
-            }
+        match tokio::time::timeout(IDLE, s.write_all(&buf[..n])).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(broken(e)),
+            Err(_) => return Err(TransferError::Remote("scp: the server stopped taking the data".into())),
         }
         sent += n as u64;
         on_progress(sent);

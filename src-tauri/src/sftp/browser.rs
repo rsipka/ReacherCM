@@ -512,13 +512,12 @@ pub async fn write_text_file(
 ) -> Result<(), SftpBrowserError> {
     if let Some(proto) = fs.sftp().await {
         let mut rest = content.as_bytes();
-        let never = CancellationToken::new();
         let next = |max: usize| {
             let (now, later) = rest.split_at(max.min(rest.len()));
             rest = later;
             Ok((!now.is_empty()).then(|| now.to_vec()))
         };
-        pipeline::write_file(&proto, path, &never, next, |_| {})
+        pipeline::write_file(&proto, path, next, |_| {})
             .await
             .map_err(transfer_failed)?;
         return Ok(());
