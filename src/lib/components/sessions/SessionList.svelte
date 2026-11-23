@@ -68,6 +68,7 @@
 	import { winboxLaunch } from '#lib/ipc/winbox.js';
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
+	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
@@ -1643,7 +1644,8 @@
 
 	/** Session menu > Open file manager: the full-pane file manager of an
 	 *  SSH session. A connected tab of it switches over; otherwise it is
-	 *  connected first. */
+	 *  connected first. An RDP session's is the same machine over SFTP, in
+	 *  a tab of its own (see #lib/sessions/rdp-files). */
 	function openFileManager(session: SessionConfig): void {
 		const open = getTabs().find((tab) => tab.type === 'ssh' && tab.sessionId === session.id && tab.connectionId && !tab.link);
 		if (open) {
@@ -1652,7 +1654,12 @@
 			return;
 		}
 		filesOnConnect = session.id;
-		void handleConnect(session);
+		void handleConnect(sessionKind(session) === 'rdp' ? rdpFilesSession(session) : session);
+	}
+
+	/** A connect of an RDP session's file manager: the saved session is RDP. */
+	function isRdpFiles(session: SessionConfig): boolean {
+		return sessionKind(session) === 'ssh' && sessions.some((s) => s.id === session.id && sessionKind(s) === 'rdp');
 	}
 
 	async function handleConnect(session: SessionConfig, address?: ResolvedAddress): Promise<void> {
@@ -1977,7 +1984,9 @@
 			// plain Linux, unknown or Debian is asked again: older versions saved
 			// that for MikroTik and UniFi devices and Raspberry Pi OS, which have
 			// their own logos now.
-			if (osNeedsDetection(session.detected_os, session.os_manual)) {
+			// Not for an RDP session's file manager: its OS says how the
+			// remote desktop connects (GNOME), not what SSH would find.
+			if (!isRdpFiles(session) && osNeedsDetection(session.detected_os, session.os_manual)) {
 				sshDetectOs(id).then(async (osId) => {
 					if (osId && osId !== session.detected_os) {
 						updateTabOs(id, osId);
@@ -2004,7 +2013,11 @@
 			untrusted = untrustedRefsFromError(err);
 			const errStr = String(err);
 			if (!untrusted) {
-				connectError = errStr;
+				// An RDP session's file manager needs an SSH server there,
+				// which a Windows machine has only with OpenSSH Server on.
+				connectError = isRdpFiles(session) && isUnreachable(errStr)
+					? `${errStr}\n\n${t('session.rdp_files_unreachable', { host: session.host, port: String(rdpFilesPort(session)) })}`
+					: errStr;
 				askSecret = true;
 			}
 			// If the saved auth method got rejected and we haven't already tried the password fallback,
@@ -2677,8 +2690,8 @@
 				<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(contextMenu.session); closeContextMenu(); }} type="button">
 					{t('session.connect')}
 				</button>
-				{#if sessionKind(contextMenu.session) === 'ssh' && !isMobile()}
-					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button">
+				{#if (sessionKind(contextMenu.session) === 'ssh' || sessionKind(contextMenu.session) === 'rdp') && !isMobile()}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button" title={sessionKind(contextMenu.session) === 'rdp' ? t('session.rdp_files_hint') : undefined}>
 						{t('session.open_file_manager')}
 					</button>
 				{/if}

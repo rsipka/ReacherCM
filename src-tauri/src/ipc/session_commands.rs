@@ -2427,6 +2427,34 @@ mod approval_tests {
     }
 
     #[test]
+    fn an_rdp_file_manager_goes_to_the_same_machine_only() {
+        use crate::ipc::ssh_commands::{check_matches_session, rdp_files_username};
+        let mut s = with_refs();
+        s.kind = crate::state::SessionKind::Rdp;
+        s.jump_chain = None;
+        s.proxy = None;
+        s.port = 3389;
+        assert_eq!(rdp_files_username(&s), "u");
+        assert!(check_matches_session(&s, None, "web.example", 22, "u", None, None).is_ok());
+        // Not the RDP port, another host or user, nor through anything.
+        assert!(check_matches_session(&s, None, "web.example", 3389, "u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "attacker.example", 22, "u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "web.example", 22, "root", None, None).is_err());
+        let hop: crate::ipc::ssh_commands::JumpHostConnectParams =
+            serde_json::from_value(serde_json::json!({ "host": "b", "port": 22, "username": "j", "authMethod": "key" })).unwrap();
+        assert!(check_matches_session(&s, None, "web.example", 22, "u", Some(std::slice::from_ref(&hop)), None).is_err());
+        // Its own files port, and the domain in front of the user.
+        s.rdp = Some(crate::rdp::options::RdpOptions { files_port: Some(2222), ..Default::default() });
+        s.domain = Some("CORP".into());
+        assert_eq!(rdp_files_username(&s), "CORP\\u");
+        assert!(check_matches_session(&s, None, "web.example", 2222, "CORP\\u", None, None).is_ok());
+        assert!(check_matches_session(&s, None, "web.example", 22, "CORP\\u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "web.example", 2222, "u", None, None).is_err());
+        s.username = "u@corp.example".into();
+        assert_eq!(rdp_files_username(&s), "u@corp.example");
+    }
+
+    #[test]
     fn other_addresses_are_part_of_what_is_approved() {
         let mut s = with_refs();
         let before = approval_context(&s);
