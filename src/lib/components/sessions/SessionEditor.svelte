@@ -31,7 +31,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { folderPath } from '#lib/sessions/folder-tree.js';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { savedCredentialList, credentialsFor, type SavedCredential } from '#lib/ipc/savedCredentials.js';
+	import { savedCredentialList, credentialsFor, credentialFolderList, groupByFolder, type SavedCredential, type CredentialFolder } from '#lib/ipc/savedCredentials.js';
 	import { DEFAULT_TELNET_OPTIONS, type TelnetOptions } from '#lib/ipc/telnet.js';
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
@@ -218,12 +218,17 @@
 		folders.filter((f) => (f.vault_id ?? null) === sessionVault || (!!source?.folder_id && f.id === source.folder_id))
 	);
 	let credentials = $derived(credentialsFor(allCredentials, sessionVault));
+	let credentialFolders = $state<CredentialFolder[]>([]);
+	let credentialGroups = $derived(groupByFolder(credentials, credentialFolders));
 
 	$effect(() => {
 		if (open) {
 			savedCredentialList()
 				.then((list) => (allCredentials = list))
 				.catch(() => (allCredentials = []));
+			credentialFolderList()
+				.then((list) => (credentialFolders = list))
+				.catch(() => (credentialFolders = []));
 		}
 	});
 
@@ -1136,8 +1141,18 @@
 					{:else}
 						<option value="">{t('credential.own_login')}</option>
 					{/if}
-					{#each credentials as c (c.id)}
-						<option value={c.id}>{c.name} ({c.username})</option>
+					{#each credentialGroups as g (g.label ?? '')}
+						{#if g.label === null}
+							{#each g.credentials as c (c.id)}
+								<option value={c.id}>{c.name} ({c.username})</option>
+							{/each}
+						{:else}
+							<optgroup label={g.label}>
+								{#each g.credentials as c (c.id)}
+									<option value={c.id}>{c.name} ({c.username})</option>
+								{/each}
+							</optgroup>
+						{/if}
 					{/each}
 					{#if credentialId && credentialId !== OWN_LOGIN && !credentials.some((c) => c.id === credentialId)}
 						<option value={credentialId}>{t('credential.missing')}</option>
