@@ -3831,5 +3831,7 @@
   "files.select_all": "Alles auswählen",
   "files.compare_folders": "Ordner vergleichen",
   "files.copy_folder_path": "Ordnerpfad kopieren",
-  "files.cd_terminal_here": "Terminal hierher wechseln (cd)"
+  "files.cd_terminal_here": "Terminal hierher wechseln (cd)",
+  "web.popups": "Pop-up-Fenster erlauben",
+  "web.popups_hint": "Die Seite darf eigene Fenster öffnen, etwa eine virtuelle Konsole von iDRAC oder iLO. Sie öffnen sich als weitere Fenster dieser Sitzung, mit deren Cookies und vertrauenswürdigen Zertifikaten."
 }

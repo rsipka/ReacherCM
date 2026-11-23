@@ -3831,5 +3831,7 @@
   "files.select_all": "Select all",
   "files.compare_folders": "Compare folders",
   "files.copy_folder_path": "Copy folder path",
-  "files.cd_terminal_here": "CD the terminal here"
+  "files.cd_terminal_here": "CD the terminal here",
+  "web.popups": "Allow pop-up windows",
+  "web.popups_hint": "Lets the page open windows of its own, such as an iDRAC or iLO virtual console. They open as more windows of this session, with its cookies and trusted certificates."
 }

@@ -3831,5 +3831,7 @@
   "files.select_all": "Vybrat vše",
   "files.compare_folders": "Porovnat složky",
   "files.copy_folder_path": "Kopírovat cestu složky",
-  "files.cd_terminal_here": "Přepnout terminál sem (cd)"
+  "files.cd_terminal_here": "Přepnout terminál sem (cd)",
+  "web.popups": "Povolit vyskakovací okna",
+  "web.popups_hint": "Stránka smí otevírat vlastní okna, například virtuální konzoli iDRAC nebo iLO. Otevřou se jako další okna této relace, s jejími cookies a důvěryhodnými certifikáty."
 }

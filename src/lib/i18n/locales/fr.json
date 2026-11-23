@@ -3831,5 +3831,7 @@
   "files.select_all": "Tout sélectionner",
   "files.compare_folders": "Comparer les dossiers",
   "files.copy_folder_path": "Copier le chemin du dossier",
-  "files.cd_terminal_here": "Amener le terminal ici (cd)"
+  "files.cd_terminal_here": "Amener le terminal ici (cd)",
+  "web.popups": "Autoriser les fenêtres pop-up",
+  "web.popups_hint": "La page peut ouvrir ses propres fenêtres, comme une console virtuelle iDRAC ou iLO. Elles s'ouvrent comme d'autres fenêtres de cette session, avec ses cookies et ses certificats de confiance."
 }
