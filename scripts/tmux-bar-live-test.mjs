@@ -193,7 +193,7 @@ try {
 	check('the new default name is asked for', first?.name === 'reachercm-web-01', JSON.stringify(first));
 	check('with the old one as legacy', first?.legacy === 'reacher-web-01', JSON.stringify(first));
 
-	const chip = page.locator('.term-bar .chip');
+	const chip = page.locator('.term-bar .chip:visible');
 	check('the bar shows the tmux chip', await until(async () => (await chip.count()) === 1));
 	check('naming the session the backend settled on', (await chip.innerText()).includes('reacher-web-01'), await chip.innerText());
 	// The view sets the terminal title to "@ID NAME" of its window.
@@ -234,6 +234,29 @@ try {
 	await until(async () => (await pop.locator('.row').count()) >= 4);
 	await pop.locator('.row', { hasText: '2: logs' }).click();
 	check('picking a window shows it', await until(async () => calls.some((c) => c.cmd === 'ssh_tmux_window' && c.args.op?.kind === 'select' && c.args.op.window === '@3')));
+	console.log('\nwindows in new tabs');
+	const tabsBefore = await page.locator('.tabbar .tab').count();
+	const before = connects().length;
+	await chip.click();
+	await until(async () => (await pop.locator('.win').count()) >= 4);
+	await shot('dropdown-tab-buttons', await (async () => { const b = await pop.boundingBox(); return { x: Math.max(0, b.x - 20), y: b.y - 50, width: b.width + 40, height: b.height + 60 }; })());
+	await pop.locator('.win', { hasText: '0: bash' }).locator('.tab-btn').click();
+	check('the tab button connects a new view of that window', await until(async () => connects().length === before + 1 && tmuxOf(connects().at(-1))?.window === '@1'), JSON.stringify(tmuxOf(connects().at(-1) ?? { args: {} })));
+	check('in a new tab', await until(async () => (await page.locator('.tabbar .tab').count()) === tabsBefore + 1));
+	check('of the same session, in a view of its own', tmuxOf(connects().at(-1))?.name === 'deploy' && !!tmuxOf(connects().at(-1))?.view);
+	// Back to the first tab, whose bar shows the chip.
+	await page.locator('.tabbar .tab').first().click();
+	await chip.click();
+	await until(async () => (await pop.locator('.win').count()) >= 4);
+	await pop.locator('.row', { hasText: '2: logs' }).click({ modifiers: ['Control'] });
+	check('Ctrl+click opens the window in a new tab too', await until(async () => tmuxOf(connects().at(-1))?.window === '@3'));
+	await page.locator('.tabbar .tab').first().click();
+	await chip.click();
+	await until(async () => (await pop.locator('.win').count()) >= 4);
+	await pop.locator('.win').last().locator('.tab-btn').click();
+	check('a new window in a new tab', await until(async () => tmuxOf(connects().at(-1))?.window === 'new'));
+
+	await page.locator('.tabbar .tab').first().click();
 	await chip.click();
 	await until(async () => (await pop.count()) === 1);
 	await page.keyboard.press('Escape');
