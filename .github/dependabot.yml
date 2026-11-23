@@ -5,6 +5,11 @@ updates:
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
+    ignore:
+      # The COM implementation macros must use the same windows-core series
+      # as the windows and webview2-com bindings. Lift this with their upgrade.
+      - dependency-name: "windows-core"
+        versions: [">=0.63"]
     groups:
       cargo-minor:
         update-types: ["minor", "patch"]
