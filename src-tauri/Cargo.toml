@@ -325,7 +325,7 @@ windows = { version = "0.62", features = [
 ] }
 # The #[implement] macro expands to paths rooted at this crate, so it has to
 # be a direct dependency even though everything else comes through `windows`.
-windows-core = "0.62"
+windows-core = "0.100"
 # Reaching the WebView2 controller to tell it focus moved (issue #49).
 webview2-com = "0.39"
 
