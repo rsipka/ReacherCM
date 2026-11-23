@@ -23,6 +23,7 @@ export type ActionId =
 	| 'app.settings'
 	| 'app.palette'
 	| 'app.aiPanel'
+	| 'app.mute'
 	| 'zoom.in'
 	| 'zoom.out'
 	| 'zoom.reset'
@@ -66,6 +67,7 @@ export const ACTIONS: ActionDef[] = [
 	{ id: 'app.palette', group: 'app', label: 'shortcuts.palette', defaults: ['Mod+Shift+P'] },
 	{ id: 'app.settings', group: 'app', label: 'shortcuts.settings', defaults: ['Mod+,'] },
 	{ id: 'app.aiPanel', group: 'app', label: 'shortcuts.ai_panel', defaults: ['Mod+Shift+A'] },
+	{ id: 'app.mute', group: 'app', label: 'shortcuts.mute', defaults: ['Mod+Shift+M'] },
 	// Plus is Shift+= on most layouts and plain + on the number pad.
 	{ id: 'zoom.in', group: 'app', label: 'shortcuts.zoom_in', defaults: ['Mod+=', 'Mod++', 'Mod+Shift++'] },
 	{ id: 'zoom.out', group: 'app', label: 'shortcuts.zoom_out', defaults: ['Mod+-'] },

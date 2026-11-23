@@ -11,6 +11,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { isMac, isMobile } from '#lib/platform.js';
 	import { APP_NAME } from '#lib/brand.js';
+	import { isMuted, toggleMute, syncMuteToBackend } from '#lib/state/mute.svelte.js';
 
 	/** On a Mac the window keeps the system's own traffic lights, drawn over
 	 *  this bar (tauri.macos.conf.json): they are what a Mac user reaches for,
@@ -36,6 +37,18 @@
 	}
 
 	registerSettingsOpener(openSettings);
+
+	let muted = $derived(isMuted());
+	let muteTitle = $derived.by(() => {
+		const label = t(muted ? 'titlebar.unmute' : 'titlebar.mute');
+		const key = actionLabel('app.mute');
+		return key ? `${label} (${key})` : label;
+	});
+
+	// A remote desktop's sound is muted in the backend, which starts unmuted.
+	$effect(() => {
+		syncMuteToBackend();
+	});
 
 	function minimize() {
 		getCurrentWindow().minimize();
@@ -69,6 +82,24 @@
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
 				<circle cx="12" cy="12" r="3" />
 				<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+			</svg>
+		</button>
+		<button
+			class="settings-btn mute-btn"
+			class:muted
+			onclick={toggleMute}
+			aria-label={muteTitle}
+			aria-pressed={muted}
+			title={muteTitle}
+		>
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+				<path d="M11 5L6 9H2v6h4l5 4V5z" />
+				{#if muted}
+					<path d="M23 9l-6 6M17 9l6 6" />
+				{:else}
+					<path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+					<path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+				{/if}
 			</svg>
 		</button>
 		{#if aiConfigured}
@@ -262,6 +293,11 @@
 	.settings-btn:hover {
 		background-color: var(--color-surface-hover);
 		color: var(--color-text-primary);
+	}
+
+	/* Muted stays in view: easy to forget, and the reason nothing rings. */
+	.mute-btn.muted {
+		color: var(--color-warning, var(--color-accent));
 	}
 
 	.ai-btn {
