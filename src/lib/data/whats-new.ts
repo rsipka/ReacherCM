@@ -32,6 +32,7 @@ export interface NewFeature {
 }
 
 export const NEW_FEATURES: NewFeature[] = [
+	{ id: 'local-servers', since: '26.11.1', surface: { kind: 'sidebar', section: 'servers' } },
 	{ id: 'network-tools', since: '26.11.1', surface: { kind: 'sidebar', section: 'network' } },
 	{ id: 'x11-server', since: '0.7.5', surface: { kind: 'settings', tab: 'sessions' } },
 	{ id: 'containers-k8s', since: '0.7.4', surface: { kind: 'settings', tab: 'devops' } },
