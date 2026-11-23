@@ -3937,5 +3937,17 @@
   "net.menu_wake": "唤醒（Wake-on-LAN）",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "未设置",
-  "session.wol_hint": "在会话菜单中添加“唤醒”。机器的网卡必须已启用 Wake-on-LAN。"
+  "session.wol_hint": "在会话菜单中添加“唤醒”。机器的网卡必须已启用 Wake-on-LAN。",
+  "tray.show": "显示窗口",
+  "tray.hide": "隐藏窗口",
+  "tray.favorites": "收藏",
+  "tray.recent": "最近",
+  "tray.local_terminal": "新建本地终端",
+  "tray.quick_connect": "快速连接…",
+  "tray.lock": "锁定保险库",
+  "tray.settings": "设置…",
+  "tray.quit": "退出",
+  "tray.status_none": "没有打开的标签页",
+  "tray.status_locked": "已锁定",
+  "tray.status_tabs": "已打开标签页：{{open}}，已连接：{{connected}}"
 }

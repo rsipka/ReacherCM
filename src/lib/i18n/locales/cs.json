@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Probudit (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Nenastaveno",
-  "session.wol_hint": "Přidá do nabídky relace položku Probudit. Síťová karta počítače musí mít Wake-on-LAN zapnuté."
+  "session.wol_hint": "Přidá do nabídky relace položku Probudit. Síťová karta počítače musí mít Wake-on-LAN zapnuté.",
+  "tray.show": "Zobrazit okno",
+  "tray.hide": "Skrýt okno",
+  "tray.favorites": "Oblíbené",
+  "tray.recent": "Nedávné",
+  "tray.local_terminal": "Nový místní terminál",
+  "tray.quick_connect": "Rychlé připojení…",
+  "tray.lock": "Zamknout trezor",
+  "tray.settings": "Nastavení…",
+  "tray.quit": "Ukončit",
+  "tray.status_none": "Žádné otevřené karty",
+  "tray.status_locked": "Zamčeno",
+  "tray.status_tabs": "Otevřené karty: {{open}}, připojené: {{connected}}"
 }

@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Despertar (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Sin configurar",
-  "session.wol_hint": "Añade Despertar al menú de la sesión. La tarjeta de red del equipo debe tener Wake-on-LAN activado."
+  "session.wol_hint": "Añade Despertar al menú de la sesión. La tarjeta de red del equipo debe tener Wake-on-LAN activado.",
+  "tray.show": "Mostrar ventana",
+  "tray.hide": "Ocultar ventana",
+  "tray.favorites": "Favoritos",
+  "tray.recent": "Recientes",
+  "tray.local_terminal": "Nuevo terminal local",
+  "tray.quick_connect": "Conexión rápida…",
+  "tray.lock": "Bloquear la bóveda",
+  "tray.settings": "Configuración…",
+  "tray.quit": "Salir",
+  "tray.status_none": "Ninguna pestaña abierta",
+  "tray.status_locked": "Bloqueado",
+  "tray.status_tabs": "Pestañas abiertas: {{open}}, conectadas: {{connected}}"
 }

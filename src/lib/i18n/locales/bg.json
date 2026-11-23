@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Събуди (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Не е зададено",
-  "session.wol_hint": "Добавя „Събуди“ в менюто на сесията. Мрежовата карта на машината трябва да има включен Wake-on-LAN."
+  "session.wol_hint": "Добавя „Събуди“ в менюто на сесията. Мрежовата карта на машината трябва да има включен Wake-on-LAN.",
+  "tray.show": "Покажи прозореца",
+  "tray.hide": "Скрий прозореца",
+  "tray.favorites": "Любими",
+  "tray.recent": "Скорошни",
+  "tray.local_terminal": "Нов локален терминал",
+  "tray.quick_connect": "Бързо свързване…",
+  "tray.lock": "Заключване на трезора",
+  "tray.settings": "Настройки…",
+  "tray.quit": "Изход",
+  "tray.status_none": "Няма отворени раздели",
+  "tray.status_locked": "Заключено",
+  "tray.status_tabs": "Отворени раздели: {{open}}, свързани: {{connected}}"
 }

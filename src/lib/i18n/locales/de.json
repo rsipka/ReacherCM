@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Aufwecken (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Nicht gesetzt",
-  "session.wol_hint": "Fügt dem Sitzungsmenü „Aufwecken“ hinzu. Wake-on-LAN muss an der Netzwerkkarte des Rechners aktiviert sein."
+  "session.wol_hint": "Fügt dem Sitzungsmenü „Aufwecken“ hinzu. Wake-on-LAN muss an der Netzwerkkarte des Rechners aktiviert sein.",
+  "tray.show": "Fenster anzeigen",
+  "tray.hide": "Fenster ausblenden",
+  "tray.favorites": "Favoriten",
+  "tray.recent": "Zuletzt",
+  "tray.local_terminal": "Neues lokales Terminal",
+  "tray.quick_connect": "Schnellverbindung…",
+  "tray.lock": "Tresor sperren",
+  "tray.settings": "Einstellungen…",
+  "tray.quit": "Beenden",
+  "tray.status_none": "Keine Tabs offen",
+  "tray.status_locked": "Gesperrt",
+  "tray.status_tabs": "Offene Tabs: {{open}}, verbunden: {{connected}}"
 }

@@ -36,6 +36,8 @@ pub mod text;
 pub mod theme;
 pub mod telnet;
 pub mod tofu;
+#[cfg(desktop)]
+pub mod tray;
 pub mod toolchain;
 pub mod tunnel;
 pub mod vault;
@@ -983,6 +985,8 @@ pub fn run() {
             // Tray commands
             set_close_to_tray,
             get_close_to_tray,
+            tray::tray_update,
+            tray::tray_sync,
             quit_app,
         ]));
     }
@@ -1685,58 +1689,31 @@ pub fn run() {
                 use tauri::tray::TrayIconBuilder;
                 use tauri::image::Image;
 
-                let show_item = MenuItemBuilder::with_id("show", "Show").build(app)?;
-                let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+                // The menu starts as Show/Quit and is rebuilt in the
+                // interface's language once it reports what is open (see
+                // `tray`). Left click brings the window up; the menu is on
+                // right click (Linux tray hosts open it on any click).
                 let tray_menu = MenuBuilder::new(app)
-                    .item(&show_item)
+                    .item(&MenuItemBuilder::with_id("show", "Show").build(app)?)
                     .separator()
-                    .item(&quit_item)
+                    .item(&MenuItemBuilder::with_id("quit", "Quit").build(app)?)
                     .build()?;
 
                 let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
                     .expect("failed to load tray icon");
 
-                TrayIconBuilder::new()
+                TrayIconBuilder::with_id(tray::TRAY_ID)
                     .icon(icon)
                     .tooltip(APP_NAME)
                     .menu(&tray_menu)
+                    .show_menu_on_left_click(false)
                     .on_menu_event(|app_handle, event| {
-                        match event.id().as_ref() {
-                            "show" => {
-                                if let Some(window) = app_handle.get_webview_window("main") {
-                                    let _ = window.show();
-                                    let _ = window.unminimize();
-                                    let _ = window.set_focus();
-                                }
-                            }
-                            "quit" => {
-                                use tauri::Emitter;
-                                // Route through the frontend so Quit warns about active SSH
-                                // sessions too (same guard as the window close). Fall back to a
-                                // hard exit if the window/frontend can't be reached.
-                                match app_handle.get_webview_window("main") {
-                                    Some(window) => {
-                                        let _ = window.show();
-                                        let _ = window.unminimize();
-                                        let _ = window.set_focus();
-                                        if window.emit("app-quit-requested", ()).is_err() {
-                                            app_handle.exit(0);
-                                        }
-                                    }
-                                    None => app_handle.exit(0),
-                                }
-                            }
-                            _ => {}
-                        }
+                        tray::handle_menu_event(app_handle, event.id().as_ref());
                     })
-                    .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, .. } = event {
-                            let app_handle = tray.app_handle();
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
+                    .on_tray_icon_event(|tray_icon, event| {
+                        use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
+                        if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                            tray::show_main(tray_icon.app_handle());
                         }
                     })
                     .build(app)?;
@@ -1883,6 +1860,14 @@ pub fn run() {
             // clipboard sends only files that really were dropped.
             if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 rdp::note_drop(paths);
+            }
+            // The main window shown, hidden or brought back: the tray's
+            // Show/Hide item follows.
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::Focused(_) = event {
+                if window.label() == "main" {
+                    tray::sync_visibility(tauri::Manager::app_handle(window));
+                }
             }
             // The main window gone (the app closing): its floating windows go too.
             #[cfg(desktop)]

@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Risveglia (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Non impostato",
-  "session.wol_hint": "Aggiunge Risveglia al menu della sessione. La scheda di rete della macchina deve avere Wake-on-LAN attivo."
+  "session.wol_hint": "Aggiunge Risveglia al menu della sessione. La scheda di rete della macchina deve avere Wake-on-LAN attivo.",
+  "tray.show": "Mostra finestra",
+  "tray.hide": "Nascondi finestra",
+  "tray.favorites": "Preferiti",
+  "tray.recent": "Recenti",
+  "tray.local_terminal": "Nuovo terminale locale",
+  "tray.quick_connect": "Connessione rapida…",
+  "tray.lock": "Blocca il vault",
+  "tray.settings": "Impostazioni…",
+  "tray.quit": "Esci",
+  "tray.status_none": "Nessuna scheda aperta",
+  "tray.status_locked": "Bloccato",
+  "tray.status_tabs": "Schede aperte: {{open}}, connesse: {{connected}}"
 }

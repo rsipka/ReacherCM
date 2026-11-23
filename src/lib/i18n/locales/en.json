@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Wake (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Not set",
-  "session.wol_hint": "Adds Wake to the session's menu. The machine's network card must have Wake-on-LAN switched on."
+  "session.wol_hint": "Adds Wake to the session's menu. The machine's network card must have Wake-on-LAN switched on.",
+  "tray.show": "Show window",
+  "tray.hide": "Hide window",
+  "tray.favorites": "Favorites",
+  "tray.recent": "Recent",
+  "tray.local_terminal": "New local terminal",
+  "tray.quick_connect": "Quick connect…",
+  "tray.lock": "Lock the vault",
+  "tray.settings": "Settings…",
+  "tray.quit": "Quit",
+  "tray.status_none": "No tabs open",
+  "tray.status_locked": "Locked",
+  "tray.status_tabs": "Tabs open: {{open}}, connected: {{connected}}"
 }

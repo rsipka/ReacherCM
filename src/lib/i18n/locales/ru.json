@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Разбудить (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Не задано",
-  "session.wol_hint": "Добавляет «Разбудить» в меню сеанса. На сетевой карте машины должен быть включён Wake-on-LAN."
+  "session.wol_hint": "Добавляет «Разбудить» в меню сеанса. На сетевой карте машины должен быть включён Wake-on-LAN.",
+  "tray.show": "Показать окно",
+  "tray.hide": "Скрыть окно",
+  "tray.favorites": "Избранное",
+  "tray.recent": "Недавние",
+  "tray.local_terminal": "Новый локальный терминал",
+  "tray.quick_connect": "Быстрое подключение…",
+  "tray.lock": "Заблокировать хранилище",
+  "tray.settings": "Настройки…",
+  "tray.quit": "Выход",
+  "tray.status_none": "Нет открытых вкладок",
+  "tray.status_locked": "Заблокировано",
+  "tray.status_tabs": "Открыто вкладок: {{open}}, подключено: {{connected}}"
 }

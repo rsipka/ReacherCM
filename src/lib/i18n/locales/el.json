@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Αφύπνιση (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Δεν έχει οριστεί",
-  "session.wol_hint": "Προσθέτει την Αφύπνιση στο μενού της συνεδρίας. Η κάρτα δικτύου του μηχανήματος πρέπει να έχει ενεργό το Wake-on-LAN."
+  "session.wol_hint": "Προσθέτει την Αφύπνιση στο μενού της συνεδρίας. Η κάρτα δικτύου του μηχανήματος πρέπει να έχει ενεργό το Wake-on-LAN.",
+  "tray.show": "Εμφάνιση παραθύρου",
+  "tray.hide": "Απόκρυψη παραθύρου",
+  "tray.favorites": "Αγαπημένα",
+  "tray.recent": "Πρόσφατα",
+  "tray.local_terminal": "Νέο τοπικό τερματικό",
+  "tray.quick_connect": "Γρήγορη σύνδεση…",
+  "tray.lock": "Κλείδωμα θησαυροφυλακίου",
+  "tray.settings": "Ρυθμίσεις…",
+  "tray.quit": "Έξοδος",
+  "tray.status_none": "Καμία ανοιχτή καρτέλα",
+  "tray.status_locked": "Κλειδωμένο",
+  "tray.status_tabs": "Ανοιχτές καρτέλες: {{open}}, συνδεδεμένες: {{connected}}"
 }

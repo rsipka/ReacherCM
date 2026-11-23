@@ -21,6 +21,7 @@
 	import PasswordPrompt from '#lib/components/shared/PasswordPrompt.svelte';
 	import { applyUiZoom } from '#lib/state/ui-zoom.js';
 	import { startAutoLock } from '#lib/state/autolock.svelte.js';
+	import { startTray } from '#lib/state/tray.svelte.js';
 	import { loadSettings, getSettings, syncTraySettings, recordLaunch, markFeaturesSeen, onSettingsSaved } from '#lib/state/settings.svelte.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { syncDevopsTools } from '#lib/state/devops.svelte.js';
@@ -99,6 +100,8 @@
 		// The interface size chosen last time, before anything is laid out.
 		applyUiZoom();
 		startAutoLock();
+		// The tray's tooltip and menu follow the main window's state.
+		if (!isEditorWindow) startTray();
 		// After loadSettings, or the count read back as zero and reset itself
 		// every launch, which would hold the community prompt off forever.
 		recordLaunch();

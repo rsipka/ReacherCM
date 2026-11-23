@@ -3937,5 +3937,17 @@
   "net.menu_wake": "Réveiller (Wake-on-LAN)",
   "session.wol": "Wake-on-LAN",
   "session.wol_none": "Non défini",
-  "session.wol_hint": "Ajoute Réveiller au menu de la session. Le Wake-on-LAN doit être activé sur la carte réseau de la machine."
+  "session.wol_hint": "Ajoute Réveiller au menu de la session. Le Wake-on-LAN doit être activé sur la carte réseau de la machine.",
+  "tray.show": "Afficher la fenêtre",
+  "tray.hide": "Masquer la fenêtre",
+  "tray.favorites": "Favoris",
+  "tray.recent": "Récents",
+  "tray.local_terminal": "Nouveau terminal local",
+  "tray.quick_connect": "Connexion rapide…",
+  "tray.lock": "Verrouiller le coffre",
+  "tray.settings": "Paramètres…",
+  "tray.quit": "Quitter",
+  "tray.status_none": "Aucun onglet ouvert",
+  "tray.status_locked": "Verrouillé",
+  "tray.status_tabs": "Onglets ouverts : {{open}}, connectés : {{connected}}"
 }
