@@ -165,7 +165,7 @@ tauri-plugin-process = "2.3.1"
 # The Android half of vault unlock (fingerprint, security keys); a no-op elsewhere.
 tauri-plugin-reach-unlock = { path = "plugins/reach-unlock" }
 # The QR code that links another device (Settings > Sync), drawn as SVG.
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+qrcode = { version = "0.15", default-features = false, features = ["svg"] }
 # VNC (RFB) client for VNC sessions.
 vnc-rs = "0.6"
 # SPICE desktops (KVM/QEMU, Proxmox, libvirt): protocol, image codecs and the
