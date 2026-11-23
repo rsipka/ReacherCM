@@ -2,6 +2,7 @@
 	import FileExplorer from '#lib/components/explorer/FileExplorer.svelte';
 	import SessionList from '#lib/components/sessions/SessionList.svelte';
 	import TunnelManager from '#lib/components/tunnel/TunnelManager.svelte';
+	import NetworkTools from '#lib/components/net/NetworkTools.svelte';
 	import PluginPanel from '#lib/components/plugin/PluginPanel.svelte';
 	import SnippetPanel from '#lib/components/snippets/SnippetPanel.svelte';
 	import RecipePanel from '#lib/components/recipes/RecipePanel.svelte';
@@ -11,7 +12,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { pendingSessionAction } from '#lib/state/palette.svelte.js';
 
-	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'snippets' | 'recipes' | 'plugins';
+	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'network' | 'snippets' | 'recipes' | 'plugins';
 
 	const STORAGE_KEY = 'reach-sidebar-width';
 	/* `sidebarWidth` is the width of the *panel*, not of the whole sidebar. The
@@ -98,6 +99,12 @@
 			id: 'tunnels',
 			label: t('sidebar.tunnels'),
 			icon: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71'
+		},
+		{
+			id: 'network',
+			label: t('sidebar.network'),
+			// A pulse: ping, port scan and Wake-on-LAN check what answers.
+			icon: 'M22 12h-4l-3 9L9 3l-3 9H2'
 		},
 		{
 			id: 'snippets',
@@ -243,6 +250,8 @@
 						<FileExplorer {connectionId} />
 					{:else if activeSection === 'tunnels'}
 						<TunnelManager />
+					{:else if activeSection === 'network'}
+						<NetworkTools />
 					{:else if activeSection === 'snippets'}
 						<SnippetPanel {connectionId} />
 					{:else if activeSection === 'vault'}

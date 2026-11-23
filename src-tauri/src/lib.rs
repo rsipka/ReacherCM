@@ -4,6 +4,7 @@ pub mod pwmanager;
 pub mod ipc;
 pub mod mcp;
 pub mod monitoring;
+pub mod net;
 #[cfg(desktop)]
 pub mod pty;
 pub mod rdp;
@@ -503,6 +504,11 @@ pub fn run() {
             // SSH commands
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
+            crate::ipc::net_commands::net_resolve,
+            crate::ipc::net_commands::net_ping,
+            crate::ipc::net_commands::net_scan_ports,
+            crate::ipc::net_commands::net_scan_cancel,
+            crate::ipc::net_commands::net_wake,
             ssh_disconnect,
             ssh_files_scp,
             ssh_send,
@@ -1045,6 +1051,11 @@ pub fn run() {
             // SSH commands
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
+            crate::ipc::net_commands::net_resolve,
+            crate::ipc::net_commands::net_ping,
+            crate::ipc::net_commands::net_scan_ports,
+            crate::ipc::net_commands::net_scan_cancel,
+            crate::ipc::net_commands::net_wake,
             ssh_disconnect,
             ssh_files_scp,
             ssh_send,

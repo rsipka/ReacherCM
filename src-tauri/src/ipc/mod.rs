@@ -3,6 +3,7 @@ pub mod dragout_commands;
 pub mod ai_commands;
 pub mod plugin_commands;
 pub mod marketplace_commands;
+pub mod net_commands;
 pub mod credential_commands;
 pub mod settings_commands;
 pub mod history_commands;
