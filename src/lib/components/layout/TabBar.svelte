@@ -14,6 +14,8 @@
 	import { isMobile } from '#lib/platform.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
 	import { actionLabel } from '#lib/state/shortcuts.svelte.js';
+	import { canCapture, captureTab } from '#lib/state/capture.js';
+	import { CAMERA_ICON } from '#lib/terminal/snapshot.js';
 	import {
 		getBroadcastTargets, isTerminalTab, toggleBroadcastTarget, broadcastToAll, stopBroadcast
 	} from '#lib/state/broadcast.svelte.js';
@@ -321,6 +323,14 @@
 				{ label: t('zmodem.send_files'), disabled: down, action: () => requestZmodem(tab.id, 'files') },
 				{ label: t('zmodem.send_folder'), disabled: down, action: () => requestZmodem(tab.id, 'folder') },
 				{ label: t('zmodem.download_folder'), disabled: down, action: () => requestZmodem(tab.id, 'download-folder') }
+			);
+		}
+		// A screenshot of the pane (a remote desktop has no terminal bar).
+		if (canCapture(tab.id)) {
+			const name = tab.sessionName || tab.title;
+			items.push(
+				{ label: t('capture.copy'), icon: CAMERA_ICON, hint: actionLabel('capture.copy'), action: () => void captureTab(tab.id, 'copy', name) },
+				{ label: t('capture.save'), hint: actionLabel('capture.save'), action: () => void captureTab(tab.id, 'save', name) }
 			);
 		}
 		const sessionId = tab.sessionId;

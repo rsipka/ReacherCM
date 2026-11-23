@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Cancella",
   "servers.log_empty": "Ancora nessuna connessione.",
   "servers.started_toast": "Server {{name}} avviato sulla porta {{port}}",
-  "servers.start_failed": "Impossibile avviare {{name}}: {{error}}"
+  "servers.start_failed": "Impossibile avviare {{name}}: {{error}}",
+  "shortcuts.capture_copy": "Screenshot negli appunti",
+  "shortcuts.capture_save": "Salva screenshot come PNG",
+  "capture.button": "Screenshot",
+  "capture.copy": "Copia screenshot",
+  "capture.save": "Salva screenshot come PNG…",
+  "capture.copied": "Screenshot copiato negli appunti",
+  "capture.saved": "Screenshot salvato: {{path}}",
+  "capture.failed": "Impossibile fare lo screenshot: {{error}}",
+  "capture.failed_empty": "L'immagine è vuota.",
+  "capture.unavailable": "Ancora niente da catturare."
 }

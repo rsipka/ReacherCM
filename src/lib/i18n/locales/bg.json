@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Изчисти",
   "servers.log_empty": "Все още няма връзки.",
   "servers.started_toast": "Сървърът {{name}} работи на порт {{port}}",
-  "servers.start_failed": "{{name}} не може да се стартира: {{error}}"
+  "servers.start_failed": "{{name}} не може да се стартира: {{error}}",
+  "shortcuts.capture_copy": "Снимка в клипборда",
+  "shortcuts.capture_save": "Запази снимката като PNG",
+  "capture.button": "Снимка на екрана",
+  "capture.copy": "Копирай снимката",
+  "capture.save": "Запази снимката като PNG…",
+  "capture.copied": "Снимката е копирана в клипборда",
+  "capture.saved": "Снимката е запазена: {{path}}",
+  "capture.failed": "Снимката не можа да се направи: {{error}}",
+  "capture.failed_empty": "Изображението е празно.",
+  "capture.unavailable": "Все още няма какво да се снима."
 }

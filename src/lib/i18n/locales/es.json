@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Borrar",
   "servers.log_empty": "Aún no hay conexiones.",
   "servers.started_toast": "Servidor {{name}} iniciado en el puerto {{port}}",
-  "servers.start_failed": "No se pudo iniciar {{name}}: {{error}}"
+  "servers.start_failed": "No se pudo iniciar {{name}}: {{error}}",
+  "shortcuts.capture_copy": "Captura al portapapeles",
+  "shortcuts.capture_save": "Guardar captura como PNG",
+  "capture.button": "Captura de pantalla",
+  "capture.copy": "Copiar captura",
+  "capture.save": "Guardar captura como PNG…",
+  "capture.copied": "Captura copiada al portapapeles",
+  "capture.saved": "Captura guardada: {{path}}",
+  "capture.failed": "No se pudo hacer la captura: {{error}}",
+  "capture.failed_empty": "La imagen está vacía.",
+  "capture.unavailable": "Todavía no hay nada que capturar."
 }

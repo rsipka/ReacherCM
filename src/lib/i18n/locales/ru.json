@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Очистить",
   "servers.log_empty": "Подключений пока нет.",
   "servers.started_toast": "Сервер {{name}} запущен на порту {{port}}",
-  "servers.start_failed": "Не удалось запустить {{name}}: {{error}}"
+  "servers.start_failed": "Не удалось запустить {{name}}: {{error}}",
+  "shortcuts.capture_copy": "Снимок в буфер обмена",
+  "shortcuts.capture_save": "Сохранить снимок как PNG",
+  "capture.button": "Снимок экрана",
+  "capture.copy": "Копировать снимок",
+  "capture.save": "Сохранить снимок как PNG…",
+  "capture.copied": "Снимок скопирован в буфер обмена",
+  "capture.saved": "Снимок сохранён: {{path}}",
+  "capture.failed": "Не удалось сделать снимок: {{error}}",
+  "capture.failed_empty": "Изображение пустое.",
+  "capture.unavailable": "Пока нечего снимать."
 }

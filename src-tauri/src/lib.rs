@@ -77,6 +77,8 @@ use ipc::serial_commands::*;
 #[cfg(desktop)]
 use ipc::winbox_commands::*;
 #[cfg(desktop)]
+use ipc::screenshot_commands::*;
+#[cfg(desktop)]
 use ipc::local_server_commands::*;
 use ipc::telnet_commands::*;
 use ipc::zmodem_commands::*;
@@ -725,6 +727,9 @@ pub fn run() {
             // WinBox 4, started as its own program
             winbox_find,
             winbox_launch,
+            // A picture of a session pane, to a file or the clipboard
+            screenshot_save,
+            screenshot_copy,
             // Monitoring commands
             monitoring_start,
             monitoring_start_wsl,

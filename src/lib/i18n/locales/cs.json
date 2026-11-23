@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Vymazat",
   "servers.log_empty": "Zatím žádná připojení.",
   "servers.started_toast": "Server {{name}} běží na portu {{port}}",
-  "servers.start_failed": "{{name}} se nepodařilo spustit: {{error}}"
+  "servers.start_failed": "{{name}} se nepodařilo spustit: {{error}}",
+  "shortcuts.capture_copy": "Snímek do schránky",
+  "shortcuts.capture_save": "Uložit snímek jako PNG",
+  "capture.button": "Snímek obrazovky",
+  "capture.copy": "Kopírovat snímek",
+  "capture.save": "Uložit snímek jako PNG…",
+  "capture.copied": "Snímek zkopírován do schránky",
+  "capture.saved": "Snímek uložen: {{path}}",
+  "capture.failed": "Snímek se nepodařilo pořídit: {{error}}",
+  "capture.failed_empty": "Obrázek je prázdný.",
+  "capture.unavailable": "Zatím tu není co vyfotit."
 }

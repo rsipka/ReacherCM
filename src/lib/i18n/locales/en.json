@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Clear",
   "servers.log_empty": "No connections yet.",
   "servers.started_toast": "{{name}} server started on port {{port}}",
-  "servers.start_failed": "Could not start {{name}}: {{error}}"
+  "servers.start_failed": "Could not start {{name}}: {{error}}",
+  "shortcuts.capture_copy": "Screenshot to clipboard",
+  "shortcuts.capture_save": "Save screenshot as PNG",
+  "capture.button": "Screenshot",
+  "capture.copy": "Copy screenshot",
+  "capture.save": "Save screenshot as PNG…",
+  "capture.copied": "Screenshot copied to the clipboard",
+  "capture.saved": "Screenshot saved: {{path}}",
+  "capture.failed": "Could not take the screenshot: {{error}}",
+  "capture.failed_empty": "The picture is empty.",
+  "capture.unavailable": "Nothing to take a picture of yet."
 }

@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Leeren",
   "servers.log_empty": "Noch keine Verbindungen.",
   "servers.started_toast": "{{name}}-Server läuft auf Port {{port}}",
-  "servers.start_failed": "{{name}} konnte nicht gestartet werden: {{error}}"
+  "servers.start_failed": "{{name}} konnte nicht gestartet werden: {{error}}",
+  "shortcuts.capture_copy": "Screenshot in die Zwischenablage",
+  "shortcuts.capture_save": "Screenshot als PNG speichern",
+  "capture.button": "Screenshot",
+  "capture.copy": "Screenshot kopieren",
+  "capture.save": "Screenshot als PNG speichern…",
+  "capture.copied": "Screenshot in die Zwischenablage kopiert",
+  "capture.saved": "Screenshot gespeichert: {{path}}",
+  "capture.failed": "Screenshot fehlgeschlagen: {{error}}",
+  "capture.failed_empty": "Das Bild ist leer.",
+  "capture.unavailable": "Noch nichts zum Aufnehmen da."
 }

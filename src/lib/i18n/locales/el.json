@@ -3987,5 +3987,15 @@
   "servers.clear_log": "Εκκαθάριση",
   "servers.log_empty": "Δεν υπάρχουν ακόμη συνδέσεις.",
   "servers.started_toast": "Ο διακομιστής {{name}} ξεκίνησε στη θύρα {{port}}",
-  "servers.start_failed": "Δεν ήταν δυνατή η εκκίνηση του {{name}}: {{error}}"
+  "servers.start_failed": "Δεν ήταν δυνατή η εκκίνηση του {{name}}: {{error}}",
+  "shortcuts.capture_copy": "Στιγμιότυπο στο πρόχειρο",
+  "shortcuts.capture_save": "Αποθήκευση στιγμιότυπου ως PNG",
+  "capture.button": "Στιγμιότυπο",
+  "capture.copy": "Αντιγραφή στιγμιότυπου",
+  "capture.save": "Αποθήκευση στιγμιότυπου ως PNG…",
+  "capture.copied": "Το στιγμιότυπο αντιγράφηκε στο πρόχειρο",
+  "capture.saved": "Το στιγμιότυπο αποθηκεύτηκε: {{path}}",
+  "capture.failed": "Αποτυχία λήψης στιγμιότυπου: {{error}}",
+  "capture.failed_empty": "Η εικόνα είναι κενή.",
+  "capture.unavailable": "Δεν υπάρχει ακόμα κάτι για λήψη."
 }
