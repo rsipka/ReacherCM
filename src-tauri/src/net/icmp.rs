@@ -90,7 +90,19 @@ pub fn echo(ip: IpAddr, timeout: Duration, seq: u16) -> Result<Option<Echo>, Icm
 
     let v6 = ip.is_ipv6();
     let (domain, proto) = if v6 { (Domain::IPV6, Protocol::ICMPV6) } else { (Domain::IPV4, Protocol::ICMPV4) };
-    let socket = Socket::new(domain, Type::DGRAM, Some(proto)).map_err(|e| IcmpError::Unavailable(e.to_string()))?;
+    let socket = match Socket::new(domain, Type::DGRAM, Some(proto)) {
+        Ok(s) => s,
+        // Linux lets only the groups in net.ipv4.ping_group_range open one,
+        // and some distributions leave that empty ("1 0"). The system's
+        // own ping still works there (setuid or CAP_NET_RAW): use it.
+        Err(e) => {
+            #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+            if let Some(r) = system_ping(ip, timeout) {
+                return r;
+            }
+            return Err(IcmpError::Unavailable(e.to_string()));
+        }
+    };
     let socket: std::net::UdpSocket = socket.into();
     // Linux puts its own id (the socket's "port") in, and hands the socket
     // only its own replies; elsewhere the id is ours and is checked.
@@ -124,6 +136,72 @@ pub fn echo(ip: IpAddr, timeout: Duration, seq: u16) -> Result<Option<Echo>, Icm
             return Ok(Some(Echo { ms: start.elapsed().as_secs_f64() * 1000.0, ttl }));
         }
     }
+}
+
+/// What the system `ping` printed for one echo: the round trip in ms and
+/// the TTL, from a line such as `64 bytes from 10.0.0.5: icmp_seq=1
+/// ttl=64 time=0.412 ms` (iputils, BusyBox, macOS; run with LC_ALL=C).
+pub fn parse_ping_output(out: &str) -> Option<Echo> {
+    let line = out.lines().find(|l| l.contains("time=") || l.contains("time<"))?;
+    let after = |key: &str| -> Option<&str> {
+        let at = line.find(key)? + key.len();
+        let rest = &line[at..];
+        let end = rest.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(rest.len());
+        Some(&rest[..end])
+    };
+    let ms = after("time=").or_else(|| after("time<"))?.parse::<f64>().ok()?;
+    let ttl = after("ttl=").or_else(|| after("hlim=")).and_then(|t| t.parse::<u8>().ok());
+    Some(Echo { ms, ttl })
+}
+
+/// One echo through the system's `ping` program, for where the app may not
+/// open an ICMP socket itself. `None` when there is no usable `ping`.
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "macos"))]
+fn system_ping(ip: IpAddr, timeout: Duration) -> Option<Result<Option<Echo>, IcmpError>> {
+    use std::process::{Command, Stdio};
+    use std::time::Instant;
+
+    let program = if cfg!(target_os = "macos") && ip.is_ipv6() { "ping6" } else { "ping" };
+    let mut cmd = Command::new(program);
+    cmd.env("LC_ALL", "C").arg("-n").arg("-c").arg("1");
+    if cfg!(target_os = "macos") {
+        if ip.is_ipv4() {
+            // macOS: -W is the wait for a reply, in milliseconds.
+            cmd.arg("-W").arg(timeout.as_millis().max(1).to_string());
+        }
+    } else {
+        if ip.is_ipv6() {
+            cmd.arg("-6");
+        }
+        // iputils and BusyBox: whole seconds.
+        cmd.arg("-W").arg(timeout.as_secs().max(1).to_string());
+    }
+    cmd.arg(ip.to_string()).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().ok()?;
+    // Our own limit too, in case ping ignores -W (ping6 on macOS).
+    let deadline = Instant::now() + timeout + Duration::from_secs(1);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Some(Ok(None));
+            }
+        }
+    }
+    let out = child.wait_with_output().ok()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    if let Some(echo) = parse_ping_output(&stdout) {
+        return Some(Ok(Some(echo)));
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // It ran but could not send at all (not allowed either): say so.
+    if !out.status.success() && stdout.trim().is_empty() && !stderr.trim().is_empty() {
+        return Some(Err(IcmpError::Unavailable(stderr.trim().to_string())));
+    }
+    Some(Ok(None))
 }
 
 /// Ping `ip` once: `Ok(None)` when no reply came within `timeout`.
