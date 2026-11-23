@@ -387,6 +387,7 @@
   "session.category_terminal": "Terminals",
   "session.category_desktop": "Remote desktop",
   "session.category_transfer": "Transfers",
+  "session.category_other": "Other",
   "session.column_connection": "Connection",
   "session.column_terminal": "Terminal & organising",
   "session.column_organising": "Organising",
