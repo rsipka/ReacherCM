@@ -265,6 +265,7 @@
   "zmodem.download_folder": "Télécharger ce dossier (ZMODEM)…",
   "zmodem.download_folder_hint": "Télécharger le dossier courant : lance sz sur chaque fichier, sous-dossiers compris",
   "zmodem.no_sz": "sz n’a pas démarré en face. lrzsz y est-il installé ?",
+  "zmodem.multiplexer": "rz/sz ne peut pas traverser tmux ou screen, il a donc été arrêté. Utilisez les boutons Envoyer et Télécharger de la barre du terminal, qui fonctionnent dans les onglets tmux, ou lancez-le hors de tmux.",
   "terminal.reconnect": "Reconnecter",
   "hostkey.unknown_title": "Vérifier la clé de l'hôte",
   "hostkey.changed_title": "Clé de l'hôte modifiée",

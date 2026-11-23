@@ -265,6 +265,7 @@
   "zmodem.download_folder": "Descargar esta carpeta (ZMODEM)…",
   "zmodem.download_folder_hint": "Descargar la carpeta actual: ejecuta sz con cada archivo, conservando las subcarpetas",
   "zmodem.no_sz": "sz no se inició en el equipo remoto. ¿Está instalado lrzsz allí?",
+  "zmodem.multiplexer": "rz/sz no puede pasar a través de tmux o screen, así que se detuvo. Usa los botones Enviar y Descargar de la barra del terminal, que funcionan en pestañas tmux, o ejecútalo fuera de tmux.",
   "terminal.reconnect": "Reconectar",
   "hostkey.unknown_title": "Verificar clave del host",
   "hostkey.changed_title": "La clave del host ha cambiado",
