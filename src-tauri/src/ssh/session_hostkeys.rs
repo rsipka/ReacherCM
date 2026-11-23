@@ -285,14 +285,14 @@ mod tests {
     fn sync_keeps_the_newer_key_and_honours_removals() {
         let old = k("a.example.com:22", "OLD", 10);
         let new = k("a.example.com:22", "NEW", 20);
-        assert_eq!(merge_keys((&[old.clone()], &[]), (&[new.clone()], &[])).0, vec![new.clone()]);
-        assert_eq!(merge_keys((&[new.clone()], &[]), (&[old.clone()], &[])).0, vec![new.clone()]);
+        assert_eq!(merge_keys((std::slice::from_ref(&old), &[]), (std::slice::from_ref(&new), &[])).0, vec![new.clone()]);
+        assert_eq!(merge_keys((std::slice::from_ref(&new), &[]), (std::slice::from_ref(&old), &[])).0, vec![new.clone()]);
         // Removed after it was saved: stays removed, and the mark is kept.
-        let (keys, removed) = merge_keys((&[old.clone()], &[]), (&[], &[gone("a.example.com:22", 15)]));
+        let (keys, removed) = merge_keys((std::slice::from_ref(&old), &[]), (&[], &[gone("a.example.com:22", 15)]));
         assert!(keys.is_empty());
         assert_eq!(removed, vec![gone("a.example.com:22", 15)]);
         // Saved again after the removal: the key is back, the mark gone.
-        let (keys, removed) = merge_keys((&[new.clone()], &[]), (&[], &[gone("a.example.com:22", 15)]));
+        let (keys, removed) = merge_keys((std::slice::from_ref(&new), &[]), (&[], &[gone("a.example.com:22", 15)]));
         assert_eq!(keys, vec![new]);
         assert!(removed.is_empty());
         // A key without a time is older than any removal.
