@@ -59,6 +59,9 @@ pub fn parse_mlsd_line(line: &str, dir: &str) -> Option<RemoteEntry> {
             "unix.mode" => mode = u32::from_str_radix(value.trim_start_matches("0o"), 8).ok(),
             "unix.owner" | "unix.ownername" => owner = value.to_string(),
             "unix.group" | "unix.groupname" => group = value.to_string(),
+            // Ids only where the server has no names (pure-ftpd).
+            "unix.uid" if owner.is_empty() => owner = value.to_string(),
+            "unix.gid" if group.is_empty() => group = value.to_string(),
             _ => {}
         }
     }

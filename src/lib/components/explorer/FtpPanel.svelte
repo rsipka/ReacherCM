@@ -5,7 +5,7 @@
 	 * manager on it. The connection lives in the backend; closing the tab
 	 * ends it (see closeTab).
 	 */
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { setFtpConnection, setTabLink, type Tab } from '#lib/state/tabs.svelte.js';
 	import { ftpConnect, ftpDisconnect, ftpTrustCert, FTP_PASSWORD_NEEDED, FTP_UNTRUSTED_CERT } from '#lib/ipc/ftp.js';
@@ -30,7 +30,7 @@
 	let password = $state('');
 	let passwordEl: HTMLInputElement | undefined = $state();
 	/** What a reconnect bump was last seen at. */
-	let seenReconnect = tab.reconnect;
+	let seenReconnect = untrack(() => tab.reconnect);
 
 	let where = $derived(tab.ftpConnectParams ? `${tab.ftpConnectParams.username ? tab.ftpConnectParams.username + '@' : ''}${tab.ftpConnectParams.host}:${tab.ftpConnectParams.port}` : '');
 

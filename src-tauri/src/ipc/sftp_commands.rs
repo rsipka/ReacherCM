@@ -109,7 +109,12 @@ pub async fn sftp_upload(
         let cancel = register_transfer(&state, &transfer_id, &connection_id);
         let transfers = state.transfers.clone();
         tokio::spawn(async move {
-            let result = crate::ftp::ops::upload(&ftp, &local_path, &remote_path, &tid, &app, &cancel).await;
+            let name = crate::ftp::list::base_name(&local_path.replace('\\', "/")).to_string();
+            let progress = |done: u64, total: u64| crate::sftp::transfer::emit_progress(&app, &tid, &name, done, total);
+            let result = crate::ftp::ops::upload(&ftp, &local_path, &remote_path, &cancel, &progress).await;
+            if result.is_ok() {
+                let _ = app.emit(&format!("transfer-complete-{}", tid), ());
+            }
             if let Ok(mut map) = transfers.lock() {
                 map.remove(&tid);
             }
@@ -169,7 +174,12 @@ pub async fn sftp_download(
         let cancel = register_transfer(&state, &transfer_id, &connection_id);
         let transfers = state.transfers.clone();
         tokio::spawn(async move {
-            let result = crate::ftp::ops::download(&ftp, &remote_path, &local_path, &tid, &app, &cancel).await;
+            let name = crate::ftp::list::base_name(&remote_path).to_string();
+            let progress = |done: u64, total: u64| crate::sftp::transfer::emit_progress(&app, &tid, &name, done, total);
+            let result = crate::ftp::ops::download(&ftp, &remote_path, &local_path, &cancel, &progress).await;
+            if result.is_ok() {
+                let _ = app.emit(&format!("transfer-complete-{}", tid), ());
+            }
             if let Ok(mut map) = transfers.lock() {
                 map.remove(&tid);
             }

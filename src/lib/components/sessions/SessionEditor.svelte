@@ -6,7 +6,7 @@
 	import OsIconSelect from './OsIconSelect.svelte';
 	import { osChoices } from '#lib/data/distro-icons.js';
 	import Input from '#lib/components/shared/Input.svelte';
-	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type FilesProtocol, type FtpOptions, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
 	import { defaultTmuxName, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
 	import { isIos, isMobile, isWindows } from '#lib/platform.js';
 
@@ -66,7 +66,17 @@
 	 * instead is the way in: VNC is not encrypted, so it can go through an
 	 * SSH session saved here.
 	 */
+	/** What the protocol buttons pick: a session kind, or SFTP or SCP (SSH). */
+	type Protocol = SessionKind | FilesProtocol;
 	let kind = $state<SessionKind>('ssh');
+	/** An SSH session that opens in the file manager: over SFTP or SCP. */
+	let filesProto = $state<'' | FilesProtocol>('');
+	/** FTP: '' explicit TLS (required), 'implicit' or 'none'. */
+	let ftpTls = $state<'' | 'implicit' | 'none'>('');
+	/** The protocol as the editor shows it: SFTP and SCP are SSH underneath. */
+	let proto = $derived<Protocol>(filesProto || kind);
+	/** An SSH session that opens a terminal (not SFTP or SCP). */
+	let termSsh = $derived(kind === 'ssh' && !filesProto);
 	let domain = $state('');
 	/** RDP only: the protocol cannot say what the machine is (xrdp claims to be Windows), so the user does. */
 	let os = $state<'windows' | 'linux' | 'gnome'>('windows');
@@ -357,19 +367,22 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
-	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer'; kinds: SessionKind[] }[] = [
+	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer'; kinds: Protocol[] }[] = [
 		{ id: 'terminal', kinds: ['ssh', 'telnet', 'serial', 'wsl'] },
 		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice', 'winbox', 'web'] },
-		{ id: 'transfer', kinds: [] }
+		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
+		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
-	function kindAvailable(k: SessionKind): boolean {
-		if (k === kind) return true;
+	function kindAvailable(k: Protocol): boolean {
+		if (k === proto) return true;
+		// The file manager has this computer's files beside the server's: none on a phone.
+		if (k === 'sftp' || k === 'scp' || k === 'ftp') return !isMobile();
 		// WinBox and serial ports are programs and ports on this computer: none on a phone.
 		if (k === 'winbox' || k === 'serial') return !isMobile();
 		if (k === 'wsl') return isWindows();
@@ -377,7 +390,7 @@
 	}
 
 	let visibleGroups = $derived(KIND_GROUPS.filter((g) => g.kinds.some(kindAvailable)));
-	let group = $derived(KIND_GROUPS.find((g) => g.kinds.includes(kind))?.id ?? 'terminal');
+	let group = $derived(KIND_GROUPS.find((g) => g.kinds.includes(proto))?.id ?? 'terminal');
 	let groupKinds = $derived((KIND_GROUPS.find((g) => g.id === group)?.kinds ?? []).filter(kindAvailable));
 
 	/** A group's tab: its first protocol, unless the session already is one of its. */
@@ -387,7 +400,11 @@
 		if (first) setKind(first);
 	}
 
-	function setKind(next: SessionKind): void {
+	function setKind(picked: Protocol): void {
+		if (picked === proto) return;
+		const files = picked === 'sftp' || picked === 'scp' ? picked : '';
+		const next: SessionKind = files ? 'ssh' : (picked as SessionKind);
+		filesProto = files;
 		if (next === kind) return;
 		if (portStr === DEFAULT_PORT[kind] || portStr.trim() === '') portStr = DEFAULT_PORT[next];
 		if (next !== 'ssh' && username === 'root') username = '';
@@ -398,6 +415,12 @@
 		// A port name is not a host name, nor the other way round.
 		if (next === 'serial' || kind === 'serial') host = '';
 		kind = next;
+	}
+	/** FTP's encryption; the port follows between 21 and 990 unless typed in. */
+	function setFtpTls(next: '' | 'implicit' | 'none'): void {
+		const want = next === 'implicit' ? '990' : '21';
+		if (portStr === '21' || portStr === '990' || portStr.trim() === '') portStr = want;
+		ftpTls = next;
 	}
 	/** 'Manager' is a password from a password manager: saved as a Password login with a reference. */
 	let authType = $state<'Password' | 'Key' | 'Agent' | 'Manager'>('Password');
@@ -446,7 +469,7 @@
 	let tmuxFolderOn = $derived(folderTmux(folderIdStr || null, folders) === true);
 	let tmuxOn = $derived(tmuxChoice === 'attach' || tmuxChoice === 'ask' || (tmuxChoice === '' && tmuxFolderOn));
 	/** tmux runs on an SSH server, or inside a WSL distribution. */
-	let tmuxKind = $derived((kind === 'ssh' && !x11Desktop) || kind === 'wsl');
+	let tmuxKind = $derived((termSsh && !x11Desktop) || kind === 'wsl');
 	let colorsOpen = $state(false);
 	let colorsSummary = $derived(
 		findTerminalTheme(terminalTheme)?.name ?? (terminalTheme ? t('termtheme.missing') : t('termtheme.session_default'))
@@ -475,11 +498,11 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web');
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
-		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || !!usedCredential || username.trim().length > 0) &&
+		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || !!usedCredential || username.trim().length > 0) &&
 		!saving
 	);
 
@@ -551,6 +574,8 @@
 		osChoice = editSession?.os_manual ? (editSession.detected_os ?? '') : '';
 		if (editSession) {
 			kind = sessionKind(editSession);
+			filesProto = kind === 'ssh' ? (editSession.files ?? '') : '';
+			ftpTls = editSession.ftp?.tls ?? '';
 			domain = editSession.domain ?? '';
 			os = editSession.detected_os === 'linux' || editSession.detected_os === 'gnome' ? editSession.detected_os : 'windows';
 			sharePath = editSession.share_path ?? '';
@@ -636,6 +661,8 @@
 		}
 		} else {
 			kind = 'ssh';
+			filesProto = '';
+			ftpTls = '';
 			domain = '';
 			os = 'windows';
 			sharePath = '';
@@ -723,8 +750,11 @@
 		const serial = kind === 'serial';
 		const winbox = kind === 'winbox';
 		const web = kind === 'web';
+		const ftp = kind === 'ftp';
 		/** Jump hosts, proxies, login shells and ssh_config are SSH's alone. */
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web;
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp;
+		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
+		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
 		const via = vnc || spice ? viaSessionId || null : null;
 		const tlsPort = parseInt(spiceTlsPort, 10);
 		const spiceToSave: SpiceOptions | null = spice
@@ -764,17 +794,17 @@
 		const notesToSave = notes.trim() ? notes : null;
 		// Remote desktops paint their own screen, and WinBox is its own
 		// program: no terminal colours.
-		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox;
+		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || !!filesProto;
 		const themeToSave = noTerminal ? null : terminalTheme || null;
 		const cursorToSave = noTerminal ? null : cursorChoice || null;
 		const blinkToSave = noTerminal || !blinkChoice ? null : blinkChoice === 'on';
 		// Only SSH and WSL sessions have a server to monitor.
-		const monitoringToSave = (kind === 'ssh' || kind === 'wsl') && monitoringChoice ? monitoringChoice === 'on' : null;
+		const monitoringToSave = (termSsh || kind === 'wsl') && monitoringChoice ? monitoringChoice === 'on' : null;
 		const historyToSave = noTerminal ? null : historyChoice || null;
 		// tmux runs on an SSH server only. A name is kept only beside a choice
 		// or a folder that turns it on.
-		const x11ToSave = kind === 'ssh' && x11Desktop ? { desktop: x11Desktop, command: x11Desktop === 'custom' ? x11Command.trim() : null } : null;
-		const terminalToSave: TerminalOptions | null = kind === 'ssh' && (termType.trim() || backspaceChoice || encodingChoice)
+		const x11ToSave = termSsh && x11Desktop ? { desktop: x11Desktop, command: x11Desktop === 'custom' ? x11Command.trim() : null } : null;
+		const terminalToSave: TerminalOptions | null = termSsh && (termType.trim() || backspaceChoice || encodingChoice)
 			? { term: termType.trim() || null, backspace: backspaceChoice || null, encoding: encodingChoice || null }
 			: null;
 		if (terminalToSave?.term && !/^[\x21-\x7e]{1,64}$/.test(terminalToSave.term)) {
@@ -881,6 +911,8 @@
 					telnet: telnet ? { ...telnetOptions } : null,
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? { ...webToSave(), certs: webCerts } : null,
+					files: filesToSave,
+					ftp: ftpToSave,
 					spice: spiceToSave,
 					ssh_options: sshOptionsToSave,
 					credential_id: credential,
@@ -932,6 +964,8 @@
 					telnet: telnet ? { ...telnetOptions } : null,
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? webToSave() : null,
+					files: filesToSave,
+					ftp: ftpToSave,
 					spice: spiceToSave,
 					credentialId: credential,
 					notes: notesToSave,
@@ -1042,7 +1076,7 @@
 			</div>
 			<div class="auth-toggle protocol-toggle">
 				{#each groupKinds as k (k)}
-					<button type="button" class="auth-btn" class:active={kind === k} disabled={saving} onclick={() => setKind(k)} title={k === 'rdp' ? t('session.protocol_rdp') : undefined}>
+					<button type="button" class="auth-btn" class:active={proto === k} disabled={saving} onclick={() => setKind(k)} title={k === 'rdp' ? t('session.protocol_rdp') : undefined}>
 						{k === 'rdp' ? t('session.protocol_rdp_short') : t(`session.protocol_${k}`)}
 					</button>
 				{/each}
@@ -1054,7 +1088,7 @@
 		<div class="columns" class:wide>
 		<div class="column">
 		{#if wide}<span class="column-title">{t('session.column_connection')}</span>{/if}
-		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : 'My Server'} disabled={saving} />
+		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
 
 		{#if kind === 'wsl'}
 			<div class="shell-field">
@@ -1152,7 +1186,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : 'root'} disabled={saving} />
+			<Input label={kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -1476,6 +1510,25 @@
 				</label>
 				<p class="shell-hint">{t('serial.hint')}</p>
 			</div>
+		{:else if kind === 'ftp'}
+			<!-- A password login, sent inside TLS unless plain FTP is chosen.
+			     No user name: anonymous. -->
+			{#if !usedCredential}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+					<p class="shell-hint">{t('ftp.login_hint')}</p>
+				</div>
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="ftp-tls">{t('ftp.encryption')}</label>
+				<select id="ftp-tls" class="via-select" value={ftpTls} onchange={(e) => setFtpTls(e.currentTarget.value as '' | 'implicit' | 'none')} disabled={saving}>
+					<option value="">{t('ftp.tls_explicit')}</option>
+					<option value="implicit">{t('ftp.tls_implicit')}</option>
+					<option value="none">{t('ftp.tls_none')}</option>
+				</select>
+				<p class="shell-hint">{ftpTls === 'none' ? t('ftp.tls_none_hint') : t('ftp.tls_hint')}</p>
+			</div>
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->
@@ -1740,7 +1793,7 @@
 			</div>
 		{/if}
 
-		{#if kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox'}
+		{#if opensTerminal}
 			<Disclosure title={t('termtheme.session_title')} summary={colorsSummary} bind:open={colorsOpen}>
 				<TerminalThemeList
 					selected={terminalTheme}
@@ -1778,7 +1831,7 @@
 			</div>
 		{/if}
 
-		{#if kind === 'ssh'}
+		{#if termSsh}
 			<div class="folder-section">
 				<label class="folder-label" for="session-term-type">{t('session.term_type')}</label>
 				<input id="session-term-type" class="field-input" list="session-term-types" bind:value={termType} placeholder="xterm-256color" spellcheck="false" autocapitalize="off" autocomplete="off" disabled={saving} />
@@ -1809,7 +1862,7 @@
 			</div>
 		{/if}
 
-		{#if kind === 'ssh' || kind === 'wsl'}
+		{#if termSsh || kind === 'wsl'}
 			<div class="folder-section">
 				<span class="folder-label">{t('session.monitoring')}</span>
 				<select class="folder-select" bind:value={monitoringChoice} disabled={saving}>
@@ -1820,7 +1873,7 @@
 			</div>
 		{/if}
 
-		{#if kind === 'ssh' && (!isMobile() || x11Desktop)}
+		{#if termSsh && (!isMobile() || x11Desktop)}
 			<div class="folder-section">
 				<span class="folder-label">{t('x11desktop.label')}</span>
 				<select class="folder-select" bind:value={x11Desktop} disabled={saving}>
@@ -1840,7 +1893,7 @@
 			{/if}
 		{/if}
 
-		{#if kind === 'ssh' && !x11Desktop}
+		{#if termSsh && !x11Desktop}
 			<div class="shell-field">
 				<Input label={t('session.login_shell_optional')} bind:value={shell} placeholder="fish -l" disabled={saving} />
 				<p class="shell-hint">{t('session.login_shell_hint')}</p>

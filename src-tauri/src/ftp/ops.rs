@@ -6,7 +6,6 @@ use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
 
-use tauri::Emitter;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
@@ -15,7 +14,10 @@ use super::list::{self, base_name, parent};
 use super::{with_client, FtpConn};
 use crate::sftp::browser::RemoteEntry;
 use crate::sftp::local_download::LocalDownload;
-use crate::sftp::transfer::{emit_progress, plan_directory};
+use crate::sftp::transfer::plan_directory;
+
+/// Hears a transfer's bytes done so far and its total.
+pub type Progress<'a> = &'a (dyn Fn(u64, u64) + Send + Sync);
 
 /// Largest file opened in the editor or viewer, as for SFTP.
 const MAX_EDIT_SIZE: u64 = 5 * 1024 * 1024;
@@ -27,6 +29,21 @@ type Boxed<'a, T> = Pin<Box<dyn Future<Output = Result<T, FtpError>> + Send + 'a
 
 fn sort(entries: &mut [RemoteEntry]) {
     entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+}
+
+/// After sending a file: wait for the server to close its side. Some
+/// (vsftpd) answer the TLS goodbye with their own, and a socket closed
+/// before that arrives is reset, which they report as a failed upload.
+async fn drain(s: &mut Box<dyn super::client::Stream>) {
+    let mut sink = [0u8; 512];
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while let Ok(n) = s.read(&mut sink).await {
+            if n == 0 {
+                break;
+            }
+        }
+    })
+    .await;
 }
 
 /// A server close without TLS's goodbye (close_notify) still ends a transfer
@@ -135,6 +152,9 @@ async fn store_bytes(c: &mut Client, path: &str, data: &[u8]) -> Result<(), FtpE
         s.shutdown().await
     };
     let sent = tokio::time::timeout(DATA_IDLE, sent).await;
+    if matches!(sent, Ok(Ok(()))) {
+        drain(&mut s).await;
+    }
     drop(s);
     match sent {
         Ok(Ok(())) => c.finish().await,
@@ -216,18 +236,16 @@ async fn download_on(
     c: &mut Client,
     remote: &str,
     local: &str,
-    transfer_id: &str,
-    app: &tauri::AppHandle,
     cancel: &CancellationToken,
-) -> Result<(), FtpError> {
-    let name = base_name(remote).to_string();
+    progress: Progress<'_>,
+) -> Result<u64, FtpError> {
     let size = size_of(c, remote).await?;
     let mut file = LocalDownload::new(Path::new(local)).map_err(|e| FtpError::Other(e.to_string()))?;
     let mut s = c.data(&format!("RETR {remote}")).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut done: u64 = 0;
     let mut shown: u64 = 0;
-    emit_progress(app, transfer_id, &name, 0, size.unwrap_or(0));
+    progress(0, size.unwrap_or(0));
     loop {
         let n = tokio::select! {
             _ = cancel.cancelled() => {
@@ -255,27 +273,25 @@ async fn download_on(
         done += n as u64;
         if done - shown >= CHUNK as u64 {
             shown = done;
-            emit_progress(app, transfer_id, &name, done, size.unwrap_or(done).max(done));
+            progress(done, size.unwrap_or(done).max(done));
         }
     }
     drop(s);
     c.finish().await?;
     file.commit(cancel).map_err(|e| FtpError::Other(e.to_string()))?;
-    emit_progress(app, transfer_id, &name, done, done);
-    let _ = app.emit(&format!("transfer-complete-{transfer_id}"), ());
+    progress(done, done);
     tracing::info!("FTP download complete: {remote} ({done} bytes)");
-    Ok(())
+    Ok(done)
 }
 
 pub async fn download(
     conn: &FtpConn,
     remote: &str,
     local: &str,
-    transfer_id: &str,
-    app: &tauri::AppHandle,
     cancel: &CancellationToken,
-) -> Result<(), FtpError> {
-    with_client!(conn, |c| download_on(c, remote, local, transfer_id, app, cancel))
+    progress: Progress<'_>,
+) -> Result<u64, FtpError> {
+    with_client!(conn, |c| download_on(c, remote, local, cancel, progress))
 }
 
 /// Send one local file; `progress` hears the bytes sent so far.
@@ -329,6 +345,7 @@ async fn send_file(
         c.broken = true;
         return Err(FtpError::Io(format!("{remote}: {e}")));
     }
+    drain(&mut s).await;
     drop(s);
     c.finish().await?;
     Ok(sent)
@@ -338,16 +355,14 @@ async fn upload_on(
     c: &mut Client,
     local: &str,
     remote: &str,
-    transfer_id: &str,
-    app: &tauri::AppHandle,
     cancel: &CancellationToken,
+    progress: Progress<'_>,
 ) -> Result<(), FtpError> {
-    let name = Path::new(local).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| local.to_string());
     let path = Path::new(local);
     if path.is_dir() {
         let plan = plan_directory(path, remote).map_err(|e| FtpError::Other(format!("Failed to read local directory: {e}")))?;
         let total = plan.total_bytes;
-        emit_progress(app, transfer_id, &name, 0, total);
+        progress(0, total);
         for dir in &plan.dirs {
             if cancel.is_cancelled() {
                 return Err(FtpError::Cancelled);
@@ -361,26 +376,25 @@ async fn upload_on(
             done += send_file(c, &f.local, &f.remote, cancel, |sent| {
                 if sent - shown >= CHUNK as u64 {
                     shown = sent;
-                    emit_progress(app, transfer_id, &name, base + sent, total);
+                    progress(base + sent, total);
                 }
             })
             .await?;
         }
-        emit_progress(app, transfer_id, &name, total, total);
+        progress(total, total);
     } else {
         let total = std::fs::metadata(path).map(|m| m.len()).map_err(|e| FtpError::Other(format!("Failed to read local file {local}: {e}")))?;
-        emit_progress(app, transfer_id, &name, 0, total);
+        progress(0, total);
         let mut shown = 0;
         let sent = send_file(c, path, remote, cancel, |sent| {
             if sent - shown >= CHUNK as u64 {
                 shown = sent;
-                emit_progress(app, transfer_id, &name, sent, total);
+                progress(sent, total);
             }
         })
         .await?;
-        emit_progress(app, transfer_id, &name, sent, sent);
+        progress(sent, sent);
     }
-    let _ = app.emit(&format!("transfer-complete-{transfer_id}"), ());
     tracing::info!("FTP upload complete: {remote}");
     Ok(())
 }
@@ -391,13 +405,16 @@ pub async fn upload(
     conn: &FtpConn,
     local: &str,
     remote: &str,
-    transfer_id: &str,
-    app: &tauri::AppHandle,
     cancel: &CancellationToken,
+    progress: Progress<'_>,
 ) -> Result<(), FtpError> {
-    let result = with_client!(conn, |c| upload_on(c, local, remote, transfer_id, app, cancel));
+    let result = with_client!(conn, |c| upload_on(c, local, remote, cancel, progress));
     if matches!(result, Err(FtpError::Cancelled)) && !Path::new(local).is_dir() {
         let _ = with_client!(conn, |c| async { c.cmd(&format!("DELE {remote}")).await.map(|_| ()) });
     }
     result
 }
+
+#[cfg(test)]
+#[path = "live_tests.rs"]
+mod live_tests;

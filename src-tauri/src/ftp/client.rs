@@ -265,7 +265,7 @@ impl Client {
                 if r.code != 234 {
                     return Err(FtpError::Reply {
                         code: r.code,
-                        text: format!("The server does not offer TLS: {}. Choose plain FTP in the session to connect without encryption.", r.text),
+                        text: format!("The server does not offer TLS: {}. Choose plain FTP in the session to connect without encryption.", r.text.trim().trim_end_matches('.')),
                     });
                 }
                 tls_wrap(tls.as_ref().expect("TLS set up"), tcp).await?
