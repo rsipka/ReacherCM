@@ -221,8 +221,6 @@ pub struct Client {
     buf: Vec<u8>,
     peer: IpAddr,
     tls: Option<Tls>,
-    /// Data connections in TLS too (PROT P).
-    protect: bool,
     pub mlsd: bool,
     epsv: bool,
     pub home: String,
@@ -276,7 +274,7 @@ impl Client {
                 Box::new(tcp)
             }
         };
-        let mut c = Client { ctrl, buf, peer, protect: false, tls, mlsd: false, epsv: true, home: "/".into(), broken: false };
+        let mut c = Client { ctrl, buf, peer, tls, mlsd: false, epsv: true, home: "/".into(), broken: false };
         c.login(p).await?;
         Ok(c)
     }
@@ -294,8 +292,10 @@ impl Client {
         }
         r.ok(&[230, 202])?;
         if self.tls.is_some() {
-            let _ = self.cmd("PBSZ 0").await?;
-            self.protect = self.cmd("PROT P").await?.code == 200;
+            self.ok("PBSZ 0", &[200]).await?;
+            self.ok("PROT P", &[200]).await.map_err(|e| {
+                FtpError::Other(format!("The server refused encrypted FTP data connections: {e}"))
+            })?;
         }
         let feat = self.cmd("FEAT").await?;
         if feat.code == 211 {
@@ -397,8 +397,7 @@ impl Client {
         let tcp = self.passive().await?;
         let r = self.cmd(line).await?;
         r.ok(&[125, 150])?;
-        if self.protect {
-            let tls = self.tls.as_ref().expect("PROT P only with TLS");
+        if let Some(tls) = &self.tls {
             match tls_wrap(tls, tcp).await {
                 Ok(s) => Ok(s),
                 Err(e) => {
@@ -459,6 +458,46 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn ftps_requires_protection_before_continuing_login() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let (ctrl, peer) = tokio::io::duplex(1024);
+        let mut client = Client {
+            ctrl: Box::new(ctrl),
+            buf: Vec::new(),
+            peer: "127.0.0.1".parse().unwrap(),
+            tls: Some(Tls::new("localhost", &[]).unwrap()),
+            mlsd: false,
+            epsv: true,
+            home: "/".into(),
+            broken: false,
+        };
+        let params = Params {
+            host: "localhost".into(),
+            port: 21,
+            username: "example".into(),
+            password: String::new(),
+            security: Security::Explicit,
+            trusted: Vec::new(),
+        };
+        let server = async {
+            let mut peer = BufReader::new(peer);
+            for (expected, reply) in [
+                ("USER example\r\n", "230 Logged in\r\n"),
+                ("PBSZ 0\r\n", "200 Buffer size accepted\r\n"),
+                ("PROT P\r\n", "536 Private data protection unavailable\r\n"),
+            ] {
+                let mut line = String::new();
+                peer.read_line(&mut line).await.unwrap();
+                assert_eq!(line, expected);
+                peer.write_all(reply.as_bytes()).await.unwrap();
+            }
+        };
+        let (result, ()) = tokio::join!(client.login(&params), server);
+        assert!(matches!(result, Err(FtpError::Other(message)) if message.contains("refused encrypted")));
+    }
 
     #[test]
     fn passive_replies() {

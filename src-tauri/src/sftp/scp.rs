@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use super::local_download::LocalDownload;
+use super::local_download::{DownloadTarget, LocalDownload};
 use super::transfer::{shell_path, CancellationToken, TransferError};
 use crate::ssh::client::SharedHandle;
 
@@ -140,10 +140,10 @@ pub async fn send_file(
 }
 
 /// Fetch `remote_path` into `local_path` through a staging file.
-pub async fn receive_file(
+pub(crate) async fn receive_file(
     handle: &SharedHandle,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     cancel: &CancellationToken,
     mut on_progress: impl FnMut(u64, u64),
 ) -> Result<u64, TransferError> {
@@ -163,7 +163,7 @@ pub async fn receive_file(
         }
     };
     let (_, size, _) = parse_header(&line).ok_or_else(|| TransferError::Remote(format!("scp: cannot read \"{line}\"")))?;
-    let mut file = LocalDownload::new(Path::new(local_path))?;
+    let mut file = LocalDownload::for_target(local_path)?;
     s.write_all(&[0]).await.map_err(broken)?;
     let mut buf = vec![0u8; CHUNK];
     let mut done = 0u64;

@@ -20,7 +20,7 @@ export async function sftpUpload(connectionId: string, localPath: string, remote
   return invoke<string>('sftp_upload', { connectionId, localPath, remotePath, transferId });
 }
 
-export async function sftpDownload(connectionId: string, remotePath: string, localPath: string, transferId?: string): Promise<string> {
+export async function sftpDownload(connectionId: string, remotePath: string, localPath: string | { root: string; names: string[] }, transferId?: string): Promise<string> {
   return invoke<string>('sftp_download', { connectionId, remotePath, localPath, transferId });
 }
 
