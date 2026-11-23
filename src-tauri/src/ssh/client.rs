@@ -1731,6 +1731,13 @@ impl SshManager {
             .ok_or_else(|| SshError::NotFound(id.to_string()))
     }
 
+    /// Make a connection's files go over SCP rather than SFTP.
+    pub async fn set_scp(&self, id: &str) -> Result<(), SshError> {
+        let slot = self.connections.get(id).map(|c| c.sftp.clone()).ok_or_else(|| SshError::NotFound(id.to_string()))?;
+        slot.set_scp().await;
+        Ok(())
+    }
+
     /// The connection's files, for the explorer: SFTP where the server
     /// has it, shell commands where it does not.
     pub fn get_fs(&self, id: &str) -> Result<crate::sftp::backend::RemoteFs, SshError> {

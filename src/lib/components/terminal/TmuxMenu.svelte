@@ -6,7 +6,7 @@
 	 */
 	import type { Tab } from '#lib/state/tabs.svelte.js';
 	import { sshTmuxList, sshTmuxWindows, sshTmuxWindow, type TmuxListed, type TmuxWindow } from '#lib/ipc/ssh.js';
-	import { isTmuxViewTab, switchTmuxSession } from '#lib/terminal/tmux-tabs.js';
+	import { isTmuxViewTab, openTmuxWindowTab, switchTmuxSession } from '#lib/terminal/tmux-tabs.js';
 	import { validTmuxName } from '#lib/terminal/tmux.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
@@ -19,6 +19,9 @@
 	}
 
 	let { tab, name }: Props = $props();
+
+	/** A window with an arrow out of it: open in a new tab. */
+	const TAB_ICON = 'M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5';
 
 	let usable = $derived(!!tab.connectionId && tab.link !== 'down');
 	let windowName = $derived(tab.tmuxWindow?.name ?? '');
@@ -81,6 +84,12 @@
 		} catch (err) {
 			addToast(t('tmux.window_failed', { error: String(err) }), 'error');
 		}
+	}
+
+	/** A window (or a new one) in a tab of its own, beside this one. */
+	function windowTab(window: string): void {
+		open = false;
+		openTmuxWindowTab(tab, window).catch((err) => addToast(t('tmux.window_failed', { error: String(err) }), 'error'));
 	}
 
 	$effect(() => {
@@ -168,16 +177,37 @@
 			<div class="sep"></div>
 			<div class="head">{t('tmux.windows_title')}</div>
 			{#each windows as w (w.id)}
-				<button type="button" class="row" class:current={w.active} role="menuitemradio" aria-checked={w.active} onclick={() => void showWindow({ kind: 'select', window: w.id })}>
-					<span class="mark" aria-hidden="true">{w.active ? '✓' : ''}</span>
-					<span class="row-name">{w.index}: {w.name}</span>
-					<span class="row-meta">{w.command}{#if w.panes > 1}{' · '}{t('tmux.window_panes', { count: String(w.panes) })}{/if}</span>
-				</button>
+				<div class="win">
+					<!-- Ctrl/Cmd+click or a middle click: in a new tab, as a link would. -->
+					<button
+						type="button"
+						class="row"
+						class:current={w.active}
+						role="menuitemradio"
+						aria-checked={w.active}
+						onclick={(e) => (e.ctrlKey || e.metaKey ? windowTab(w.id) : void showWindow({ kind: 'select', window: w.id }))}
+						onauxclick={(e) => {
+							if (e.button === 1) windowTab(w.id);
+						}}
+					>
+						<span class="mark" aria-hidden="true">{w.active ? '✓' : ''}</span>
+						<span class="row-name">{w.index}: {w.name}</span>
+						<span class="row-meta">{w.command}{#if w.panes > 1}{' · '}{t('tmux.window_panes', { count: String(w.panes) })}{/if}</span>
+					</button>
+					<button type="button" class="tab-btn" role="menuitem" title={t('tmux.window_open_tab')} aria-label={`${t('tmux.window_open_tab')}: ${w.name}`} onclick={() => windowTab(w.id)}>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={TAB_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+					</button>
+				</div>
 			{/each}
-			<button type="button" class="row" role="menuitem" onclick={() => void showWindow({ kind: 'new' })}>
-				<span class="mark" aria-hidden="true">+</span>
-				<span class="row-name plain">{t('tmux.window_new')}</span>
-			</button>
+			<div class="win">
+				<button type="button" class="row" role="menuitem" onclick={() => void showWindow({ kind: 'new' })}>
+					<span class="mark" aria-hidden="true">+</span>
+					<span class="row-name plain">{t('tmux.window_new')}</span>
+				</button>
+				<button type="button" class="tab-btn" role="menuitem" title={t('tmux.window_new_tab')} aria-label={t('tmux.window_new_tab')} onclick={() => windowTab('new')}>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={TAB_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+				</button>
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -312,6 +342,38 @@
 		min-width: 0;
 	}
 
+	.win {
+		display: flex;
+		align-items: center;
+	}
+
+	.win .row {
+		flex: 1;
+		min-width: 0;
+		padding-right: 4px;
+	}
+
+	.tab-btn {
+		flex-shrink: 0;
+		display: inline-grid;
+		place-items: center;
+		width: 28px;
+		height: 26px;
+		margin-right: 8px;
+		padding: 0;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		background: none;
+		color: var(--color-text-secondary);
+		cursor: pointer;
+	}
+
+	.tab-btn:hover {
+		background: var(--color-surface-hover);
+		border-color: var(--color-border);
+		color: var(--color-text-primary);
+	}
+
 	.row-name.plain {
 		font-family: inherit;
 	}
@@ -381,6 +443,11 @@
 
 		.row {
 			padding: 10px 12px;
+		}
+
+		.tab-btn {
+			width: 36px;
+			height: 36px;
 		}
 	}
 </style>

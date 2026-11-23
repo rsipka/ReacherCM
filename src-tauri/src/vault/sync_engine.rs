@@ -450,9 +450,18 @@ pub async fn merge(target: &Target, local: &Connection, incoming: Vec<Record>, f
                 continue; // already here, or an older copy
             }
         }
+        // A session's saved host keys are merged, not replaced: the copy
+        // that wins may come from a device that did not have a key yet.
+        let mine = match &record.row {
+            Some(r) if is_session(&r.category) => sync_local::read_row(local, &record.id).await?,
+            _ => None,
+        };
         match dirty.get(&record.id) {
             None => {
                 sync_local::apply(local, &record.id, record.row.as_ref()).await?;
+                if let (Some(theirs), Some(mine)) = (&record.row, &mine) {
+                    keep_host_keys(local, &target.master, theirs, mine).await?;
+                }
                 report.pulled += 1;
             }
             Some(change) => {
@@ -471,7 +480,13 @@ pub async fn merge(target: &Target, local: &Connection, incoming: Vec<Record>, f
                     }
                     sync_local::apply(local, &record.id, record.row.as_ref()).await?;
                     local.execute("DELETE FROM sync_dirty WHERE id = ?", [record.id.as_str()]).await?;
+                    if let (Some(theirs), Some(mine)) = (&record.row, &mine) {
+                        keep_host_keys(local, &target.master, theirs, mine).await?;
+                    }
                     report.pulled += 1;
+                } else if let (Some(theirs), Some(mine)) = (&record.row, &mine) {
+                    // This device's version wins; the keys of the other stay.
+                    keep_host_keys(local, &target.master, mine, theirs).await?;
                 }
             }
         }
@@ -518,6 +533,47 @@ pub async fn sent(local: &Connection, sent: &[(Dirty, Record)]) -> Result<(), Va
         sync_local::set_known(local, &record.id, record.version).await?;
         sync_local::clear_dirty(local, &change.id, change.changed_at).await?;
     }
+    Ok(())
+}
+
+fn is_session(category: &str) -> bool {
+    matches!(category, "session" | "custom:session")
+}
+
+fn open_row(master: &Dek, row: &Row) -> Option<serde_json::Value> {
+    let nonce = <[u8; 24]>::try_from(row.nonce.clone()).ok()?;
+    let wrapped_dek = serde_json::from_str::<WrappedDek>(&row.wrapped_dek).ok()?;
+    let payload = EncryptedPayload { nonce, ciphertext: row.ciphertext.clone(), wrapped_dek };
+    let plain = decrypt_secret(master, &payload).ok()?;
+    serde_json::from_slice(plain.expose_secret()).ok()
+}
+
+/// `kept`, the version of a session now in the local file, with the saved
+/// host keys of `other`, another version of it, merged in (see
+/// [`crate::ssh::session_hostkeys::merge_keys`]). When that changes it, it
+/// is written as a change of this device, so the merged keys go out to the
+/// other devices with the next push. A version that does not open is left
+/// as it is.
+async fn keep_host_keys(local: &Connection, master: &Dek, kept: &Row, other: &Row) -> Result<(), VaultError> {
+    let (Some(mut value), Some(theirs)) = (open_row(master, kept), open_row(master, other)) else { return Ok(()) };
+    if !crate::ssh::session_hostkeys::merge_into(&mut value, &theirs) {
+        return Ok(());
+    }
+    let bytes = zeroize::Zeroizing::new(serde_json::to_vec(&value)?);
+    let sealed = encrypt_secret(master, &bytes)?;
+    local
+        .execute(
+            "UPDATE secrets SET nonce = ?, ciphertext = ?, wrapped_dek = ?, updated_at = ? WHERE id = ?",
+            (
+                sealed.nonce.as_slice(),
+                sealed.ciphertext.as_slice(),
+                serde_json::to_string(&sealed.wrapped_dek)?,
+                now_ms() / 1000,
+                kept.id.as_str(),
+            ),
+        )
+        .await?;
+    tracing::info!(record = %kept.id, "Sync: kept saved host keys of the other copy of a session");
     Ok(())
 }
 

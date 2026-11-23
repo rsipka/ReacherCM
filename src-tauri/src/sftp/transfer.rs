@@ -47,6 +47,21 @@ pub async fn download_file(
     if let Some(proto) = fs.sftp().await {
         return download_file_sftp(fs, &proto, remote_path, local_path, transfer_id, app_handle, cancel).await;
     }
+    if fs.is_scp().await {
+        let filename = file_name_of(remote_path);
+        let mut shown = 0u64;
+        let bytes = super::scp::receive_file(&fs.handle, remote_path, local_path, cancel, |done, total| {
+            if done == 0 || done - shown >= 256 * 1024 {
+                shown = done;
+                emit_progress(app_handle, transfer_id, &filename, done, total);
+            }
+        })
+        .await?;
+        emit_progress(app_handle, transfer_id, &filename, bytes, bytes);
+        let _ = app_handle.emit(&format!("transfer-complete-{}", transfer_id), ());
+        tracing::info!("Download complete: {} ({} bytes, scp)", remote_path, bytes);
+        return Ok(());
+    }
     download_file_exec(&fs.handle, remote_path, local_path, transfer_id, app_handle, cancel).await
 }
 
@@ -447,6 +462,14 @@ async fn send_file(
     mut on_progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
     let Some(proto) = sftp else {
+        if fs.is_scp().await {
+            let sent = super::scp::send_file(&fs.handle, local, remote_path, cancel, on_progress).await;
+            if matches!(sent, Err(TransferError::Cancelled)) {
+                // Half a file is no use: removed, as the other ways do.
+                let _ = exec_on_connection_with_exit_code(&fs.handle, &format!("rm -f -- {}", shell_escape(remote_path))).await;
+            }
+            return sent;
+        }
         let data = read_local(local)?;
         send_bytes(&fs.handle, &data, remote_path, cancel, on_progress).await?;
         return Ok(data.len() as u64);
@@ -498,16 +521,16 @@ async fn send_file(
 /// What uploading a local directory takes: the remote directories to create,
 /// parents before children, and every file with the place it goes.
 #[derive(Debug, Default)]
-struct DirectoryPlan {
-    dirs: Vec<String>,
-    files: Vec<PlannedFile>,
-    total_bytes: u64,
+pub(crate) struct DirectoryPlan {
+    pub(crate) dirs: Vec<String>,
+    pub(crate) files: Vec<PlannedFile>,
+    pub(crate) total_bytes: u64,
 }
 
 #[derive(Debug)]
-struct PlannedFile {
-    local: PathBuf,
-    remote: String,
+pub(crate) struct PlannedFile {
+    pub(crate) local: PathBuf,
+    pub(crate) remote: String,
 }
 
 /// Walk `local` and map it onto `remote`.
@@ -516,7 +539,7 @@ struct PlannedFile {
 /// symbolic link to a file is uploaded as the file it points to; a link to a
 /// directory is left out, since following it could walk in a circle, and so
 /// is a link that points nowhere. Entries are taken in name order.
-fn plan_directory(local: &Path, remote: &str) -> std::io::Result<DirectoryPlan> {
+pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<DirectoryPlan> {
     let mut plan = DirectoryPlan::default();
     let mut pending = vec![(local.to_path_buf(), remote.to_string())];
 
@@ -599,7 +622,7 @@ fn read_local(path: &Path) -> Result<Vec<u8>, TransferError> {
     })
 }
 
-fn emit_progress(
+pub(crate) fn emit_progress(
     app_handle: &tauri::AppHandle,
     transfer_id: &str,
     filename: &str,
@@ -784,7 +807,7 @@ fn shell_escape(s: &str) -> String {
 /// A path as an argument to a command that does not take `--` everywhere
 /// (BSD `stat`, busybox `base64`): one that starts with `-` is given as
 /// `./-name`, so it is never read as an option.
-fn shell_path(path: &str) -> String {
+pub(crate) fn shell_path(path: &str) -> String {
     if path.starts_with('-') {
         shell_escape(&format!("./{path}"))
     } else {

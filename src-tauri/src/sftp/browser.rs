@@ -184,6 +184,19 @@ pub async fn list_directory(
     parse_ls_output(&listing_output(stdout, &stderr, code)?, path)
 }
 
+/// The login folder: SFTP's `.`, else what `pwd` says. `None` when
+/// neither answers with a path.
+pub async fn home_dir(fs: &RemoteFs) -> Option<String> {
+    if let Some(proto) = fs.sftp().await {
+        if let Ok(name) = proto.session.realpath(".").await {
+            return name.files.first().map(|f| f.filename.clone()).filter(|p| p.starts_with('/'));
+        }
+    }
+    let out = exec_on_connection(&fs.handle, "pwd").await.ok()?;
+    let path = out.trim();
+    path.starts_with('/').then(|| path.to_string())
+}
+
 /// Create a directory on the remote host, and any parents it needs.
 pub async fn make_directory(
     fs: &RemoteFs,

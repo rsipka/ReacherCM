@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 
 /// Keep partial downloads in their own sibling file. Dropping the writer on
 /// any error (including task cancellation) removes just that staging file.
-pub(super) struct LocalDownload {
-    pub(super) writer: std::io::BufWriter<std::fs::File>,
+pub(crate) struct LocalDownload {
+    pub(crate) writer: std::io::BufWriter<std::fs::File>,
     staging: tempfile::TempPath,
     destination: PathBuf,
 }
 
 impl LocalDownload {
-    pub(super) fn new(path: &Path) -> Result<Self, TransferError> {
+    pub(crate) fn new(path: &Path) -> Result<Self, TransferError> {
         let prepare = || -> std::io::Result<Self> {
             // Keep the previous behavior of writing through a selected symlink.
             let destination = match std::fs::symlink_metadata(path) {
@@ -54,7 +54,7 @@ impl LocalDownload {
         })
     }
 
-    pub(super) fn commit(mut self, cancel: &CancellationToken) -> Result<(), TransferError> {
+    pub(crate) fn commit(mut self, cancel: &CancellationToken) -> Result<(), TransferError> {
         use std::io::Write;
         let io_error = |e: std::io::Error| {
             TransferError::IoError(format!(
