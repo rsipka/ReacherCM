@@ -75,6 +75,21 @@ async fn live_ftp_operations() {
     assert_eq!(b.unwrap()[0].name, "small.txt");
     assert_eq!(std::fs::read(&down).unwrap(), big);
 
+    let replacement = tmp.path().join("replacement.bin");
+    let contents = vec![0xAB; CHUNK * 3];
+    std::fs::write(&replacement, &contents).unwrap();
+    let stop = CancellationToken::new();
+    let stop_on_progress = |sent, _| {
+        if sent >= CHUNK as u64 {
+            stop.cancel();
+        }
+    };
+    upload(&conn, replacement.to_str().unwrap(), &big_path, &stop, &stop_on_progress).await.unwrap();
+    assert!(stop.is_cancelled());
+    assert!(matches!(upload(&conn, up.join("big.bin").to_str().unwrap(), &big_path, &stop, &progress).await, Err(FtpError::Cancelled)));
+    download(&conn, &big_path, &destination, &never, &progress).await.unwrap();
+    assert_eq!(std::fs::read(&down).unwrap(), contents);
+
     // A cancelled download leaves nothing behind.
     let stop = CancellationToken::new();
     stop.cancel();

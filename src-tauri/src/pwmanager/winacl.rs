@@ -15,8 +15,12 @@ use windows::core::{HSTRING, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL};
 use windows::Win32::Security::Authorization::{ConvertSidToStringSidW, GetNamedSecurityInfoW, SE_FILE_OBJECT};
 use windows::Win32::Security::{
-    GetAce, GetTokenInformation, TokenUser, ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, DACL_SECURITY_INFORMATION,
-    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
+    GetAce, GetTokenInformation, TokenUser, ACCESS_ALLOWED_ACE, ACCESS_ALLOWED_CALLBACK_ACE, ACE_HEADER, ACL,
+    DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, TOKEN_QUERY, TOKEN_USER,
+};
+use windows::Win32::System::SystemServices::{
+    ACCESS_ALLOWED_ACE_TYPE, ACCESS_ALLOWED_CALLBACK_ACE_TYPE, ACCESS_DENIED_ACE_TYPE, ACCESS_DENIED_CALLBACK_ACE_TYPE,
+    ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE, ACCESS_DENIED_OBJECT_ACE_TYPE,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -26,7 +30,6 @@ const TRUSTED_INSTALLER: &str = "S-1-5-80-956008885-3418522649-1831038044-185329
 /// OWNER RIGHTS: stands for the owner, which is checked on its own.
 const OWNER_RIGHTS: &str = "S-1-3-4";
 
-const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
 const INHERIT_ONLY_ACE: u8 = 0x08;
 
 /// Rights that let someone replace what runs: write or append (add a file
@@ -85,27 +88,45 @@ fn read_access(path: &Path) -> Result<(String, Vec<String>), String> {
         if dacl.is_null() {
             return Ok((owner, vec!["S-1-1-0".to_string()]));
         }
-        let mut writers = Vec::new();
-        // SAFETY: `dacl` is a valid ACL inside `sd`; GetAce returns pointers
-        // to entries within it, each starting with its ACE_HEADER.
-        let count = unsafe { (*dacl).AceCount };
-        for i in 0..u32::from(count) {
-            let mut ace: *mut core::ffi::c_void = std::ptr::null_mut();
-            unsafe { GetAce(dacl, i, &mut ace) }.map_err(|e| e.to_string())?;
-            let header = unsafe { &*(ace as *const ACE_HEADER) };
-            if header.AceType != ACCESS_ALLOWED_ACE_TYPE || header.AceFlags & INHERIT_ONLY_ACE != 0 {
-                continue;
-            }
-            let allowed = unsafe { &*(ace as *const ACCESS_ALLOWED_ACE) };
-            if allowed.Mask & REPLACING_RIGHTS != 0 {
-                writers.push(sid_string(PSID(&allowed.SidStart as *const u32 as *mut _))?);
-            }
-        }
-        Ok((owner, writers))
+        // SAFETY: `dacl` points to a valid ACL inside the live descriptor.
+        Ok((owner, unsafe { possible_writers(dacl) }?))
     })();
     // SAFETY: `sd` was allocated by GetNamedSecurityInfoW for the caller to free.
     unsafe { LocalFree(Some(HLOCAL(sd.0))) };
     result
+}
+
+/// `dacl` must point to a valid Windows ACL for this call.
+unsafe fn possible_writers(dacl: *const ACL) -> Result<Vec<String>, String> {
+    let mut writers = Vec::new();
+    let count = unsafe { (*dacl).AceCount };
+    for i in 0..u32::from(count) {
+        let mut ace = std::ptr::null_mut();
+        unsafe { GetAce(dacl, i, &mut ace) }.map_err(|e| e.to_string())?;
+        let header = unsafe { &*ace.cast::<ACE_HEADER>() };
+        if header.AceFlags & INHERIT_ONLY_ACE != 0 {
+            continue;
+        }
+        // Treat a callback allow as a possible grant without trying to
+        // evaluate its condition against another user's security token.
+        let (mask, sid) = match u32::from(header.AceType) {
+            ACCESS_ALLOWED_ACE_TYPE => {
+                let allowed = unsafe { &*ace.cast::<ACCESS_ALLOWED_ACE>() };
+                (allowed.Mask, std::ptr::addr_of!(allowed.SidStart))
+            }
+            ACCESS_ALLOWED_CALLBACK_ACE_TYPE => {
+                let allowed = unsafe { &*ace.cast::<ACCESS_ALLOWED_CALLBACK_ACE>() };
+                (allowed.Mask, std::ptr::addr_of!(allowed.SidStart))
+            }
+            ACCESS_DENIED_ACE_TYPE | ACCESS_DENIED_OBJECT_ACE_TYPE | ACCESS_DENIED_CALLBACK_ACE_TYPE
+            | ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE => continue,
+            other => return Err(format!("unsupported access control entry type {other}")),
+        };
+        if mask & REPLACING_RIGHTS != 0 {
+            writers.push(sid_string(PSID(sid.cast_mut().cast()))?);
+        }
+    }
+    Ok(writers)
 }
 
 fn sid_string(sid: PSID) -> Result<String, String> {
@@ -130,5 +151,34 @@ fn current_user_sid() -> Result<String, String> {
         let _ = CloseHandle(token);
         read.map_err(|e| e.to_string())?;
         sid_string((*(buf.as_ptr() as *const TOKEN_USER)).User.Sid)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::core::BOOL;
+    use windows::Win32::Security::{Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityDescriptorDacl};
+
+    #[test]
+    fn conditional_write_grants_count_as_possible_writers() {
+        // Everyone can write conditionally. The authenticated-users grant
+        // only inherits to children and must not count for this object.
+        let sddl = HSTRING::from(r#"D:(XA;;FW;;;WD;(@User.Title=="PM"))(XA;OICIIO;FW;;;AU;(@User.Title=="PM"))"#);
+        let mut sd = PSECURITY_DESCRIPTOR::default();
+        unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(&sddl, 1, &mut sd, None) }.unwrap();
+        let mut dacl = std::ptr::null_mut();
+        let mut present = BOOL::default();
+        let mut defaulted = BOOL::default();
+        let writers = unsafe {
+            GetSecurityDescriptorDacl(sd, &mut present, &mut dacl, &mut defaulted)
+                .map_err(|e| e.to_string())
+                .and_then(|()| {
+                    assert!(present.as_bool() && !dacl.is_null());
+                    possible_writers(dacl)
+                })
+        };
+        unsafe { LocalFree(Some(HLOCAL(sd.0))) };
+        assert_eq!(writers.unwrap(), ["S-1-1-0"]);
     }
 }

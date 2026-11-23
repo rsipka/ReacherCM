@@ -53,31 +53,34 @@ async fn live_upload_into_a_folder_the_user_cannot_write() {
     }
 }
 
-/// A cancelled upload stops at once and leaves no partial file behind.
+/// Cancellation preserves an untouched destination or lets a write finish.
 #[tokio::test]
 #[ignore = "needs an SSH server"]
-async fn live_cancelled_upload_leaves_nothing() {
+async fn live_cancelled_upload_finishes_an_active_file() {
     let handle = connect().await;
-    let target = "/tmp/reach-161-cancel";
-    let data = vec![7u8; 200 * 1024 * 1024];
+    let target = format!("/tmp/reach-cancel-upload-{}", std::process::id());
+    let data = vec![7u8; 8 * 1024 * 1024];
+    send_bytes(&handle, b"original", &target, &CancellationToken::new(), |_| {}).await.unwrap();
+    let stopped = CancellationToken::new();
+    stopped.cancel();
+    assert!(matches!(send_bytes(&handle, &data, &target, &stopped, |_| {}).await, Err(TransferError::Cancelled)));
+    let (out, _, code) = exec_on_connection_with_exit_code(&handle, &format!("cat {target}")).await.unwrap();
+    assert_eq!((out.as_str(), code), ("original", 0));
+
     let cancel = CancellationToken::new();
-    let stopper = cancel.clone();
-    let started = Instant::now();
-    let result = tokio::time::timeout(
+    tokio::time::timeout(
         Duration::from_secs(60),
-        send_bytes(&handle, &data, target, &cancel, |sent| {
-            if sent >= 4 * 1024 * 1024 {
-                stopper.cancel();
+        send_bytes(&handle, &data, &target, &cancel, |sent| {
+            if sent >= 1024 * 1024 {
+                cancel.cancel();
             }
         }),
     )
     .await
-    .expect("cancel did not stop the upload");
-    println!("cancelled after {:?}: {result:?}", started.elapsed());
-    assert!(matches!(result, Err(TransferError::Cancelled)));
-    let (out, _, _) = exec_on_connection_with_exit_code(&handle, &format!("ls {target} 2>&1; true")).await.unwrap();
-    println!("ls: {}", out.trim());
-    assert!(out.contains("No such file"), "partial file left: {out}");
+    .expect("upload hung after cancellation").unwrap();
+    assert!(cancel.is_cancelled());
+    let (out, _, _) = exec_on_connection_with_exit_code(&handle, &format!("stat -c%s {target}; rm -f {target}")).await.unwrap();
+    assert_eq!(out.trim(), data.len().to_string());
 }
 
 /// The ordinary case still arrives whole.

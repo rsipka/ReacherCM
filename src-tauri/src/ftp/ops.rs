@@ -322,15 +322,15 @@ async fn send_file(
     let mut file = tokio::fs::File::open(local)
         .await
         .map_err(|e| FtpError::Other(format!("Failed to read local file {}: {e}", local.display())))?;
+    // STOR may truncate an existing file. Once started, finish this file
+    // before honoring cancellation at the next file boundary.
+    if cancel.is_cancelled() {
+        return Err(FtpError::Cancelled);
+    }
     let mut s = c.data(&format!("STOR {remote}")).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut sent: u64 = 0;
     loop {
-        if cancel.is_cancelled() {
-            drop(s);
-            c.broken = true;
-            return Err(FtpError::Cancelled);
-        }
         let n = file.read(&mut buf).await.map_err(|e| {
             c.broken = true;
             FtpError::Other(format!("Failed to read local file {}: {e}", local.display()))
@@ -338,22 +338,13 @@ async fn send_file(
         if n == 0 {
             break;
         }
-        let wrote = tokio::select! {
-            _ = cancel.cancelled() => None,
-            r = tokio::time::timeout(DATA_IDLE, s.write_all(&buf[..n])) => Some(r),
-        };
-        match wrote {
-            None => {
-                drop(s);
-                c.broken = true;
-                return Err(FtpError::Cancelled);
-            }
-            Some(Ok(Ok(()))) => {}
-            Some(Ok(Err(e))) => {
+        match tokio::time::timeout(DATA_IDLE, s.write_all(&buf[..n])).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
                 c.broken = true;
                 return Err(FtpError::Io(format!("{remote}: {e}")));
             }
-            Some(Err(_)) => {
+            Err(_) => {
                 c.broken = true;
                 return Err(FtpError::Io(format!("{remote}: the server stopped taking the data")));
             }
@@ -419,8 +410,7 @@ async fn upload_on(
     Ok(())
 }
 
-/// Upload a file, or a folder and all in it. A cancelled file is removed
-/// from the server, as the SFTP upload does.
+/// Upload a file, or a folder and all in it. Cancellation stops between files.
 pub async fn upload(
     conn: &FtpConn,
     local: &str,
@@ -428,11 +418,7 @@ pub async fn upload(
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<(), FtpError> {
-    let result = with_client!(conn, |c| upload_on(c, local, remote, cancel, progress));
-    if matches!(result, Err(FtpError::Cancelled)) && !Path::new(local).is_dir() {
-        let _ = with_client!(conn, |c| async { c.cmd(&format!("DELE {remote}")).await.map(|_| ()) });
-    }
-    result
+    with_client!(conn, |c| upload_on(c, local, remote, cancel, progress))
 }
 
 #[cfg(test)]

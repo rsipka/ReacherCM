@@ -9,7 +9,7 @@
 //! changes: chunks come back in file order, so a download writes straight
 //! through and a drag can stream; a read that returns less than was asked
 //! (which the protocol allows, and some servers do) fetches the rest instead
-//! of leaving a hole of zeros in the file; and a transfer can be cancelled.
+//! of leaving a hole of zeros in the file; and downloads can be cancelled.
 
 use std::collections::VecDeque;
 
@@ -170,7 +170,6 @@ async fn read_open(
 pub(crate) async fn write_file(
     proto: &SftpProtocol,
     path: &str,
-    cancel: &CancellationToken,
     mut next_chunk: impl FnMut(usize) -> Result<Option<Vec<u8>>, TransferError>,
     mut progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
@@ -184,7 +183,7 @@ pub(crate) async fn write_file(
         .await
         .map_err(|e| failure(path, e))?
         .handle;
-    let result = write_open(proto, path, &handle, cancel, &mut next_chunk, &mut progress).await;
+    let result = write_open(proto, path, &handle, &mut next_chunk, &mut progress).await;
     // Some servers only report a failed write (a full disk) when the file
     // is closed, so a close that fails fails the write.
     let closed = proto.session.close(handle).await;
@@ -199,7 +198,6 @@ async fn write_open(
     proto: &SftpProtocol,
     path: &str,
     handle: &str,
-    cancel: &CancellationToken,
     next_chunk: &mut impl FnMut(usize) -> Result<Option<Vec<u8>>, TransferError>,
     progress: &mut impl FnMut(u64),
 ) -> Result<u64, TransferError> {
@@ -234,18 +232,10 @@ async fn write_open(
                 }
             }
         }
-        let Some((len, mut task)) = queue.pop_front() else {
+        let Some((len, task)) = queue.pop_front() else {
             break Ok(done);
         };
-        let written = tokio::select! {
-            biased;
-            _ = cancel.cancelled() => {
-                task.abort();
-                break Err(TransferError::Cancelled);
-            }
-            r = &mut task => r,
-        };
-        match written {
+        match task.await {
             Ok(Ok(())) => {
                 done += len;
                 progress(done);
@@ -401,7 +391,7 @@ mod tests {
             Ok((!now.is_empty()).then(|| now.to_vec()))
         };
         let mut reported = 0;
-        let n = write_file(&proto, "/f", &CancellationToken::new(), next, |d| reported = d).await.unwrap();
+        let n = write_file(&proto, "/f", next, |d| reported = d).await.unwrap();
         assert_eq!(n, content.len() as u64);
         assert_eq!(reported, n);
         assert_eq!(*stored.lock().unwrap(), content);

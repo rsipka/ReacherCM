@@ -800,6 +800,7 @@
 			{#if queueOpen}
 				<div class="queue-list">
 					{#each queue as job (job.id)}
+						{@const cancelLabel = t(job.status === 'running' && job.from === 'local' ? 'files.stop_upload' : 'common.cancel')}
 						<div class="job {job.status}">
 							<span class="tr-dir" title={job.from === 'local' ? t('files.upload') : t('files.download')}>{job.from === 'local' ? '↑' : '↓'}</span>
 							<span class="tr-name" title={`${job.entry.path} → ${job.toDir}`}>{job.entry.name}{#if job.move}<span class="job-move"> · {t('files.move')}</span>{/if}</span>
@@ -810,7 +811,7 @@
 							{/if}
 							<span class="job-actions">
 								{#if job.status === 'queued' || job.status === 'running'}
-									<button class="ib small" type="button" tabindex="-1" onclick={() => cancelJob(job.id)} title={t('common.cancel')} aria-label={t('common.cancel')}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
+									<button class="ib small" type="button" tabindex="-1" onclick={() => cancelJob(job.id)} title={cancelLabel} aria-label={cancelLabel}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
 								{:else}
 									{#if job.status !== 'done'}
 										<button class="ib small" type="button" tabindex="-1" onclick={() => retryJob(job.id)} title={t('files.retry')} aria-label={t('files.retry')}>{@render icon('M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5', 12)}</button>

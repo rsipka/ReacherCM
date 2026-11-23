@@ -1095,12 +1095,13 @@
 								<span class="transfer-filename">{transfer.filename}</span>
 								<span class="transfer-progress-text">{formatTransferProgress(transfer)}</span>
 								{#if transfer.cancel}
+									{@const cancelLabel = t(transfer.status === 'uploading' ? 'files.stop_upload' : 'explorer.archive_cancel')}
 									<button
 										class="transfer-cancel"
 										onclick={() => transfer.cancel?.()}
 										type="button"
-										title={t('explorer.archive_cancel')}
-										aria-label={t('explorer.archive_cancel')}
+										title={cancelLabel}
+										aria-label={cancelLabel}
 									>
 										<svg width="12" height="12" viewBox="0 0 24 24" fill="none">
 											<line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
