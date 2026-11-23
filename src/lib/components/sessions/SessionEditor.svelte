@@ -1742,7 +1742,7 @@
 			</div>
 		{/if}
 
-		{#if kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox'}
+		{#if opensTerminal}
 			<Disclosure title={t('termtheme.session_title')} summary={colorsSummary} bind:open={colorsOpen}>
 				<TerminalThemeList
 					selected={terminalTheme}
