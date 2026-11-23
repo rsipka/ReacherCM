@@ -263,6 +263,7 @@
   "zmodem.download_folder": "下载此文件夹（ZMODEM）…",
   "zmodem.download_folder_hint": "下载当前文件夹：对其中每个文件运行 sz，保留子文件夹",
   "zmodem.no_sz": "远端未启动 sz。远端是否安装了 lrzsz？",
+  "zmodem.multiplexer": "rz/sz 无法穿过 tmux 或 screen，已被停止。请使用终端栏上的发送和下载按钮（在 tmux 标签页中可用），或在 tmux 之外运行。",
   "terminal.reconnect": "重新连接",
   "hostkey.unknown_title": "验证主机密钥",
   "hostkey.changed_title": "主机密钥已更改",

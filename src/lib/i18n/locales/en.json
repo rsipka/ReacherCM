@@ -263,6 +263,7 @@
   "zmodem.download_folder": "Download this folder (ZMODEM)…",
   "zmodem.download_folder_hint": "Download the current folder: runs sz on every file under it, folders kept",
   "zmodem.no_sz": "sz did not start on the other end. Is lrzsz installed there?",
+  "zmodem.multiplexer": "rz/sz cannot pass through tmux or screen, so it was stopped. Use the Send and Download buttons on the terminal bar, which work in tmux tabs, or run it outside tmux.",
   "terminal.reconnect": "Reconnect",
   "hostkey.unknown_title": "Verify host key",
   "hostkey.changed_title": "Host key changed",

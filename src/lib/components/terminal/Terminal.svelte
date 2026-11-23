@@ -1814,6 +1814,7 @@
 		<ZmodemBar
 			connectionId={currentConnectionId}
 			tabId={ptyId}
+			tmux={termType === 'ssh' ? (sshConnectParams?.tmux ?? null) : null}
 			send={(data) => {
 				if (!currentConnectionId || disconnected) return false;
 				sendData(data);

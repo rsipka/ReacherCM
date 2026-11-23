@@ -1028,3 +1028,37 @@ mod auth_choice_tests {
         assert!(build_auth("key", None, key(), None, true).unwrap().allow_agent);
     }
 }
+
+/// Run `rz` (kind `receive`) or a folder's `sz -f` (`send-folder`) on a
+/// channel of its own, for a tab where the terminal cannot carry ZMODEM
+/// (tmux). With `tmux_name` it runs in the folder that tmux pane is in.
+/// Returns the id its `zmodem-{id}` events and answers use.
+#[tauri::command]
+pub async fn ssh_zmodem_exec(
+    state: tauri::State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    connection_id: String,
+    kind: crate::zmodem::ssh_exec::ExecKind,
+    tmux_name: Option<String>,
+    tmux_view: Option<String>,
+) -> Result<String, String> {
+    use crate::zmodem::ssh_exec::{self, ExecKind};
+    let target = match (tmux_name.as_deref(), tmux_view.as_deref()) {
+        (Some(name), Some(view)) if !view.is_empty() => Some(crate::ssh::tmux::view_name(name, view)?),
+        (Some(name), _) if crate::ssh::tmux::valid_name(name) => Some(name.to_string()),
+        (Some(name), _) => return Err(format!("'{name}' is not a tmux session this app uses")),
+        (None, _) => None,
+    };
+    let handle = {
+        let manager = state.ssh_manager.lock().await;
+        manager.get_handle(&connection_id).map_err(|e| e.to_string())?
+    };
+    let id = format!("{connection_id}-zx");
+    let direction = match kind {
+        ExecKind::Receive => crate::zmodem::Direction::Upload,
+        ExecKind::SendFolder => crate::zmodem::Direction::Download,
+    };
+    let command = ssh_exec::command(kind, target.as_deref());
+    tauri::async_runtime::spawn(ssh_exec::run(app_handle, handle, id.clone(), direction, command));
+    Ok(id)
+}

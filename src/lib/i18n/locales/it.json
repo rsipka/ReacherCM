@@ -263,6 +263,7 @@
   "zmodem.download_folder": "Scarica questa cartella (ZMODEM)…",
   "zmodem.download_folder_hint": "Scarica la cartella corrente: esegue sz su ogni file, mantenendo le sottocartelle",
   "zmodem.no_sz": "sz non si è avviato sul remoto. lrzsz è installato?",
+  "zmodem.multiplexer": "rz/sz non può passare attraverso tmux o screen, quindi è stato fermato. Usa i pulsanti Invia e Scarica nella barra del terminale, che funzionano nelle schede tmux, oppure eseguilo fuori da tmux.",
   "terminal.reconnect": "Riconnetti",
   "hostkey.unknown_title": "Verifica chiave host",
   "hostkey.changed_title": "Chiave host cambiata",

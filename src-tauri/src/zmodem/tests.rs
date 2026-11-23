@@ -329,3 +329,24 @@ fn nothing_of_the_protocol_shows() {
         }
     }
 }
+
+/// Under tmux the header arrives drawn as text: sz or rz is stopped (it
+/// would wait for minutes) and the terminal is told why.
+#[test]
+fn a_header_drawn_by_tmux_stops_the_program() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let sink = events.clone();
+    let mut tap = Tap::new("tmux-drawn", WINDOW_NETWORK, Box::new(move |e| sink.lock().unwrap().push(e)));
+    // As tmux 3.4 sends it, cut in two.
+    let a = tap.input(b"\x1b[1;3Hsz a.txt\r\n**B000000");
+    let b = tap.input(b"00000000\r");
+    assert_eq!([a.display, b.display].concat(), b"\x1b[1;3Hsz a.txt\r\n**B00000000000000\r");
+    assert!(a.wire.is_empty());
+    assert_eq!(b.wire, CANCEL);
+    assert!(!tap.busy());
+    assert_eq!(*events.lock().unwrap(), vec![ZmodemEvent::Unsupported { direction: Direction::Download }]);
+    let c = tap.input(b"rz waiting to receive.**B0100000023be50\r");
+    assert_eq!(c.wire, CANCEL);
+    // Ordinary text that only looks a bit like it does nothing.
+    assert!(tap.input(b"**B0 is not a header\r\n").wire.is_empty());
+}

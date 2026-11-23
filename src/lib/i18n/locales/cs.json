@@ -263,6 +263,7 @@
   "zmodem.download_folder": "Stáhnout tuto složku (ZMODEM)…",
   "zmodem.download_folder_hint": "Stáhnout aktuální složku: spustí sz na všechny soubory v ní, i s podsložkami",
   "zmodem.no_sz": "Na druhé straně se sz nespustil. Je tam nainstalovaný lrzsz?",
+  "zmodem.multiplexer": "rz/sz neprojde přes tmux ani screen, proto byl zastaven. Použijte tlačítka Odeslat a Stáhnout na liště terminálu, která v tmux kartách fungují, nebo ho spusťte mimo tmux.",
   "terminal.reconnect": "Znovu připojit",
   "hostkey.unknown_title": "Ověřit klíč hostitele",
   "hostkey.changed_title": "Klíč hostitele se změnil",

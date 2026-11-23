@@ -263,6 +263,7 @@
   "zmodem.download_folder": "Diesen Ordner herunterladen (ZMODEM)…",
   "zmodem.download_folder_hint": "Aktuellen Ordner herunterladen: führt sz für jede Datei darin aus, Unterordner bleiben erhalten",
   "zmodem.no_sz": "sz ist auf der Gegenseite nicht gestartet. Ist dort lrzsz installiert?",
+  "zmodem.multiplexer": "rz/sz kann nicht durch tmux oder screen laufen und wurde daher gestoppt. Nutzen Sie die Senden- und Herunterladen-Schaltflächen in der Terminalleiste, die in tmux-Tabs funktionieren, oder starten Sie es außerhalb von tmux.",
   "terminal.reconnect": "Neu verbinden",
   "hostkey.unknown_title": "Hostschlüssel überprüfen",
   "hostkey.changed_title": "Hostschlüssel geändert",
