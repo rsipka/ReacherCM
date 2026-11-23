@@ -433,6 +433,7 @@ pub async fn saved_credential_create(
     domain: Option<String>,
     mut auth_method: AuthMethod,
     vault_id: Option<String>,
+    folder_id: Option<String>,
 ) -> Result<SavedCredential, String> {
     check(&name, &username, &mut auth_method)?;
     let mut manager = state.vault_manager.lock().await;
@@ -453,8 +454,9 @@ pub async fn saved_credential_create(
         username: username.trim().to_string(),
         domain: domain.filter(|d| !d.trim().is_empty()),
         auth_method,
-        vault_id,
+        vault_id: vault_id.clone(),
         password_history: None,
+        folder_id: crate::ipc::credential_folder_commands::folder_to_keep(&manager, folder_id, vault_id.as_deref()).await,
     };
     let json = serde_json::to_vec(&cred).map_err(|e| e.to_string())?;
     manager
@@ -494,12 +496,15 @@ pub async fn saved_credential_update(
         pwh::limit(&manager).await,
         pwh::now(),
     );
+    let vault_id = vault_of(&manager, &vault);
+    let folder_id = crate::ipc::credential_folder_commands::folder_to_keep(&manager, credential.folder_id.take(), vault_id.as_deref()).await;
     let mut cred = SavedCredential {
         name: credential.name.trim().to_string(),
         username: credential.username.trim().to_string(),
         domain: credential.domain.filter(|d| !d.trim().is_empty()),
-        vault_id: vault_of(&manager, &vault),
+        vault_id,
         password_history,
+        folder_id,
         ..credential
     };
     let json = serde_json::to_vec(&cred).map_err(|e| e.to_string())?;
@@ -881,6 +886,7 @@ mod tests {
             auth_method: AuthMethod::Password { password: Some(format!("{user}-pw")), password_ref: None },
             vault_id: vault.map(Into::into),
             password_history: None,
+            folder_id: None,
         }
     }
 
