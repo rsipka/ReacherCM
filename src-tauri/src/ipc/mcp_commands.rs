@@ -546,10 +546,6 @@ async fn type_into_session(app: tauri::AppHandle, req: SendRequest) -> Result<()
         req.agent_name, req.command
     );
 
-    let state = app
-        .try_state::<AppState>()
-        .ok_or_else(|| "Reacher CM is still starting up".to_string())?;
-
     // The newline is added here rather than asked of the caller: the tool
     // contract says "do not include one", and a model that forgets would leave
     // a half-typed line sitting at the prompt with no way to notice.
@@ -558,8 +554,10 @@ async fn type_into_session(app: tauri::AppHandle, req: SendRequest) -> Result<()
 
     match req.kind {
         SessionKind::Ssh => {
-            let _ = app.emit(&format!("ssh-data-{}", req.session_id), banner);
+            let state = app.try_state::<AppState>().ok_or("Reacher CM is still starting up")?;
             let manager = state.ssh_manager.lock().await;
+            req.check_revocation()?;
+            let _ = app.emit(&format!("ssh-data-{}", req.session_id), banner);
             manager
                 .send_data(&req.session_id, &bytes)
                 .map_err(|e| e.to_string())
@@ -567,14 +565,13 @@ async fn type_into_session(app: tauri::AppHandle, req: SendRequest) -> Result<()
         SessionKind::Local => {
             #[cfg(desktop)]
             {
-                let _ = app.emit(&format!("pty-data-{}", req.session_id), banner);
-                let mut manager = state
-                    .pty_manager
-                    .lock()
-                    .map_err(|_| "PTY manager is locked".to_string())?;
-                manager
-                    .write(&req.session_id, &bytes)
-                    .map_err(|e| e.to_string())
+                tokio::task::spawn_blocking(move || {
+                    let state = app.try_state::<AppState>().ok_or("Reacher CM is still starting up")?;
+                    let mut manager = state.pty_manager.lock().map_err(|_| "PTY manager is locked")?;
+                    req.check_revocation()?;
+                    let _ = app.emit(&format!("pty-data-{}", req.session_id), banner);
+                    manager.write(&req.session_id, &bytes).map_err(|e| e.to_string())
+                }).await.map_err(|e| e.to_string())?
             }
             #[cfg(not(desktop))]
             {

@@ -14,6 +14,8 @@ interface Progress {
 	percent: number;
 }
 
+type TransferResult = 'done' | 'cancelled' | { error: string };
+
 export interface TransferRun {
 	kind: 'uploading' | 'downloading';
 	/** The connection it runs on: its row shows only there. */
@@ -47,8 +49,8 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 	const visible = run.visible ?? true;
 	let cancelled = false;
 
-	let settle!: (error?: string) => void;
-	const ended = new Promise<string | undefined>((resolve) => (settle = resolve));
+	let settle!: (result: TransferResult) => void;
+	const ended = new Promise<TransferResult>((resolve) => (settle = resolve));
 
 	const unlisten: UnlistenFn[] = await Promise.all([
 		listen<Progress>(`transfer-progress-${id}`, (event) => {
@@ -56,9 +58,10 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 			const p = event.payload;
 			updateTransferProgress(id, p.bytesTransferred, p.totalBytes, p.percent);
 		}),
-		listen(`transfer-complete-${id}`, () => settle()),
+		listen(`transfer-complete-${id}`, () => settle('done')),
+		listen(`transfer-cancelled-${id}`, () => settle('cancelled')),
 		listen<string>(`transfer-error-${id}`, (event) => {
-			settle(typeof event.payload === 'string' ? event.payload : 'Transfer failed');
+			settle({ error: typeof event.payload === 'string' ? event.payload : 'Transfer failed' });
 		})
 	]);
 
@@ -77,16 +80,17 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 		try {
 			await run.start(id);
 		} catch (err) {
-			settle(String(err));
+			settle({ error: String(err) });
 		}
-		const error = await ended;
-		if (cancelled) {
+		const result = await ended;
+		if (typeof result === 'object') {
+			if (visible) failTransfer(id, result.error);
+			throw new Error(result.error);
+		}
+		// A stopped move must keep its source even if its last write finished.
+		if (result === 'cancelled' || cancelled) {
 			if (visible) removeTransfer(id);
 			return false;
-		}
-		if (error !== undefined) {
-			if (visible) failTransfer(id, error);
-			throw new Error(error);
 		}
 		if (visible) completeTransfer(id);
 		return true;

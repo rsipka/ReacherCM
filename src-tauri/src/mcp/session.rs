@@ -46,7 +46,7 @@ pub enum SessionKind {
 #[derive(Debug)]
 pub struct SharedSession {
     /// An approval belongs to one share, even if the same terminal is shared again.
-    pub(crate) share_id: uuid::Uuid,
+    pub(crate) revoked: tokio_util::sync::CancellationToken,
     pub id: String,
     pub kind: SessionKind,
     pub host: String,
@@ -78,10 +78,16 @@ pub struct SharedSession {
     pub mode: Option<crate::mcp::state::Mode>,
 }
 
+impl Drop for SharedSession {
+    fn drop(&mut self) {
+        self.revoked.cancel();
+    }
+}
+
 impl SharedSession {
     pub fn new(id: String, kind: SessionKind, host: String, username: String) -> Self {
         Self {
-            share_id: uuid::Uuid::new_v4(),
+            revoked: tokio_util::sync::CancellationToken::new(),
             id,
             kind,
             host,

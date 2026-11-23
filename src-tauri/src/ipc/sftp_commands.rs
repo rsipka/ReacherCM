@@ -11,6 +11,15 @@ fn ftp_conn(state: &AppState, connection_id: &str) -> Option<std::sync::Arc<crat
     state.ftp_manager.get(connection_id)
 }
 
+fn emit_transfer_error(app: &tauri::AppHandle, id: &str, error: impl std::fmt::Display, cancelled: bool) {
+    if cancelled {
+        let _ = app.emit(&format!("transfer-cancelled-{id}"), ());
+    } else {
+        tracing::error!("Transfer {id} failed: {error}");
+        let _ = app.emit(&format!("transfer-error-{id}"), error.to_string());
+    }
+}
+
 /// List the contents of a remote directory.
 #[tauri::command]
 pub async fn sftp_list_dir(
@@ -77,8 +86,7 @@ pub fn cancel_transfers_on(state: &AppState, connection_id: &str) {
     }
 }
 
-/// Stop one upload or download. The partial file is removed: on the server
-/// for an upload, on this machine for a download.
+/// Stop a download or stop an upload at the next file boundary.
 #[tauri::command]
 pub async fn sftp_transfer_cancel(
     state: tauri::State<'_, AppState>,
@@ -120,8 +128,7 @@ pub async fn sftp_upload(
                 map.remove(&tid);
             }
             if let Err(e) = result {
-                tracing::error!("FTP upload failed for {}: {}", tid, e);
-                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::ftp::FtpError::Cancelled));
             }
         });
         return Ok(transfer_id);
@@ -146,8 +153,7 @@ pub async fn sftp_upload(
             map.remove(&tid);
         }
         if let Err(e) = result {
-            tracing::error!("Upload failed for {}: {}", tid, e);
-            let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            emit_transfer_error(&app, &tid, &e, matches!(e, crate::sftp::transfer::TransferError::Cancelled));
         } else {
             let hook = hooks::sftp_upload_complete(&conn_id, &rpath);
             let mut mgr = plugin_mgr.lock().await;
@@ -185,8 +191,7 @@ pub(crate) async fn sftp_download(
                 map.remove(&tid);
             }
             if let Err(e) = result {
-                tracing::error!("FTP download failed for {}: {}", tid, e);
-                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::ftp::FtpError::Cancelled));
             }
         });
         return Ok(transfer_id);
@@ -212,8 +217,7 @@ pub(crate) async fn sftp_download(
             map.remove(&tid);
         }
         if let Err(e) = result {
-            tracing::error!("Download failed for {}: {}", tid, e);
-            let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            emit_transfer_error(&app, &tid, &e, matches!(e, crate::sftp::transfer::TransferError::Cancelled));
         } else {
             let hook = hooks::sftp_download_complete(&conn_id, &rpath, &lpath.to_string_lossy());
             let mut mgr = plugin_mgr.lock().await;
