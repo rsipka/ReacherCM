@@ -97,3 +97,13 @@ async fn names_and_addresses_resolve() {
     assert_eq!(super::resolve("[::1]").await.unwrap(), vec!["::1".parse::<IpAddr>().unwrap()]);
     assert!(super::resolve("  ").await.is_err());
 }
+
+#[test]
+fn icmp_reaches_this_machine_where_allowed() {
+    // CI machines may forbid ICMP sockets; then the caller falls back to TCP.
+    match super::icmp::echo(IpAddr::V4(Ipv4Addr::LOCALHOST), Duration::from_secs(2), 1) {
+        Ok(reply) => assert!(reply.is_some(), "no echo reply from 127.0.0.1"),
+        Err(super::icmp::IcmpError::Unavailable(why)) => eprintln!("ICMP not available here: {why}"),
+        Err(e) => panic!("{e}"),
+    }
+}
