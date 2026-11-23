@@ -873,6 +873,7 @@ pub async fn session_create(
         credential_ref_approvals: Default::default(),
         // Trusted by connecting to it, never by what a form sends.
         host_keys: None,
+        host_keys_removed: None,
         host_label,
         alt_addresses,
         connect_mode,
@@ -1024,6 +1025,7 @@ async fn prepare_update(
     // The trusted host keys are the stored ones: a connect may have saved
     // one while the editor was open, and the editor never changes them.
     session.host_keys = stored.as_ref().and_then(|s| s.host_keys.clone());
+    session.host_keys_removed = stored.as_ref().and_then(|s| s.host_keys_removed.clone());
     // The certificates a web session trusts likewise: answering the prompt
     // adds them, `web_session_cert_*` changes them, the editor never does.
     if let Some(w) = session.web.as_mut() {

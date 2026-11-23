@@ -68,7 +68,7 @@
 	import { winboxLaunch } from '#lib/ipc/winbox.js';
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
-	import { addressName, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
+	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
 	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView } from '#lib/state/tabs.svelte.js';
@@ -1017,6 +1017,7 @@
 		e.stopPropagation();
 		sheetMenu = isMobile() && window.innerWidth < SHEET_MAX_WIDTH;
 		contextMenu = { x: e.clientX, y: e.clientY, session };
+		sessionMenuPage = 'main';
 	}
 
 	function openBackgroundContextMenu(e: MouseEvent): void {
@@ -1027,6 +1028,15 @@
 
 	/** Which list a folder's menu shows: the main one, or one of its choices. */
 	let folderMenuPage = $state<'main' | 'move' | 'login' | 'tmux'>('main');
+	/** Which list a session's menu shows: the main one, or Connect to (an
+	 *  address and a login for one connect). */
+	let sessionMenuPage = $state<'main' | 'connect'>('main');
+	/** Connect to's choices: an address index (null: as the session says)
+	 *  and a saved credential id (null: the session's own login). */
+	let menuAddress = $state<number | null>(null);
+	let menuCredential = $state<string | null>(null);
+	/** Connect to's choice to leave tmux out this once. */
+	let menuNoTmux = $state(false);
 
 	function openFolderContextMenu(e: MouseEvent, folder: Folder): void {
 		e.preventDefault();
@@ -1047,6 +1057,7 @@
 	function closeContextMenu(): void {
 		contextMenu = undefined;
 		folderMenuPage = 'main';
+		sessionMenuPage = 'main';
 	}
 
 	async function moveToFolder(session: SessionConfig, folderId: string | null): Promise<void> {
@@ -1546,9 +1557,33 @@
 		if (routeRefs && c.username !== s.username) return t('session.connect_with_route');
 		return undefined;
 	}
-	function connectWith(session: SessionConfig, c: SavedCredential): void {
+	/** Whether the menu offers Connect to: another address, or another login. */
+	function hasConnectChoices(s: SessionConfig): boolean {
+		return hasAltAddresses(s) || (takesCredential(s) && connectWithChoices(s).length > 0);
+	}
+	function openConnectPage(s: SessionConfig): void {
+		// Start from what a plain Connect would do: Auto, else the address
+		// that worked last, else the main one; and the session's own login.
+		const list = sessionAddresses(s);
+		const last = lastAddress(s.id);
+		menuAddress = connectMode(s) === 'auto' ? null : (list.find((a) => last && addressKey(a) === last)?.index ?? 0);
+		menuCredential = null;
+		menuNoTmux = false;
+		sessionMenuPage = 'connect';
+	}
+	/** Connect to's Connect: the picked address with the picked login. */
+	function connectChosen(session: SessionConfig): void {
+		const address = menuAddress === null ? undefined : sessionAddresses(session).find((a) => a.index === menuAddress);
+		const c = menuCredential ? savedCredentials.find((x) => x.id === menuCredential) : undefined;
+		const noTmux = menuNoTmux;
 		closeContextMenu();
-		void handleConnect(withCredential(session, c));
+		const s = c ? withCredential(session, c) : session;
+		void handleConnect(noTmux ? withoutTmux(s) : s, address);
+	}
+	/** A session as one connect sees it with tmux left out: a plain shell,
+	 *  this once. Never saved (like a container's shell). */
+	function withoutTmux<T extends SessionConfig>(s: T): T {
+		return { ...s, tmux: { mode: 'off' } };
 	}
 
 	function hasRefs(s: SessionConfig): boolean {
@@ -2586,7 +2621,56 @@
 			{#if sheetMenu && (contextMenu.session || contextMenu.folder)}
 				<div class="context-sheet-title">{contextMenu.session ? (selected.has(contextMenu.session.id) && selected.size > 1 ? t('session.selected_n', { count: String(selected.size) }) : contextMenu.session.name) : contextMenu.folder?.name}</div>
 			{/if}
-			{#if contextMenu.session}
+			{#if contextMenu.session && sessionMenuPage === 'connect'}
+				{@const menuSession = contextMenu.session}
+				{@const linked = menuSession.credential && !menuSession.credential.missing ? menuSession.credential.id : null}
+				<button class="context-item context-back" onclick={() => (sessionMenuPage = 'main')} type="button">
+					<FaIcon icon={faChevronLeft} size={9} />
+					<span>{t('session.connect_to_menu')}</span>
+				</button>
+				<div class="context-sep"></div>
+				<div class="context-folders context-folders-tall" role="group">
+					{#if hasAltAddresses(menuSession)}
+						<div class="context-label">{t('session.connect_address')}</div>
+						{#if connectMode(menuSession) === 'auto'}
+							<button class="context-item context-via" class:context-current={menuAddress === null} role="menuitemradio" aria-checked={menuAddress === null} onclick={() => (menuAddress = null)} type="button">
+								{t('session.connect_mode_auto')}
+							</button>
+						{/if}
+						{#each sessionAddresses(menuSession) as addr (addr.index)}
+							<button class="context-item context-via" class:context-current={menuAddress === addr.index} role="menuitemradio" aria-checked={menuAddress === addr.index} onclick={() => (menuAddress = addr.index)} type="button">
+								{addressName(addr, menuSession.port)}
+								{#if addr.label}<span class="context-hint">{addressText(addr, menuSession.port)}</span>{/if}
+							</button>
+						{/each}
+					{/if}
+					{#if takesCredential(menuSession) && connectWithChoices(menuSession).length > 0}
+						<div class="context-label" title={t('session.connect_with_hint')}>{t('session.connect_login')}</div>
+						<button class="context-item context-via" class:context-current={menuCredential === null} role="menuitemradio" aria-checked={menuCredential === null} onclick={() => (menuCredential = null)} type="button">
+							{t('session.connect_login_own')}
+							{#if menuSession.username}<span class="context-hint">{menuSession.domain?.trim() ? `${menuSession.domain}\\` : ''}{menuSession.username}</span>{/if}
+						</button>
+						{#each connectWithChoices(menuSession).filter((c) => c.id !== linked) as c (c.id)}
+							{@const blocked = connectWithBlocked(menuSession, c)}
+							<button class="context-item context-via" class:context-current={menuCredential === c.id} role="menuitemradio" aria-checked={menuCredential === c.id} disabled={!!blocked} title={blocked ?? t('session.connect_with_hint')} onclick={() => (menuCredential = c.id)} type="button">
+								{c.name}
+								<span class="context-hint">{c.domain?.trim() ? `${c.domain}\\` : ''}{c.username}</span>
+							</button>
+						{/each}
+					{/if}
+					{#if tmuxFor(menuSession, folders)}
+						<div class="context-label">tmux</div>
+						<button class="context-item context-via" class:context-current={menuNoTmux} role="menuitemcheckbox" aria-checked={menuNoTmux} onclick={() => (menuNoTmux = !menuNoTmux)} type="button">
+							{t('session.connect_without_tmux')}
+							<span class="context-hint">{menuNoTmux ? '✓' : ''}</span>
+						</button>
+					{/if}
+				</div>
+				<div class="context-sep"></div>
+				<button class="context-item context-go" onclick={() => connectChosen(menuSession)} type="button">
+					{t('session.connect')}
+				</button>
+			{:else if contextMenu.session}
 				<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(contextMenu.session); closeContextMenu(); }} type="button">
 					{t('session.connect')}
 				</button>
@@ -2595,33 +2679,19 @@
 						{t('session.open_file_manager')}
 					</button>
 				{/if}
-				{#if hasAltAddresses(contextMenu.session)}
-					{@const menuSession = contextMenu.session}
-					<div class="context-label">{t('session.connect_via')}</div>
-					{#each sessionAddresses(menuSession) as addr (addr.index)}
-						<button class="context-item context-via" onclick={() => { handleConnect(menuSession, addr); closeContextMenu(); }} type="button">
-							{addressName(addr, menuSession.port)}
-							{#if addr.label}<span class="context-hint">{addr.host}{addr.port !== menuSession.port ? `:${addr.port}` : ''}</span>{/if}
-						</button>
-					{/each}
-					<div class="context-sep"></div>
+				{#if tmuxFor(contextMenu.session, folders)}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(withoutTmux(contextMenu.session)); closeContextMenu(); }} type="button">
+						{t('session.connect_no_tmux')}
+					</button>
 				{/if}
-				{#if takesCredential(contextMenu.session) && connectWithChoices(contextMenu.session).length > 0}
+				{#if hasConnectChoices(contextMenu.session)}
 					{@const menuSession = contextMenu.session}
-					{@const linked = menuSession.credential && !menuSession.credential.missing ? menuSession.credential.id : null}
-					<div class="context-label" title={t('session.connect_with_hint')}>{t('session.connect_with')}</div>
-					<!-- Scrollable like the folders below: a vault can hold many. -->
-					<div class="context-folders">
-						{#each connectWithChoices(menuSession) as c (c.id)}
-							{@const blocked = connectWithBlocked(menuSession, c)}
-							<button class="context-item context-via" class:context-current={linked === c.id} disabled={!!blocked} title={blocked ?? t('session.connect_with_hint')} onclick={() => connectWith(menuSession, c)} type="button">
-								{c.name}
-								<span class="context-hint">{c.domain?.trim() ? `${c.domain}\\` : ''}{c.username}</span>
-							</button>
-						{/each}
-					</div>
-					<div class="context-sep"></div>
+					<button class="context-item context-sub" title={t('session.connect_to_hint')} onclick={() => openConnectPage(menuSession)} type="button">
+						<span>{t('session.connect_to_menu')}</span>
+						<FaIcon icon={faChevronRight} size={9} />
+					</button>
 				{/if}
+				<div class="context-sep"></div>
 				{#if selected.has(contextMenu.session.id) && selected.size > 1}
 					<button class="context-item" onclick={openBulkEdit} type="button">
 						{t('bulk.edit_n', { count: String(selected.size) })}
@@ -3542,6 +3612,16 @@
 
 	.context-back {
 		font-weight: 600;
+	}
+
+	.context-item.context-go,
+	.context-item.context-via.context-current {
+		font-weight: 600;
+		color: var(--color-accent);
+	}
+
+	.context-go {
+		justify-content: center;
 	}
 
 	.context-kbd {
