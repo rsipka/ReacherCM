@@ -32,6 +32,7 @@
 	import { getActivePage } from '#lib/state/navigation.svelte.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
 	import { sshListConnections } from '#lib/ipc/ssh.js';
+	import { syncTrayVisibility } from '#lib/state/tray.svelte.js';
 	import AIPanel from '#lib/components/ai/AIPanel.svelte';
 
 	const updater = getUpdaterState();
@@ -166,6 +167,7 @@
 				event.preventDefault(); // hold synchronously; we decide what to do
 				if (getSettings().minimizeToTray) {
 					await getCurrentWindow().hide(); // minimize to tray, not a termination
+					syncTrayVisibility();
 					return;
 				}
 				await requestExit('window');

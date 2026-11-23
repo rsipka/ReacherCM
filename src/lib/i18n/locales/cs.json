@@ -4033,5 +4033,17 @@
   "capture.saved": "Snímek uložen: {{path}}",
   "capture.failed": "Snímek se nepodařilo pořídit: {{error}}",
   "capture.failed_empty": "Obrázek je prázdný.",
-  "capture.unavailable": "Zatím tu není co vyfotit."
+  "capture.unavailable": "Zatím tu není co vyfotit.",
+  "tray.show": "Zobrazit okno",
+  "tray.hide": "Skrýt okno",
+  "tray.favorites": "Oblíbené",
+  "tray.recent": "Nedávné",
+  "tray.local_terminal": "Nový místní terminál",
+  "tray.quick_connect": "Rychlé připojení…",
+  "tray.lock": "Zamknout trezor",
+  "tray.settings": "Nastavení…",
+  "tray.quit": "Ukončit",
+  "tray.status_none": "Žádné otevřené karty",
+  "tray.status_locked": "Zamčeno",
+  "tray.status_tabs": "Otevřené karty: {{open}}, připojené: {{connected}}"
 }

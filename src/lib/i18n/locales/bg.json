@@ -4033,5 +4033,17 @@
   "capture.saved": "Снимката е запазена: {{path}}",
   "capture.failed": "Снимката не можа да се направи: {{error}}",
   "capture.failed_empty": "Изображението е празно.",
-  "capture.unavailable": "Все още няма какво да се снима."
+  "capture.unavailable": "Все още няма какво да се снима.",
+  "tray.show": "Покажи прозореца",
+  "tray.hide": "Скрий прозореца",
+  "tray.favorites": "Любими",
+  "tray.recent": "Скорошни",
+  "tray.local_terminal": "Нов локален терминал",
+  "tray.quick_connect": "Бързо свързване…",
+  "tray.lock": "Заключване на трезора",
+  "tray.settings": "Настройки…",
+  "tray.quit": "Изход",
+  "tray.status_none": "Няма отворени раздели",
+  "tray.status_locked": "Заключено",
+  "tray.status_tabs": "Отворени раздели: {{open}}, свързани: {{connected}}"
 }

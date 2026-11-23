@@ -4033,5 +4033,17 @@
   "capture.saved": "Screenshot saved: {{path}}",
   "capture.failed": "Could not take the screenshot: {{error}}",
   "capture.failed_empty": "The picture is empty.",
-  "capture.unavailable": "Nothing to take a picture of yet."
+  "capture.unavailable": "Nothing to take a picture of yet.",
+  "tray.show": "Show window",
+  "tray.hide": "Hide window",
+  "tray.favorites": "Favorites",
+  "tray.recent": "Recent",
+  "tray.local_terminal": "New local terminal",
+  "tray.quick_connect": "Quick connect…",
+  "tray.lock": "Lock the vault",
+  "tray.settings": "Settings…",
+  "tray.quit": "Quit",
+  "tray.status_none": "No tabs open",
+  "tray.status_locked": "Locked",
+  "tray.status_tabs": "Tabs open: {{open}}, connected: {{connected}}"
 }

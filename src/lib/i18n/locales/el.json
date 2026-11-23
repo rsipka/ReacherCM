@@ -4033,5 +4033,17 @@
   "capture.saved": "Το στιγμιότυπο αποθηκεύτηκε: {{path}}",
   "capture.failed": "Αποτυχία λήψης στιγμιότυπου: {{error}}",
   "capture.failed_empty": "Η εικόνα είναι κενή.",
-  "capture.unavailable": "Δεν υπάρχει ακόμα κάτι για λήψη."
+  "capture.unavailable": "Δεν υπάρχει ακόμα κάτι για λήψη.",
+  "tray.show": "Εμφάνιση παραθύρου",
+  "tray.hide": "Απόκρυψη παραθύρου",
+  "tray.favorites": "Αγαπημένα",
+  "tray.recent": "Πρόσφατα",
+  "tray.local_terminal": "Νέο τοπικό τερματικό",
+  "tray.quick_connect": "Γρήγορη σύνδεση…",
+  "tray.lock": "Κλείδωμα θησαυροφυλακίου",
+  "tray.settings": "Ρυθμίσεις…",
+  "tray.quit": "Έξοδος",
+  "tray.status_none": "Καμία ανοιχτή καρτέλα",
+  "tray.status_locked": "Κλειδωμένο",
+  "tray.status_tabs": "Ανοιχτές καρτέλες: {{open}}, συνδεδεμένες: {{connected}}"
 }

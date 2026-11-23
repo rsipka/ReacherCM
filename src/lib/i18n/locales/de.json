@@ -4033,5 +4033,17 @@
   "capture.saved": "Screenshot gespeichert: {{path}}",
   "capture.failed": "Screenshot fehlgeschlagen: {{error}}",
   "capture.failed_empty": "Das Bild ist leer.",
-  "capture.unavailable": "Noch nichts zum Aufnehmen da."
+  "capture.unavailable": "Noch nichts zum Aufnehmen da.",
+  "tray.show": "Fenster anzeigen",
+  "tray.hide": "Fenster ausblenden",
+  "tray.favorites": "Favoriten",
+  "tray.recent": "Zuletzt",
+  "tray.local_terminal": "Neues lokales Terminal",
+  "tray.quick_connect": "Schnellverbindung…",
+  "tray.lock": "Tresor sperren",
+  "tray.settings": "Einstellungen…",
+  "tray.quit": "Beenden",
+  "tray.status_none": "Keine Tabs offen",
+  "tray.status_locked": "Gesperrt",
+  "tray.status_tabs": "Offene Tabs: {{open}}, verbunden: {{connected}}"
 }

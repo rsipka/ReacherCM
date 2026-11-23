@@ -4033,5 +4033,17 @@
   "capture.saved": "Captura guardada: {{path}}",
   "capture.failed": "No se pudo hacer la captura: {{error}}",
   "capture.failed_empty": "La imagen está vacía.",
-  "capture.unavailable": "Todavía no hay nada que capturar."
+  "capture.unavailable": "Todavía no hay nada que capturar.",
+  "tray.show": "Mostrar ventana",
+  "tray.hide": "Ocultar ventana",
+  "tray.favorites": "Favoritos",
+  "tray.recent": "Recientes",
+  "tray.local_terminal": "Nuevo terminal local",
+  "tray.quick_connect": "Conexión rápida…",
+  "tray.lock": "Bloquear la bóveda",
+  "tray.settings": "Configuración…",
+  "tray.quit": "Salir",
+  "tray.status_none": "Ninguna pestaña abierta",
+  "tray.status_locked": "Bloqueado",
+  "tray.status_tabs": "Pestañas abiertas: {{open}}, conectadas: {{connected}}"
 }
