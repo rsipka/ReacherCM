@@ -33,6 +33,8 @@ pub(crate) struct WebWin {
     /// How to fill the form; `None`: do not (off, or no password).
     spec: Option<LoginSpec>,
     submit: bool,
+    /// The page may open windows (see `WebOptions::popups`).
+    pub(super) popups: bool,
     /// Fingerprints accepted: the session's, and those trusted since.
     trusted: Vec<String>,
     had_certs: bool,
@@ -215,6 +217,7 @@ pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>) -> Res
         password,
         spec,
         submit: opts.submit.unwrap_or(true),
+        popups: opts.popups.unwrap_or(true),
         trusted: opts.certs.iter().map(|c| c.sha256.clone()).collect(),
         had_certs: !opts.certs.is_empty(),
         pending: None,
@@ -304,7 +307,14 @@ fn popup(app: &AppHandle, opener: &str, url: url::Url, features: NewWindowFeatur
         return NewWindowResponse::Deny;
     }
     let Some(e) = entry(opener) else { return NewWindowResponse::Deny };
-    let name = lock(&e).name.clone();
+    let (name, allowed) = {
+        let w = lock(&e);
+        (w.name.clone(), w.popups)
+    };
+    if !allowed {
+        tracing::info!("Web session: a page's new window was refused (pop-up windows are off for the session)");
+        return NewWindowResponse::Deny;
+    }
     let label = {
         let mut reg = registry();
         let label = next_label(&mut reg, app);
@@ -409,6 +419,11 @@ pub fn answer(label: &str, fingerprint: &str, trust: bool) -> Result<Option<(Str
         let _ = win.set_focus();
     }
     Ok(Some(saved))
+}
+
+/// Whether the page in `label` may open windows of its own.
+pub(super) fn popups_allowed(label: &str) -> bool {
+    entry(label).is_some_and(|e| lock(&e).popups)
 }
 
 /// The login for an HTTP sign-in (Basic, Digest) from `host`: the session's,
