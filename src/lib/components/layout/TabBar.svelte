@@ -249,7 +249,7 @@
 
 		items.push(...broadcastItems(tab));
 		items.push(...windowItems(id));
-		if (tab && !isDesktopTab(tab)) {
+		if (tab && !isDesktopTab(tab) && tab.type !== 'ftp') {
 			items.push(
 				{ label: '', separator: true },
 				{ label: t('history.picker_menu'), hint: actionLabel('terminal.commandPicker'), action: () => openTabCommandPicker(tab) },
@@ -276,7 +276,7 @@
 
 	/** The host a tab is connected to; none for a local shell or a serial port. */
 	function hostOf(tab: Tab): string | null {
-		return tab.sshConnectParams?.host ?? tab.telnetConnectParams?.host ?? tab.rdpConnectParams?.host ?? tab.vncConnectParams?.host ?? tab.spiceConnectParams?.host ?? null;
+		return tab.sshConnectParams?.host ?? tab.telnetConnectParams?.host ?? tab.ftpConnectParams?.host ?? tab.rdpConnectParams?.host ?? tab.vncConnectParams?.host ?? tab.spiceConnectParams?.host ?? null;
 	}
 
 	/** A terminal connects again at any time (a hung connection, say); a
@@ -286,6 +286,7 @@
 		if (tab.type === 'ssh') return !!tab.sshConnectParams;
 		if (tab.type === 'telnet') return !!tab.telnetConnectParams;
 		if (tab.type === 'serial') return !!tab.serialConnectParams;
+		if (tab.type === 'ftp') return !!tab.ftpConnectParams;
 		if (isDesktopTab(tab)) return tab.link === 'down';
 		return false;
 	}
@@ -450,6 +451,7 @@
 	let renameValue = $state('');
 	let confirmClose = $state<TabGroup | null>(null);
 
+	const FOLDER_ICON = 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z';
 	const GROUP_ICON = 'M4 6h7v5H4zM13 6h7v5h-7zM4 13h16v5H4z';
 	const DOT_ICON = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z';
 	const HEX: Record<GroupColor, string> = {
@@ -637,6 +639,8 @@
 								<path d={terminalIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 							{:else if isDesktopTab(tab)}
 								<path d={rdpIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+							{:else if tab.type === 'ftp'}
+								<path d={FOLDER_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 							{:else}
 								<path d={sshIcon} fill="currentColor" />
 							{/if}

@@ -15,6 +15,7 @@
 	import { updateStats, removeStats } from '#lib/state/monitoring.svelte.js';
 	import Terminal from '#lib/components/terminal/Terminal.svelte';
 	import DualPane from '#lib/components/explorer/DualPane.svelte';
+	import FtpPanel from '#lib/components/explorer/FtpPanel.svelte';
 	import { stopExternalEdits } from '#lib/explorer/external-edit.js';
 	import RdpPanel from '#lib/components/rdp/RdpPanel.svelte';
 	import BroadcastBar from '#lib/components/terminal/BroadcastBar.svelte';
@@ -439,6 +440,10 @@
 								{#key tab.reconnect}
 									<RdpPanel id={tab.id} params={tab.spiceConnectParams} protocol="spice" active={focused} />
 								{/key}
+							{:else if tab.type === 'ftp'}
+								<div class="pane-body">
+									<FtpPanel {tab} active={focused} />
+								</div>
 							{:else if tab.type !== 'rdp' && tab.type !== 'vnc' && tab.type !== 'spice'}
 								{#if appSettings.terminalBar !== 'hidden' || findOpenIn === tab.id}
 									<div class="bar-slot" class:hover-only={appSettings.terminalBar === 'hover' && findOpenIn !== tab.id}>
@@ -472,7 +477,7 @@
 								<!-- The full-pane file manager over the terminal, which keeps
 								     running behind it; F10 or the bar's button goes back. -->
 								{#if filesShown && tab.connectionId}
-									<DualPane connectionId={tab.connectionId} active={focused} onclose={() => toggleFilesView(tab.id, false)} />
+									<DualPane connectionId={tab.connectionId} active={focused} scp={tab.filesProtocol === 'scp'} onclose={() => toggleFilesView(tab.id, false)} />
 								{/if}
 								</div>
 							{/if}

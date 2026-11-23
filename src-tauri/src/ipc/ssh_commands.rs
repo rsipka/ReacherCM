@@ -681,6 +681,17 @@ pub async fn ssh_resize(
     manager.resize(&connection_id, cols, rows).map_err(|e| e.to_string())
 }
 
+/// Make a connection's files go over SCP: an SCP session's, whose server
+/// may have no SFTP subsystem (see `sftp::scp`).
+#[tauri::command]
+pub async fn ssh_files_scp(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<(), String> {
+    let manager = state.ssh_manager.lock().await;
+    manager.set_scp(&connection_id).await.map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn ssh_disconnect(
     app: tauri::AppHandle,

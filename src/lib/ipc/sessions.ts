@@ -128,6 +128,22 @@ export interface SessionConfig {
   address_check?: boolean | null;
   /** Web only: address, storage, sign-in, trusted certificates. */
   web?: WebOptions | null;
+  /** SSH only: open in the full-pane file manager over SFTP or SCP
+   *  instead of a terminal; unset: a terminal. */
+  files?: FilesProtocol | null;
+  /** FTP only: encryption, and the certificates it trusts. */
+  ftp?: FtpOptions | null;
+}
+
+/** How an SSH session that opens as files reaches them. */
+export type FilesProtocol = 'sftp' | 'scp';
+
+/** An FTP session's settings (see src-tauri/src/ftp/mod.rs). */
+export interface FtpOptions {
+  /** Unset: explicit (AUTH TLS, required). */
+  tls?: 'implicit' | 'none' | null;
+  /** Fingerprints trusted by answering the prompt; read only here. */
+  certs?: string[];
 }
 
 /** A web session's settings (see src-tauri/src/web/mod.rs). */
@@ -322,7 +338,7 @@ export interface SshOptions {
 }
 
 /** `winbox`: MikroTik's WinBox 4, started as a program of its own (desktop). */
-export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web';
+export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp';
 
 export function sessionKind(session: Pick<SessionConfig, 'kind'>): SessionKind {
   return session.kind ?? 'ssh';
@@ -405,6 +421,8 @@ export async function sessionCreate(params: {
   connectMode?: ConnectMode | null;
   addressCheck?: boolean | null;
   web?: WebOptions | null;
+  files?: FilesProtocol | null;
+  ftp?: FtpOptions | null;
 }): Promise<SessionConfig> {
   return invoke<SessionConfig>('session_create', {
     name: params.name,
@@ -449,6 +467,8 @@ export async function sessionCreate(params: {
     connectMode: params.altAddresses?.length ? (params.connectMode ?? null) : null,
     addressCheck: params.altAddresses?.length ? (params.addressCheck ?? null) : null,
     web: params.kind === 'web' ? (params.web ?? {}) : null,
+    files: (params.kind ?? 'ssh') === 'ssh' ? (params.files ?? null) : null,
+    ftp: params.kind === 'ftp' ? (params.ftp ?? {}) : null,
   });
 }
 

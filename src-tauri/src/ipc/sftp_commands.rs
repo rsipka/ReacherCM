@@ -4,6 +4,12 @@ use crate::state::AppState;
 use crate::sftp::browser::{self, RemoteEntry};
 use crate::plugin::hooks;
 
+/// The FTP session a connection id names, if it is one: the file
+/// manager sends FTP sessions' ids to these same commands.
+fn ftp_conn(state: &AppState, connection_id: &str) -> Option<std::sync::Arc<crate::ftp::FtpConn>> {
+    state.ftp_manager.get(connection_id)
+}
+
 /// List the contents of a remote directory.
 #[tauri::command]
 pub async fn sftp_list_dir(
@@ -11,6 +17,9 @@ pub async fn sftp_list_dir(
     connection_id: String,
     path: String,
 ) -> Result<Vec<RemoteEntry>, String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::list_dir(&ftp, &path).await.map_err(|e| e.to_string());
+    }
     info!("sftp_list_dir called: conn={}, path={}", connection_id, path);
     let fs = {
         let manager = state.ssh_manager.lock().await;
@@ -94,6 +103,23 @@ pub async fn sftp_upload(
     remote_path: String,
     transfer_id: Option<String>,
 ) -> Result<String, String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        let transfer_id = transfer_id_from(transfer_id)?;
+        let tid = transfer_id.clone();
+        let cancel = register_transfer(&state, &transfer_id, &connection_id);
+        let transfers = state.transfers.clone();
+        tokio::spawn(async move {
+            let result = crate::ftp::ops::upload(&ftp, &local_path, &remote_path, &tid, &app, &cancel).await;
+            if let Ok(mut map) = transfers.lock() {
+                map.remove(&tid);
+            }
+            if let Err(e) = result {
+                tracing::error!("FTP upload failed for {}: {}", tid, e);
+                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            }
+        });
+        return Ok(transfer_id);
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -137,6 +163,23 @@ pub async fn sftp_download(
     local_path: String,
     transfer_id: Option<String>,
 ) -> Result<String, String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        let transfer_id = transfer_id_from(transfer_id)?;
+        let tid = transfer_id.clone();
+        let cancel = register_transfer(&state, &transfer_id, &connection_id);
+        let transfers = state.transfers.clone();
+        tokio::spawn(async move {
+            let result = crate::ftp::ops::download(&ftp, &remote_path, &local_path, &tid, &app, &cancel).await;
+            if let Ok(mut map) = transfers.lock() {
+                map.remove(&tid);
+            }
+            if let Err(e) = result {
+                tracing::error!("FTP download failed for {}: {}", tid, e);
+                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            }
+        });
+        return Ok(transfer_id);
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -177,6 +220,9 @@ pub async fn sftp_delete(
     connection_id: String,
     path: String,
 ) -> Result<(), String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::delete(&ftp, &path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -194,6 +240,9 @@ pub async fn sftp_rename(
     old_path: String,
     new_path: String,
 ) -> Result<(), String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::rename(&ftp, &old_path, &new_path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -210,6 +259,9 @@ pub async fn sftp_touch(
     connection_id: String,
     path: String,
 ) -> Result<(), String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::touch(&ftp, &path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -226,6 +278,9 @@ pub async fn sftp_read_file(
     connection_id: String,
     path: String,
 ) -> Result<String, String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::read_text(&ftp, &path).await.map_err(|e| e.to_string());
+    }
     info!("sftp_read_file called: conn={}, path={}", connection_id, path);
     let fs = {
         let manager = state.ssh_manager.lock().await;
@@ -244,6 +299,9 @@ pub async fn sftp_write_file(
     path: String,
     content: String,
 ) -> Result<(), String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::write_text(&ftp, &path, &content).await.map_err(|e| e.to_string());
+    }
     info!("sftp_write_file called: conn={}, path={}", connection_id, path);
     let fs = {
         let manager = state.ssh_manager.lock().await;
@@ -261,6 +319,9 @@ pub async fn sftp_mkdir(
     connection_id: String,
     path: String,
 ) -> Result<(), String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return crate::ftp::ops::make_dir(&ftp, &path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -287,6 +348,9 @@ pub async fn sftp_archive_tools(
     state: tauri::State<'_, AppState>,
     connection_id: String,
 ) -> Result<ArchiveTools, String> {
+    if ftp_conn(&state, &connection_id).is_some() {
+        return Ok(ArchiveTools::parse(""));
+    }
     let handle = {
         let manager = state.ssh_manager.lock().await;
         manager.get_handle(&connection_id).map_err(|e| e.to_string())?
@@ -563,6 +627,10 @@ pub async fn sftp_terminal_cwd(
     state: tauri::State<'_, AppState>,
     connection_id: String,
 ) -> Result<Option<String>, String> {
+    // An FTP session has no terminal to follow.
+    if ftp_conn(&state, &connection_id).is_some() {
+        return Ok(None);
+    }
     let handle = {
         let manager = state.ssh_manager.lock().await;
         manager.get_handle(&connection_id).map_err(|e| e.to_string())?
@@ -570,4 +638,22 @@ pub async fn sftp_terminal_cwd(
     crate::sftp::terminal_cwd::terminal_cwd(&handle)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Where a connection's files start: the login folder. FTP says it at
+/// login; over SSH, SFTP's `.` or the shell's `pwd`. `None` when the
+/// server will not say.
+#[tauri::command]
+pub async fn sftp_home(
+    state: tauri::State<'_, AppState>,
+    connection_id: String,
+) -> Result<Option<String>, String> {
+    if let Some(ftp) = ftp_conn(&state, &connection_id) {
+        return Ok(Some(ftp.home.clone()));
+    }
+    let fs = {
+        let manager = state.ssh_manager.lock().await;
+        manager.get_fs(&connection_id).map_err(|e| e.to_string())?
+    };
+    Ok(browser::home_dir(&fs).await)
 }

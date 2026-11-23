@@ -792,6 +792,8 @@ pub async fn session_create(
     connect_mode: Option<String>,
     address_check: Option<bool>,
     web: Option<crate::web::WebOptions>,
+    files: Option<crate::state::FilesProtocol>,
+    ftp: Option<crate::ftp::FtpOptions>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -881,6 +883,15 @@ pub async fn session_create(
             w.certs.clear();
             w
         }),
+        files: files.filter(|_| kind == crate::state::SessionKind::Ssh),
+        // Certificates likewise.
+        ftp: ftp
+            .filter(|_| kind == crate::state::SessionKind::Ftp)
+            .map(|mut f| {
+                f.certs.clear();
+                f
+            })
+            .filter(|f| !f.is_empty()),
     };
     session.tidy_documentation();
 
@@ -1018,6 +1029,19 @@ async fn prepare_update(
     if let Some(w) = session.web.as_mut() {
         w.certs = stored.as_ref().and_then(|s| s.web.as_ref()).map(|w| w.certs.clone()).unwrap_or_default();
     }
+    // An FTP session's the same way (see `ftp_session_cert_trust`).
+    if session.kind == crate::state::SessionKind::Ftp {
+        let certs = stored.as_ref().and_then(|s| s.ftp.as_ref()).map(|f| f.certs.clone()).unwrap_or_default();
+        session.ftp.get_or_insert_with(Default::default).certs = certs;
+        if session.ftp.as_ref().is_some_and(|f| f.is_empty()) {
+            session.ftp = None;
+        }
+    } else {
+        session.ftp = None;
+    }
+    if session.kind != crate::state::SessionKind::Ssh {
+        session.files = None;
+    }
 
     // A login sent is the session's own, unless it is one a credential
     // filled in (the editor shows that one): then the stored own login stays.
@@ -1052,6 +1076,10 @@ mod hostkeys;
 #[path = "session_webcerts_cmds.rs"]
 mod webcerts;
 pub use webcerts::*;
+
+#[path = "session_ftp_cmds.rs"]
+mod ftp;
+pub use ftp::*;
 pub use hostkeys::*;
 
 #[path = "session_password_history_cmds.rs"]
