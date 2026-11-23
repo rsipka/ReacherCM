@@ -79,6 +79,23 @@ impl Device {
             .unwrap();
     }
 
+    /// A session with a payload of its own.
+    async fn put_json(&self, id: &str, json: serde_json::Value) {
+        let p = encrypt_secret(&self.target.master, json.to_string().as_bytes()).unwrap();
+        self.local
+            .execute(
+                "INSERT OR REPLACE INTO secrets (id, name, category, nonce, ciphertext, wrapped_dek, created_at, updated_at) VALUES (?, ?, 'session', ?, ?, ?, 1, 2)",
+                (id, id, p.nonce.as_slice(), p.ciphertext.as_slice(), serde_json::to_string(&p.wrapped_dek).unwrap()),
+            )
+            .await
+            .unwrap();
+    }
+
+    async fn payload(&self, id: &str) -> serde_json::Value {
+        let row = sync_local::read_row(&self.local, id).await.unwrap().unwrap();
+        open_row(&self.target.master, &row).unwrap()
+    }
+
     async fn delete(&self, id: &str) {
         self.local.execute("DELETE FROM secrets WHERE id = ?", [id]).await.unwrap();
     }
@@ -501,4 +518,78 @@ fn backends_are_read_from_their_urls() {
 
     assert!(Backend::parse("folder:relative/path", "", app).is_err());
     assert!(matches!(Backend::parse("libsql://db.turso.io", "t", app), Ok(Backend::Turso { .. })));
+}
+
+fn hosts(v: &serde_json::Value, field: &str) -> Vec<String> {
+    v[field].as_array().map(|a| a.iter().map(|k| k["host"].as_str().unwrap().to_string()).collect()).unwrap_or_default()
+}
+
+/// Two devices each have the session; one saves a host key while the other
+/// writes the session from a copy without it (not synced yet, or a build
+/// that does not know host keys). The key must survive, on both, in both
+/// formats, whichever write is newer.
+async fn host_keys_survive(legacy: bool, other_newer: bool) {
+    let w = world(legacy).await;
+    let a = device(&w, "a").await;
+    let b = device(&w, "b").await;
+    a.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv" })).await;
+    a.sync(&w).await;
+    b.sync(&w).await;
+
+    let key = serde_json::json!([{ "host": "srv.example.com:22", "fingerprint": "SHA256:k", "saved_at": 100 }]);
+    a.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv", "host_keys": key })).await;
+    b.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv-renamed" })).await;
+    if other_newer {
+        b.later(5_000).await;
+    } else {
+        a.later(5_000).await;
+    }
+    if legacy {
+        // Legacy rows carry seconds: make the newer one count there too.
+        let (d, at) = if other_newer { (&b, 9) } else { (&a, 9) };
+        d.local.execute("UPDATE secrets SET updated_at = ?", [at]).await.unwrap();
+    }
+    a.sync(&w).await;
+    b.sync(&w).await;
+    a.sync(&w).await;
+    b.sync(&w).await;
+    for d in [&a, &b] {
+        let p = d.payload("s1").await;
+        assert_eq!(hosts(&p, "host_keys"), vec!["srv.example.com:22"], "legacy {legacy}, other newer {other_newer}");
+    }
+    assert_eq!(a.payload("s1").await["name"], b.payload("s1").await["name"], "both end up the same");
+    assert_eq!(sync_local::dirty_count(&a.local).await.unwrap(), 0);
+    assert_eq!(sync_local::dirty_count(&b.local).await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn a_saved_host_key_survives_an_edit_from_a_copy_without_it() {
+    host_keys_survive(false, true).await;
+    host_keys_survive(false, false).await;
+    host_keys_survive(true, true).await;
+    host_keys_survive(true, false).await;
+}
+
+#[tokio::test]
+async fn a_removed_host_key_stays_removed() {
+    let w = world(false).await;
+    let a = device(&w, "a").await;
+    let b = device(&w, "b").await;
+    let key = serde_json::json!([{ "host": "srv.example.com:22", "fingerprint": "SHA256:k", "saved_at": 100 }]);
+    a.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv", "host_keys": key })).await;
+    a.sync(&w).await;
+    b.sync(&w).await;
+    // Removed on a; b, not synced since, renames the session from its copy.
+    a.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv", "host_keys_removed": [{ "host": "srv.example.com:22", "removed_at": 200 }] })).await;
+    a.sync(&w).await;
+    b.put_json("s1", serde_json::json!({ "id": "s1", "name": "srv-renamed", "host_keys": key })).await;
+    b.later(5_000).await;
+    b.sync(&w).await;
+    a.sync(&w).await;
+    b.sync(&w).await;
+    for d in [&a, &b] {
+        let p = d.payload("s1").await;
+        assert!(hosts(&p, "host_keys").is_empty());
+        assert_eq!(hosts(&p, "host_keys_removed"), vec!["srv.example.com:22"]);
+    }
 }

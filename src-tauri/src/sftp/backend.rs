@@ -71,12 +71,24 @@ struct SlotState {
     session: Option<Arc<SftpProtocol>>,
     /// Set when the server refused SFTP: until then, use the shell.
     refused_until: Option<Instant>,
+    /// An SCP session: never SFTP; copies go through `scp` (see `sftp::scp`).
+    scp: bool,
 }
 
 /// Where a connection keeps its SFTP session. Lives on the connection, so it
 /// goes when the connection does.
 #[derive(Clone, Default)]
 pub struct SftpSlot(Arc<tokio::sync::Mutex<SlotState>>);
+
+impl SftpSlot {
+    /// Make the connection an SCP one: shell commands to browse, `scp` to
+    /// copy, never the SFTP subsystem.
+    pub async fn set_scp(&self) {
+        let mut state = self.0.lock().await;
+        state.scp = true;
+        state.session = None;
+    }
+}
 
 /// One connection's files: its SSH handle and its SFTP session, if any.
 #[derive(Clone)]
@@ -97,6 +109,7 @@ impl RemoteFs {
         let state = SlotState {
             session: None,
             refused_until: Some(Instant::now() + Duration::from_secs(3600)),
+            scp: false,
         };
         Self { handle, slot: SftpSlot(Arc::new(tokio::sync::Mutex::new(state))) }
     }
@@ -107,6 +120,9 @@ impl RemoteFs {
     /// one session between them.
     pub async fn sftp(&self) -> Option<Arc<SftpProtocol>> {
         let mut state = self.slot.0.lock().await;
+        if state.scp {
+            return None;
+        }
         if let Some(session) = &state.session {
             return Some(session.clone());
         }
@@ -131,6 +147,11 @@ impl RemoteFs {
                 None
             }
         }
+    }
+
+    /// Whether copies go through `scp` (an SCP session).
+    pub async fn is_scp(&self) -> bool {
+        self.slot.0.lock().await.scp
     }
 
     /// Note an SFTP error. One that means the session itself is gone (the

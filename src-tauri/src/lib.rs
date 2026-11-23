@@ -28,6 +28,7 @@ pub mod sound;
 pub mod serial;
 pub mod session;
 pub mod sftp;
+pub mod ftp;
 pub mod ssh;
 pub mod state;
 pub mod text;
@@ -503,6 +504,7 @@ pub fn run() {
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
             ssh_disconnect,
+            ssh_files_scp,
             ssh_send,
             ssh_ready,
             ssh_hostkey_response,
@@ -610,6 +612,10 @@ pub fn run() {
             sftp_archive_cancel,
             sftp_transfer_cancel,
             sftp_terminal_cwd,
+            sftp_home,
+            ftp_connect,
+            ftp_disconnect,
+            ftp_session_cert_trust,
             // This computer's files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
@@ -1040,6 +1046,7 @@ pub fn run() {
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
             ssh_disconnect,
+            ssh_files_scp,
             ssh_send,
             ssh_ready,
             ssh_hostkey_response,
@@ -1147,6 +1154,10 @@ pub fn run() {
             sftp_archive_cancel,
             sftp_transfer_cancel,
             sftp_terminal_cwd,
+            sftp_home,
+            ftp_connect,
+            ftp_disconnect,
+            ftp_session_cert_trust,
             drag_preview_icon,
             drag_cache_dir,
             dragout_start,

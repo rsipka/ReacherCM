@@ -12,7 +12,8 @@
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { openEditor } from '#lib/state/editor.svelte.js';
 	import { getCurrentPath, type FileEntry, type SortKey } from '#lib/state/explorer.svelte.js';
-	import { sftpDelete, sftpListDir, sftpMkdir, sftpReadFile, sftpRename, sftpTerminalCwd, sftpTouch } from '#lib/ipc/sftp.js';
+	import { sftpDelete, sftpHome, sftpListDir, sftpMkdir, sftpReadFile, sftpRename, sftpTerminalCwd, sftpTouch } from '#lib/ipc/sftp.js';
+	import { sshFilesScp } from '#lib/ipc/ftp.js';
 	import { localDelete, localListDir, localMkdir, localReadText, localRename, localReveal, localTouch } from '#lib/ipc/localfs.js';
 	import { sshSend } from '#lib/ipc/ssh.js';
 	import { shellQuote } from '#lib/utils/shell.js';
@@ -32,10 +33,14 @@
 		/** Shown and focused: it takes the keyboard. */
 		active: boolean;
 		/** Back to the terminal. */
-		onclose: () => void;
+		onclose?: () => void;
+		/** There is a terminal behind it (SSH): off for FTP, which has none. */
+		terminal?: boolean;
+		/** An SCP session's connection: copies go through scp. */
+		scp?: boolean;
 	}
 
-	let { connectionId, active, onclose }: Props = $props();
+	let { connectionId, active, onclose = () => {}, terminal = true, scp = false }: Props = $props();
 
 	const local = new Pane('local', (path) => localListDir(path));
 	const remote = new Pane('remote', async (path) => {
@@ -87,10 +92,16 @@
 		const conn = connectionId;
 		if (conn === loadedFor) return;
 		loadedFor = conn;
-		const start = remote.path || getCurrentPath(conn) || '/';
-		void remote.load(start).then((ok) => {
+		void (async () => {
+			if (scp) await sshFilesScp(conn).catch(() => {});
+			// Where it was, where the sidebar is, else the login folder.
+			// The sidebar's folder; it says `/` when it has none of its own.
+			const sidebar = getCurrentPath(conn);
+			const start = remote.path || (sidebar !== '/' ? sidebar : '') || (await sftpHome(conn).catch(() => null)) || '/';
+			if (conn !== loadedFor) return;
+			const ok = await remote.load(start);
 			if (!ok && start !== '/') void remote.load('/');
-		});
+		})();
 	});
 
 	$effect(() => {
@@ -332,6 +343,11 @@
 		void tick().then(() => rootEl?.focus());
 	}
 
+	async function goHome(): Promise<void> {
+		const home = await sftpHome(connectionId).catch(() => null);
+		void remote.load(home || '/');
+	}
+
 	async function goToTerminalFolder(): Promise<void> {
 		try {
 			const cwd = await sftpTerminalCwd(connectionId);
@@ -430,7 +446,7 @@
 		} else {
 			items.push({ label: t('explorer.copy_path'), action: () => void copyText(sel.map((e) => e.path).join('\n')) });
 		}
-		if (one?.isDirectory && p.kind === 'remote') items.push({ label: t('explorer.cd_here'), action: () => cdTerminal(one.path) });
+		if (one?.isDirectory && p.kind === 'remote' && terminal) items.push({ label: t('explorer.cd_here'), action: () => cdTerminal(one.path) });
 		if (one && p.kind === 'local') items.push({ label: t('files.reveal'), action: () => void reveal(one.path) });
 		return items;
 	}
@@ -448,7 +464,9 @@
 			{ label: '', separator: true },
 			{ label: t('files.copy_folder_path'), disabled: !p.path, action: () => void copyText(p.path) }
 		];
-		if (p.kind === 'remote') {
+		if (p.kind === 'remote' && !terminal) {
+			items.push({ label: t('files.home'), action: () => void goHome() });
+		} else if (p.kind === 'remote') {
 			items.push({ label: t('explorer.go_terminal_folder'), action: () => void goToTerminalFolder() });
 			if (p.path) items.push({ label: t('files.cd_terminal_here'), action: () => cdTerminal(p.path) });
 		} else {
@@ -567,7 +585,7 @@
 				break;
 			case 'F10':
 				if (e.shiftKey) keyboardMenu();
-				else onclose();
+				else if (terminal) onclose();
 				break;
 			case 'ContextMenu':
 				keyboardMenu();
@@ -653,7 +671,7 @@
 		{ key: 'modified', label: 'explorer.col_modified' }
 	];
 
-	const KEYS: { key: string; label: string; run: () => void; remoteOnly?: boolean }[] = [
+	const ALL_KEYS: { key: string; label: string; run: () => void; remoteOnly?: boolean }[] = [
 		{ key: 'F2', label: 'explorer.rename', run: startRename },
 		{ key: 'F3', label: 'files.view', run: () => void view() },
 		{ key: 'F4', label: 'explorer.edit', run: () => void edit() },
@@ -665,6 +683,8 @@
 		{ key: '⇧F9', label: 'files.compare_files', run: () => void compareFiles() },
 		{ key: 'F10', label: 'files.terminal', run: () => onclose() }
 	];
+	/** No way back to a terminal where there is none. */
+	let KEYS = $derived(terminal ? ALL_KEYS : ALL_KEYS.filter((k) => k.key !== 'F10'));
 </script>
 
 {#snippet icon(d: string, size = 14)}
@@ -680,8 +700,8 @@
 		<header class="pane-head">
 			<span class="side-label">{p.kind === 'local' ? t('files.this_computer') : t('files.server')}</span>
 			<button class="ib" type="button" onclick={() => p.up()} disabled={p.parent === null} title={`${t('explorer.go_parent')} (Backspace)`} aria-label={t('explorer.go_parent')}>{@render icon('M15 18l-6-6 6-6')}</button>
-			{#if p.kind === 'local'}
-				<button class="ib" type="button" onclick={() => void p.load('')} title={t('files.home')} aria-label={t('files.home')}>{@render icon('M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10')}</button>
+			{#if p.kind === 'local' || !terminal}
+				<button class="ib" type="button" onclick={() => void (p.kind === 'local' ? p.load('') : goHome())} title={t('files.home')} aria-label={t('files.home')}>{@render icon('M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10')}</button>
 			{:else}
 				<button class="ib" type="button" onclick={() => void goToTerminalFolder()} title={t('explorer.go_terminal_folder')} aria-label={t('explorer.go_terminal_folder')}>{@render icon('M4 17l6-5-6-5M12 19h8')}</button>
 			{/if}
@@ -837,7 +857,7 @@
 				</button>
 			{/if}
 		{/each}
-		<span class="hint">{t('files.keys_hint', { key: actionLabel('files.toggle') })}</span>
+		<span class="hint">{terminal ? t('files.keys_hint', { key: actionLabel('files.toggle') }) : t('files.keys_hint_files')}</span>
 	</div>
 </div>
 
