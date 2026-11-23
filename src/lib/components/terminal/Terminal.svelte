@@ -6,6 +6,8 @@
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SearchAddon } from '@xterm/addon-search';
 	import { registerFinder, requestFind } from '#lib/state/terminal-find.svelte.js';
+	import { registerCapture } from '#lib/state/capture.js';
+	import { snapshotTerminal } from '#lib/terminal/snapshot.js';
 	import { Unicode11Addon } from '@xterm/addon-unicode11';
 	import { SerializeAddon } from '@xterm/addon-serialize';
 	import { registerHandoff, requestSnapshot } from '#lib/state/windows.svelte.js';
@@ -758,6 +760,7 @@
 	/** A server tried OSC 52 while it is off: said once per tab. */
 	let osc52Told = false;
 	let unregisterFinder: (() => void) | undefined;
+	let unregisterCapture: (() => void) | undefined;
 
 	function loadAddons(term: Terminal, fit: FitAddon, host: HTMLElement): void {
 		term.loadAddon(fit);
@@ -812,6 +815,10 @@
 				term.focus();
 			}
 		});
+
+		// A screenshot of what the terminal shows (the bar's camera button).
+		unregisterCapture?.();
+		unregisterCapture = registerCapture(ptyId, () => snapshotTerminal(term, host.querySelector<HTMLElement>('.xterm-screen')));
 
 		const unicode11 = new Unicode11Addon();
 		term.loadAddon(unicode11);
@@ -1609,6 +1616,8 @@
 			resizeObserver?.disconnect();
 			unregisterFinder?.();
 			unregisterFinder = undefined;
+			unregisterCapture?.();
+			unregisterCapture = undefined;
 			if (gutterFrame) cancelAnimationFrame(gutterFrame);
 			gutterFrame = 0;
 			clock?.dispose();
@@ -1763,7 +1772,7 @@
 		const now = Date.now();
 		const act = bellActions(
 			{ sound: s.terminalBellSound, flash: s.terminalBellFlash, notify: s.terminalBellNotify },
-			{ seen: !!active && shown && windowSeen(), lastNotified, lastSound: lastBellSound(), now, soundsOn: s.playSounds }
+			{ seen: !!active && shown && windowSeen(), lastNotified, lastSound: lastBellSound(), now, soundsOn: s.playSounds && !s.muted }
 		);
 		if (act.sound) playBell(now);
 		if (act.flash && !flashing) {
@@ -1814,6 +1823,7 @@
 		<ZmodemBar
 			connectionId={currentConnectionId}
 			tabId={ptyId}
+			tmux={termType === 'ssh' ? (sshConnectParams?.tmux ?? null) : null}
 			send={(data) => {
 				if (!currentConnectionId || disconnected) return false;
 				sendData(data);

@@ -129,13 +129,14 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 			return REMOTE[args.path] ?? [];
 		case 'local_list_dir':
 			return LOCAL;
+		case 'saved_credential_list':
+			return [{ id: 'cred-key', name: 'Deploy key', username: 'deploy', auth_method: { type: 'Key', path: '~/.ssh/id_ed25519' } }];
 		case 'session_list_folders':
 		case 'vault_list':
 		case 'vault_duplicates':
 		case 'ssh_list_connections':
 		case 'snippet_list':
 		case 'theme_list_installed':
-		case 'saved_credential_list':
 		case 'credential_folder_list':
 		case 'plugin:window|available_monitors':
 			return [];
@@ -204,6 +205,11 @@ try {
 	check('SFTP takes SSH logins (key, agent)', await until(async () => (await page.getByText('Agent', { exact: false }).count()) > 0));
 	check('and no terminal settings', (await page.locator('#session-term-type').count()) === 0);
 	await shot('editor-sftp');
+	await page.locator('#session-login').selectOption('cred-key');
+	check('a saved SSH key login hides the own fields', await until(async () => (await page.getByLabel('Username').count()) === 0));
+	await page.locator('.protocol-toggle .auth-btn', { hasText: 'FTP / FTPS' }).click();
+	check('switching to FTP shows user name and password again', await until(async () => (await page.getByLabel('Username').count()) === 1 && (await page.getByText('Password (optional)').count()) > 0));
+	check('and no login picker for FTP', (await page.locator('#session-login').count()) === 0);
 	await page.keyboard.press('Escape');
 	await sleep(300);
 

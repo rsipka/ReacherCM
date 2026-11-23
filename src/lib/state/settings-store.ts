@@ -93,6 +93,10 @@ export interface Settings {
 	/** The bell sends a system notification when its tab is not in view or
 	 *  the app is in the background. Off by default: it asks permission. */
 	terminalBellNotify: boolean;
+	/** The speaker button in the top bar: silences everything the app plays
+	 *  (the chime, the bell, a remote desktop's sound) until turned off,
+	 *  whatever Play sounds and the bell's settings say. */
+	muted: boolean;
 	fontFamily: string;
 	defaultShell: string;
 	openLastSession: boolean;
@@ -280,6 +284,7 @@ export const defaults: Settings = {
 	terminalBellSound: !isMobile(),
 	terminalBellFlash: isMobile(),
 	terminalBellNotify: false,
+	muted: false,
 	fontFamily: 'monospace',
 	defaultShell: '/bin/bash',
 	openLastSession: false,
@@ -384,6 +389,7 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	settings.terminalBellSound = parsed.terminalBellSound ?? defaults.terminalBellSound;
 	settings.terminalBellFlash = parsed.terminalBellFlash ?? defaults.terminalBellFlash;
 	settings.terminalBellNotify = parsed.terminalBellNotify ?? defaults.terminalBellNotify;
+	settings.muted = parsed.muted === true;
 	settings.fontFamily = parsed.fontFamily ?? defaults.fontFamily;
 	settings.defaultShell = parsed.defaultShell ?? defaults.defaultShell;
 	settings.openLastSession = parsed.openLastSession ?? defaults.openLastSession;

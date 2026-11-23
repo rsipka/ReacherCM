@@ -23,6 +23,7 @@
 	 * behind it is typed as US-layout keystrokes.
 	 */
 	import { onDestroy, onMount } from 'svelte';
+	import { registerCapture } from '#lib/state/capture.js';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -1083,7 +1084,12 @@
 		return true;
 	}
 
+	// A screenshot of the remote desktop: the framebuffer at its own size.
+	// The WebGL context keeps its drawing buffer, so the canvas reads back.
+	let unregisterCapture: (() => void) | undefined;
+
 	onMount(async () => {
+		unregisterCapture = registerCapture(id, () => (phase === 'connected' && canvas?.width ? canvas : null));
 		const size = fitSize();
 
 		unlisten = await listen<RdpStatus>(`${protocol}-status-${id}`, (event) => {
@@ -1185,6 +1191,7 @@
 	}
 
 	onDestroy(() => {
+		unregisterCapture?.();
 		unlisten?.();
 		unlistenLocks();
 		clearTimeout(lockSyncTimer);

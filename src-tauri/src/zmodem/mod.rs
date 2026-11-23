@@ -14,6 +14,7 @@
 
 pub mod detect;
 pub mod transfer;
+pub mod ssh_exec;
 
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,9 @@ pub enum ZmodemEvent {
         folder: Option<String>,
     },
     Cancelled { direction: Direction },
+    /// rz or sz started behind something that does not pass its bytes on
+    /// (tmux, screen): it was stopped, so the terminal does not hang.
+    Unsupported { direction: Direction },
     Failed { direction: Direction, error: String },
 }
 
@@ -169,6 +173,8 @@ pub struct Tap {
     emit: Emit,
     window: usize,
     detector: Detector,
+    /// The last output shown, to spot a header a multiplexer drew as text.
+    seen: Vec<u8>,
     state: State,
 }
 
@@ -177,7 +183,7 @@ impl Tap {
     pub fn new(id: &str, window: usize, emit: Emit) -> Self {
         let control = Arc::new(Control { decision: Mutex::new(None), busy: AtomicBool::new(false) });
         taps().insert(id.to_string(), control.clone());
-        Self { id: id.to_string(), control, emit, window, detector: Detector::new(), state: State::Idle }
+        Self { id: id.to_string(), control, emit, window, detector: Detector::new(), seen: Vec::new(), state: State::Idle }
     }
 
     /// A tap telling the terminal through Tauri events.
@@ -314,6 +320,11 @@ impl Tap {
                     self.state = State::Offered { direction, since: Instant::now() };
                     (self.emit)(ZmodemEvent::Offer { direction });
                 } else {
+                    if let Some(direction) = self.drawn_header(&shown) {
+                        // It waits for an answer that cannot get through.
+                        out.wire.extend_from_slice(&CANCEL);
+                        (self.emit)(ZmodemEvent::Unsupported { direction });
+                    }
                     out.display.extend(shown);
                 }
             }
@@ -402,6 +413,22 @@ impl Tap {
                 self.drain(false);
             }
         }
+    }
+
+    /// A header that tmux or screen drew as text: the ZDLE is gone, leaving
+    /// `**B0`, then `0` or `1` and twelve hex digits. The bytes themselves
+    /// never reach the app there, so no transfer can run.
+    fn drawn_header(&mut self, shown: &[u8]) -> Option<Direction> {
+        self.seen.extend_from_slice(shown);
+        if self.seen.len() > 64 {
+            self.seen.drain(..self.seen.len() - 64);
+        }
+        let at = self.seen.windows(17).position(|w| {
+            w.starts_with(b"**B0") && matches!(w[4], b'0' | b'1') && w[5..].iter().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(b))
+        })?;
+        let direction = if self.seen[at + 4] == b'0' { Direction::Download } else { Direction::Upload };
+        self.seen.clear();
+        Some(direction)
     }
 
     fn drain(&mut self, over_and_out: bool) {

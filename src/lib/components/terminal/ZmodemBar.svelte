@@ -9,6 +9,8 @@
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { downloadDir } from '@tauri-apps/api/path';
+	import { sshZmodemExec } from '#lib/ipc/zmodem.js';
+	import type { TmuxStart } from '#lib/ipc/ssh.js';
 	import { zmodemCancel, zmodemDownload, zmodemUpload, type ZmodemDirection, type ZmodemEvent } from '#lib/ipc/zmodem.js';
 	import { formatBytes, percent, Speed } from '#lib/terminal/zmodem.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -23,9 +25,26 @@
 		tabId: string;
 		/** Types into the session (`rz` for Send files); false when it is down. */
 		send: (data: number[]) => boolean;
+		/** An SSH tab running in tmux: its terminal cannot carry ZMODEM, so
+		 *  the buttons run rz or sz on a channel of their own, in the
+		 *  folder the tmux pane is in. */
+		tmux?: TmuxStart | null;
 	}
 
-	let { connectionId, tabId, send }: Props = $props();
+	let { connectionId, tabId, send, tmux }: Props = $props();
+
+	/** Where the transfer the bar shows came from: the terminal's
+	 *  connection, or the side channel (`{id}-zx`). */
+	let activeId: string | null = null;
+
+	/** Run rz or the folder's sz on a side channel (tmux tabs). */
+	function viaChannel(kind: 'receive' | 'send-folder'): void {
+		if (!connectionId || !tmux) return;
+		sshZmodemExec(connectionId, kind, tmux.name, tmux.view ?? null).catch((e) => {
+			clearPending();
+			addToast(t('zmodem.failed', { error: String(e) }), 'error', 8000);
+		});
+	}
 
 	/** Asked for from the bar or the tab menu: what goes when the rz or sz
 	 *  typed for it answers. A folder download may run sz several times
@@ -72,7 +91,8 @@
 		const paths = picked === null ? [] : Array.isArray(picked) ? picked : [picked];
 		if (paths.length === 0) return;
 		arm({ kind: 'upload', paths }, ANSWER_WAIT_MS, true);
-		type('rz\r');
+		if (tmux) viaChannel('receive');
+		else type('rz\r');
 	}
 
 	/** Download the remote's current folder: pick where, then have find run
@@ -90,7 +110,8 @@
 		if (!folder) return;
 		rememberFolder(folder);
 		arm({ kind: 'download', folder }, ANSWER_WAIT_MS, true);
-		type(`(d="\${PWD##*/}"; cd .. && find "$d" -type f -exec sz -f {} +)\r`);
+		if (tmux) viaChannel('send-folder');
+		else type(`(d="\${PWD##*/}"; cd .. && find "$d" -type f -exec sz -f {} +)\r`);
 	}
 
 	$effect(() => {
@@ -193,6 +214,7 @@
 		switch (e.kind) {
 			case 'offer':
 				cancelling = false;
+				activeId = id;
 				void answer(id, e.direction);
 				break;
 			case 'progress':
@@ -221,7 +243,12 @@
 				running = null;
 				addToast(t('zmodem.cancelled'), 'info', 3000);
 				break;
+			case 'unsupported':
+				clearPending();
+				addToast(t('zmodem.multiplexer'), 'warning', 12000);
+				break;
 			case 'failed':
+				clearPending();
 				running = null;
 				addToast(t('zmodem.failed', { error: e.error }), 'error', 8000);
 				break;
@@ -233,22 +260,27 @@
 		if (!id) return;
 		let unlisten: UnlistenFn | undefined;
 		let gone = false;
-		void listen<ZmodemEvent>(`zmodem-${id}`, (event) => onEvent(id, event.payload)).then((u) => {
-			if (gone) u();
-			else unlisten = u;
-		});
+		const unlisteners: UnlistenFn[] = [];
+		// The terminal's own connection, and the side channel tmux tabs use.
+		for (const source of [id, `${id}-zx`]) {
+			void listen<ZmodemEvent>(`zmodem-${source}`, (event) => onEvent(source, event.payload)).then((u) => {
+				if (gone) u();
+				else unlisteners.push(u);
+			});
+		}
 		return () => {
 			gone = true;
-			unlisten?.();
+			for (const u of unlisteners) u();
 			running = null;
 			choosing = null;
 		};
 	});
 
 	function cancel(): void {
-		if (!connectionId) return;
+		const id = activeId ?? connectionId;
+		if (!id) return;
 		cancelling = true;
-		zmodemCancel(connectionId).catch(() => {});
+		zmodemCancel(id).catch(() => {});
 	}
 
 	let shown = $derived(running ?? (choosing ? { direction: choosing } : null));

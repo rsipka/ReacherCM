@@ -793,6 +793,7 @@ pub async fn session_create(
     connect_mode: Option<String>,
     address_check: Option<bool>,
     web: Option<crate::web::WebOptions>,
+    wol: Option<crate::state::WakeOnLan>,
     files: Option<crate::state::FilesProtocol>,
     ftp: Option<crate::ftp::FtpOptions>,
 ) -> Result<SessionConfig, String> {
@@ -886,6 +887,7 @@ pub async fn session_create(
             w.certs.clear();
             w
         }),
+        wol,
         files: files.filter(|_| kind == crate::state::SessionKind::Ssh),
         // Certificates likewise.
         ftp: ftp

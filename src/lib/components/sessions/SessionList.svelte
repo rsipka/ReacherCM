@@ -83,6 +83,7 @@
 	import type { SecretRef } from '#lib/ipc/pwmanager.js';
 	import { untrack } from 'svelte';
 	import { positionMenu } from '#lib/utils/positionMenu.js';
+	import { hasNetworkAddress, openNetworkTools } from '#lib/state/net-tools.svelte.js';
 	import { longPress } from '#lib/utils/longPress.js';
 	import { buildFolderTree, byName, bySavedOrder, canMoveFolder, commonVault, folderPath, foldersInVault, moveStep, placeAt, vaultOf, type FolderTreeNode } from '#lib/sessions/folder-tree.js';
 	import { canScanLinkCode, scanLinkCode } from '#lib/state/link-scan.js';
@@ -2713,6 +2714,15 @@
 					<button class="context-item" onclick={() => { if (contextMenu?.session) openHistoryPanel({ sessionId: contextMenu.session.id, sessionName: contextMenu.session.name }); closeContextMenu(); }} type="button">
 						{t('history.session_menu')}
 					</button>
+				{/if}
+				{#if hasNetworkAddress(contextMenu.session) && !(selected.has(contextMenu.session.id) && selected.size > 1)}
+					{@const netSession = contextMenu.session}
+					<div class="context-sep"></div>
+					<button class="context-item" onclick={() => { openNetworkTools({ tool: 'ping', sessionId: netSession.id, run: true }); closeContextMenu(); }} type="button">{t('net.menu_ping')}</button>
+					<button class="context-item" onclick={() => { openNetworkTools({ tool: 'scan', sessionId: netSession.id, run: true }); closeContextMenu(); }} type="button">{t('net.menu_scan')}</button>
+					{#if netSession.wol?.mac}
+						<button class="context-item" onclick={() => { openNetworkTools({ tool: 'wake', sessionId: netSession.id, run: true }); closeContextMenu(); }} type="button">{t('net.menu_wake')}</button>
+					{/if}
 				{/if}
 				{#if !(selected.has(contextMenu.session.id) && selected.size > 1)}
 					{@const sibs = siblingsOf(contextMenu.session.id)}

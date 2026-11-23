@@ -65,6 +65,21 @@ impl AudioConfig {
     }
 }
 
+/// Reach: the app's mute switch, for every session at once. While it is on,
+/// the server's audio is still received and confirmed, so the server keeps
+/// its timing, but none of it reaches the output device.
+static MUTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Reach: silence (or restore) the remote audio of every session.
+pub fn set_muted(muted: bool) {
+    MUTED.store(muted, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Reach: whether [`set_muted`] last turned the sound off.
+pub fn is_muted() -> bool {
+    MUTED.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 /// Monotonic clock for Wave Confirm timing.
 pub(crate) fn clock() -> Clock {
     let origin = Instant::now();
@@ -108,6 +123,9 @@ impl RdpsndClientHandler for SharedPlayback {
     }
 
     fn wave(&mut self, format: &AudioFormat, ts: u32, data: Cow<'_, [u8]>) {
+        if is_muted() {
+            return;
+        }
         self.with_backend(|backend| backend.wave(format, ts, data));
     }
 
