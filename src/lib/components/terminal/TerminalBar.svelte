@@ -20,6 +20,9 @@
 	import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
 	import { tick } from 'svelte';
 	import TmuxMenu from './TmuxMenu.svelte';
+	import DbMenu, { type MenuItem } from '#lib/components/db/DbMenu.svelte';
+	import { captureTab } from '#lib/state/capture.js';
+	import { CAMERA_ICON } from '#lib/terminal/snapshot.js';
 	import { formatHops, formatProxyAddress, ROUTE_ICON } from '#lib/utils/route.js';
 
 	interface Props {
@@ -168,6 +171,22 @@
 		else splitWith(tab.id, 'right');
 	}
 
+	// ---- Screenshot ----------------------------------------------------------
+	let captureMenu = $state<{ x: number; y: number } | null>(null);
+
+	function openCapture(e: MouseEvent): void {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		captureMenu = captureMenu ? null : { x: r.left, y: r.bottom + 2 };
+	}
+
+	let captureItems = $derived.by((): MenuItem[] => {
+		const name = tab.sessionName || tab.title;
+		return [
+			{ label: t('capture.copy'), hint: actionLabel('capture.copy'), action: () => void captureTab(tab.id, 'copy', name) },
+			{ label: t('capture.save'), hint: actionLabel('capture.save'), action: () => void captureTab(tab.id, 'save', name) }
+		];
+	});
+
 	/** The tab's own right-click menu, opened under the button. */
 	function openMore(e: MouseEvent): void {
 		const el = document.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(tab.id)}"]`);
@@ -231,6 +250,9 @@
 	{#if remote}
 		<button class="ib" type="button" onclick={() => openHistoryPanel({ sessionId: tab.sessionId, sessionName: tab.sessionName, tabId: tab.id })} title={`${t('termbar.history')} (Ctrl+Shift+H)`} aria-label={t('termbar.history')}>{@render icon(ICONS.history)}</button>
 	{/if}
+	{#if !mobile}
+		<button class="ib" class:on={!!captureMenu} type="button" onclick={openCapture} title={t('capture.button')} aria-label={t('capture.button')} aria-haspopup="menu" aria-expanded={!!captureMenu}>{@render icon(CAMERA_ICON)}</button>
+	{/if}
 	<button class="ib" class:on={highlighting} type="button" onclick={() => updateSetting('terminalHighlight', !highlighting)} title={highlightTip} aria-label={t('highlight.setting')} aria-pressed={highlighting}>{@render icon(ICONS.highlight)}</button>
 	<span class="sep"></span>
 	<button class="ib" class:on={broadcasting} type="button" onclick={() => toggleBroadcastTarget(tab.id)} title={t('broadcast.tab_toggle')} aria-label={t('broadcast.tab_toggle')} aria-pressed={broadcasting}>{@render icon(ICONS.broadcast)}</button>
@@ -240,6 +262,10 @@
 	<span class="sep"></span>
 	<button class="ib" type="button" onclick={openMore} title={t('termbar.more')} aria-label={t('termbar.more')} aria-haspopup="menu">{@render icon(ICONS.more, 17)}</button>
 </div>
+
+{#if captureMenu}
+	<DbMenu x={captureMenu.x} y={captureMenu.y} items={captureItems} onclose={() => (captureMenu = null)} />
+{/if}
 
 <style>
 	.term-bar {

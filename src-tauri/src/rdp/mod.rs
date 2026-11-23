@@ -44,6 +44,7 @@
 
 pub mod clipboard;
 pub mod drive;
+pub mod options;
 #[cfg(windows)]
 mod audio_session;
 
@@ -99,6 +100,13 @@ pub struct RdpConnectParams {
     /// for everything, `text` for no files, `off` for no clipboard at all.
     #[serde(default)]
     pub clipboard: Option<String>,
+    /// The session's own settings (colours, keyboard, sound, performance...).
+    #[serde(default)]
+    pub options: Option<options::RdpOptions>,
+    /// The remote's display scaling in percent; the panel works it out from
+    /// the session's setting or the screen's own. Unset or 100: none sent.
+    #[serde(default)]
+    pub scale: Option<u32>,
     /// The size the panel can show, so the server renders at the size it is
     /// seen at rather than being scaled after the fact.
     pub width: u16,
@@ -284,6 +292,9 @@ struct Open {
     /// Dropped with the entry, which is what ends the clipboard thread.
     /// None when the session turned the clipboard off.
     clipboard: Option<clipboard::ClipboardHandle>,
+    /// The display scaling asked for at connect, asked for again on every
+    /// resize: a resize without it puts the remote back to 100%.
+    scale: u32,
 }
 
 #[derive(Default)]
@@ -408,7 +419,8 @@ impl RdpManager {
         let frames = Arc::new(std::sync::Mutex::new(frames));
         let pump = tokio::spawn(pump_output(app, id.clone(), out_rx, Arc::clone(&frames), Arc::clone(&flow)));
 
-        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard });
+        let scale = desktop_scale(&params).unwrap_or(100);
+        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard, scale });
         Ok(())
     }
 
@@ -538,11 +550,12 @@ impl RdpManager {
     pub fn resize(&self, id: &str, width: u16, height: u16) -> Result<(), String> {
         let (width, height) = clamp_desktop(width, height);
         tracing::info!("RDP {id}: resize requested to {width}x{height}");
+        let scale_factor = self.open.get(id).map_or(100, |o| o.scale);
         self.input(id)?
             .try_send(RdpInputEvent::Resize {
                 width,
                 height,
-                scale_factor: 100,
+                scale_factor,
                 physical_size: None,
             })
             .map_err(|e| e.to_string())
@@ -729,10 +742,64 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
     // the playback backend; only the desktops build it (see Cargo.toml).
     #[cfg(not(mobile))]
     {
-        builder = builder.with_sound(true);
+        let off = p.options.as_ref().is_some_and(|o| o.sound.as_deref() == Some("off"));
+        builder = builder.with_sound(!off);
+        if let Some(quality) = p.options.as_ref().and_then(|o| o.audio_quality.as_deref()) {
+            builder = builder.with_audio_quality_mode(match quality {
+                "dynamic" => ironrdp_client::config::AudioQualityMode::Dynamic,
+                "medium" => ironrdp_client::config::AudioQualityMode::Medium,
+                _ => ironrdp_client::config::AudioQualityMode::High,
+            });
+        }
+    }
+
+    if let Some(scale) = desktop_scale(p) {
+        builder = builder
+            .with_desktop_scale_factor(scale)
+            .with_device_scale_factor(options::device_scale(scale));
+    }
+    if let Some(o) = &p.options {
+        builder = apply_options(builder, o);
     }
 
     builder.build().map_err(|e| e.to_string())
+}
+
+/// The display scaling to ask for, when it is not 100%.
+fn desktop_scale(p: &RdpConnectParams) -> Option<u32> {
+    p.scale.filter(|s| (101..=500).contains(s))
+}
+
+/// The session's own settings, on top of what every session gets.
+fn apply_options(mut builder: ConfigBuilder, o: &options::RdpOptions) -> ConfigBuilder {
+    if let Some(depth) = o.color_depth.filter(|d| *d == 16 || *d == 32) {
+        builder = builder.with_color_depth(depth);
+    }
+    if let Some(layout) = o.keyboard_layout.filter(|l| *l != 0) {
+        builder = builder.with_keyboard_layout(layout);
+    }
+    if let Some(flags) = o.performance_flags() {
+        builder = builder.with_performance_flags(flags);
+    }
+    if o.compression == Some(false) {
+        builder = builder.with_compression(false);
+    }
+    if let Some(secs) = o.keepalive.filter(|s| *s > 0) {
+        builder = builder.with_input_keepalive_interval(Duration::from_secs(secs.into()));
+    }
+    if let Some(secs) = o.jiggler.filter(|s| *s > 0) {
+        builder = builder.with_fake_events_interval(Duration::from_secs(secs.into()));
+    }
+    if o.admin == Some(true) {
+        builder = builder.with_administrative_session(true);
+    }
+    if let Some(program) = o.program.as_deref().filter(|s| !s.trim().is_empty()) {
+        builder = builder.with_alternate_shell(program.trim());
+        if let Some(dir) = o.work_dir.as_deref().filter(|s| !s.trim().is_empty()) {
+            builder = builder.with_work_dir(dir.trim());
+        }
+    }
+    builder
 }
 
 /// The files last dropped on a window, as the OS reported them. A drop on a

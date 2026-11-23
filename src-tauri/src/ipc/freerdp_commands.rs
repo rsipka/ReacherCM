@@ -101,6 +101,9 @@ pub struct FreerdpLaunchParams {
     graphics_pipeline: bool,
     share_path: Option<String>,
     program: Option<String>,
+    /// The session's own RDP settings; the ones FreeRDP has a switch for are passed on.
+    #[serde(default)]
+    rdp: Option<crate::rdp::options::RdpOptions>,
 }
 
 impl FreerdpLaunchParams {
@@ -131,16 +134,21 @@ impl FreerdpLaunchParams {
             self.domain.as_deref().unwrap_or(""),
             password,
             self.share_path.as_deref().unwrap_or(""),
+            self.rdp.as_ref().and_then(|o| o.program.as_deref()).unwrap_or(""),
+            self.rdp.as_ref().and_then(|o| o.work_dir.as_deref()).unwrap_or(""),
         ];
         if fields.iter().any(|s| s.contains(['\r', '\n', '\0'])) {
             return Err(
                 "FreeRDP cannot pass connection fields containing a line break or NUL.".into(),
             );
         }
-        let mut input = Zeroizing::new(format!(
-            "/v:{address}\n/u:{}\n/dynamic-resolution\n",
-            self.username
-        ));
+        let options = self.rdp.clone().unwrap_or_default();
+        let size = match options.resolution.as_deref().and_then(crate::rdp::options::parse_resolution) {
+            Some((w, h)) => format!("/size:{w}x{h}\n/smart-sizing\n"),
+            None => "/dynamic-resolution\n".to_owned(),
+        };
+        let mut input = Zeroizing::new(format!("/v:{address}\n/u:{}\n{size}", self.username));
+        input.push_str(&freerdp_option_args(&options));
         if let Some(domain) = self.domain.as_deref().filter(|s| !s.is_empty()) {
             input.push_str("/d:");
             input.push_str(domain);
@@ -173,6 +181,46 @@ impl FreerdpLaunchParams {
         input.push('\n');
         Ok(input)
     }
+}
+
+/// FreeRDP switches for the session's own settings, one per line. Only those
+/// FreeRDP has; keep-alive, the jiggler and sound quality are IronRDP's alone.
+fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> String {
+    let mut args = String::new();
+    let mut line = |arg: &str| {
+        args.push_str(arg);
+        args.push('\n');
+    };
+    if let Some(scale) = o.scale.filter(|s| (100..=500).contains(s)) {
+        line(&format!("/scale-desktop:{scale}"));
+    }
+    if let Some(depth) = o.color_depth.filter(|d| *d == 16 || *d == 32) {
+        line(&format!("/bpp:{depth}"));
+    }
+    if let Some(layout) = o.keyboard_layout.filter(|l| *l != 0) {
+        line(&format!("/kbd:layout:0x{layout:08X}"));
+    }
+    if o.sound.as_deref() == Some("off") {
+        line("/audio-mode:2");
+    }
+    match o.performance.as_deref() {
+        Some("fast") => ["-wallpaper", "-themes", "-menu-anims", "-window-drag", "-fonts"].into_iter().for_each(&mut line),
+        Some("best") => ["+wallpaper", "+themes", "+menu-anims", "+window-drag", "+fonts", "+aero"].into_iter().for_each(&mut line),
+        _ => {}
+    }
+    if o.compression == Some(false) {
+        line("-compression");
+    }
+    if o.admin == Some(true) {
+        line("/admin");
+    }
+    if let Some(program) = o.program.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        line(&format!("/shell:{program}"));
+        if let Some(dir) = o.work_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            line(&format!("/shell-dir:{dir}"));
+        }
+    }
+    args
 }
 
 /// xfreerdp prompts on stdin, which the launcher closes after writing the
@@ -344,6 +392,32 @@ mod tests {
                 "/p:example secret",
             ],
         );
+    }
+
+    #[test]
+    fn passes_session_rdp_settings() {
+        let mut session = params();
+        session.graphics_pipeline = false;
+        session.domain = None;
+        session.rdp = Some(crate::rdp::options::RdpOptions {
+            resolution: Some("1280x720".into()),
+            color_depth: Some(16),
+            keyboard_layout: Some(0x0405),
+            performance: Some("fast".into()),
+            admin: Some(true),
+            program: Some("notepad.exe".into()),
+            ..Default::default()
+        });
+        let input = session.input("example", None).unwrap();
+        let lines: Vec<_> = input.lines().collect();
+        assert_eq!(&lines[2..4], ["/size:1280x720", "/smart-sizing"]);
+        for arg in ["/bpp:16", "/kbd:layout:0x00000405", "-wallpaper", "/admin", "/shell:notepad.exe"] {
+            assert!(lines.contains(&arg), "{arg} missing");
+        }
+        assert!(!lines.contains(&"/dynamic-resolution"));
+
+        session.rdp.as_mut().unwrap().program = Some("x\n/cert:ignore".into());
+        assert!(session.input("example", None).is_err());
     }
 
     #[test]

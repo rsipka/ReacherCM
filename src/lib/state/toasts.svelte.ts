@@ -32,7 +32,7 @@ const VOLUME = 0.4;
  * crashed on the first toast, leaving the window frozen (issue #87).
  */
 function playSound(): void {
-	if (!getSettings().playSounds) return;
+	if (!getSettings().playSounds || getSettings().muted) return;
 	if (isWebKit() && !isMac() && !isMobile()) {
 		invoke('play_notification_sound', { volume: VOLUME }).catch(() => {});
 		return;

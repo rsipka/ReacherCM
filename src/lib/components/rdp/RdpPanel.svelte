@@ -23,6 +23,7 @@
 	 * behind it is typed as US-layout keystrokes.
 	 */
 	import { onDestroy, onMount } from 'svelte';
+	import { registerCapture } from '#lib/state/capture.js';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -51,6 +52,7 @@
 		rdpSyncLocks,
 		rdpWindowFullscreen,
 		rdpUnicode,
+		parseResolution,
 		type MouseAction,
 		type RdpClipEvent,
 		type RdpConnectParams,
@@ -1034,10 +1036,28 @@
 	 * screen's own resolution and scaled down by CSS, it is pixel for pixel.
 	 */
 	function fitSize(): { width: number; height: number } {
+		// A session set to a fixed size keeps it; the canvas scales it to fit.
+		const fixed = protocol === 'rdp' ? parseResolution((params as RdpConnectParams).options?.resolution) : null;
+		if (fixed) return fixed;
 		const r = (screen ?? host).getBoundingClientRect();
 		const scale = window.devicePixelRatio || 1;
 		const even = (v: number) => Math.min(8192, Math.max(200, Math.floor(v * scale) & ~1));
 		return { width: even(r.width || 1024), height: even(r.height || 768) };
+	}
+
+	/**
+	 * The remote's display scaling: the session's own, or on desktops the
+	 * screen's, to the nearest quarter. A desktop rendered at device pixels on a 200%
+	 * screen is otherwise drawn at 100% and its text is half the size.
+	 */
+	function rdpScale(): number {
+		const own = (params as RdpConnectParams).options?.scale;
+		if (own) return own;
+		// Phones and tablets: a desktop at their screen's 300% would leave
+		// next to no room on it; they keep 100% unless the session says.
+		if (isMobile()) return 100;
+		const ratio = window.devicePixelRatio || 1;
+		return Math.min(500, Math.max(100, Math.round(ratio * 4) * 25));
 	}
 
 	/** Whether the current RDP attempt asked for the graphics pipeline, and at what size. */
@@ -1057,14 +1077,19 @@
 		if (isVnc() || isSpice() || graphicsPipeline || phase !== 'connecting') return false;
 		if (!/disconnect provider ultimatum/i.test(error)) return false;
 		graphicsPipeline = true;
-		rdpConnect({ ...(params as RdpConnectParams), ...connectSize, graphicsPipeline: true, olderGraphicsFormats: !getSettings().rdpNewGraphicsFormats }, paint).catch((err) => {
+		rdpConnect({ ...(params as RdpConnectParams), ...connectSize, scale: rdpScale(), graphicsPipeline: true, olderGraphicsFormats: !getSettings().rdpNewGraphicsFormats }, paint).catch((err) => {
 			phase = 'error';
 			message = String(err);
 		});
 		return true;
 	}
 
+	// A screenshot of the remote desktop: the framebuffer at its own size.
+	// The WebGL context keeps its drawing buffer, so the canvas reads back.
+	let unregisterCapture: (() => void) | undefined;
+
 	onMount(async () => {
+		unregisterCapture = registerCapture(id, () => (phase === 'connected' && canvas?.width ? canvas : null));
 		const size = fitSize();
 
 		unlisten = await listen<RdpStatus>(`${protocol}-status-${id}`, (event) => {
@@ -1116,7 +1141,7 @@
 			} else {
 				graphicsPipeline = (params as RdpConnectParams).graphicsPipeline || getSettings().rdpGraphicsPipeline;
 				connectSize = size;
-				await rdpConnect({ ...(params as RdpConnectParams), ...size, graphicsPipeline, olderGraphicsFormats: !getSettings().rdpNewGraphicsFormats }, paint);
+				await rdpConnect({ ...(params as RdpConnectParams), ...size, scale: rdpScale(), graphicsPipeline, olderGraphicsFormats: !getSettings().rdpNewGraphicsFormats }, paint);
 			}
 		} catch (err) {
 			phase = 'error';
@@ -1166,6 +1191,7 @@
 	}
 
 	onDestroy(() => {
+		unregisterCapture?.();
 		unlisten?.();
 		unlistenLocks();
 		clearTimeout(lockSyncTimer);

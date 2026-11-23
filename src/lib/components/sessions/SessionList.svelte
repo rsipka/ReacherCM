@@ -1233,6 +1233,7 @@
 					clipboard: session.rdp_clipboard ?? null,
 					graphicsPipeline: session.detected_os === 'gnome',
 					sharePath: session.share_path ?? null,
+					rdp: session.rdp ?? null,
 					program: getSettings().freerdpPath || null,
 				},
 				session.id,
@@ -1254,6 +1255,7 @@
 				sharePath: session.share_path ?? undefined,
 				clipboard: session.rdp_clipboard ?? null,
 				forwardLockKeys: session.rdp_forward_lock_keys ?? true,
+				options: session.rdp ?? null,
 				// GNOME Remote Desktop serves no client without the graphics
 				// pipeline, so a GNOME session asks for it whatever the setting says.
 				graphicsPipeline: session.detected_os === 'gnome' ? true : undefined,
