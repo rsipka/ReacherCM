@@ -7565,7 +7565,7 @@ dependencies = [
 name = "reacher-cm"
 version = "26.11.1-dev.7"
 dependencies = [
- "aes 0.8.4",
+ "aes 0.9.3",
  "anyhow",
  "apple-native-keyring-store",
  "arboard",

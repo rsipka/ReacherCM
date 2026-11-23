@@ -182,7 +182,7 @@ zune-jpeg = "0.5"
 # the tree through other crates.
 num-bigint = "0.5"
 md-5 = "0.11"
-aes = "0.8"
+aes = "0.9"
 rsa = "0.9"
 hmac = "0.13"
 subtle = "2"
