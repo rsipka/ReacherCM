@@ -347,7 +347,7 @@ fn failure(stderr: &[u8]) -> Failure {
 /// The session key `bw unlock` gave for one typing of the master password,
 /// and when Reach last synced. In memory only.
 pub(crate) mod sessions {
-    use std::sync::{Arc, Mutex, MutexGuard};
+    use std::sync::{Arc, Mutex};
     use std::time::Instant;
 
     use super::Passphrase;
@@ -367,38 +367,54 @@ pub(crate) mod sessions {
 
     static STATE: Mutex<State> = Mutex::new(State { kept: None, synced: None });
 
-    fn state() -> MutexGuard<'static, State> {
-        STATE.lock().unwrap_or_else(|e| e.into_inner())
+    // Other tests can clear the process-wide cache while a fake CLI call awaits.
+    #[cfg(test)]
+    tokio::task_local! {
+        static TEST_STATE: Mutex<State>;
+    }
+
+    #[cfg(test)]
+    pub(super) async fn isolated<F: std::future::Future>(test: F) -> F::Output {
+        TEST_STATE.scope(Mutex::new(State::default()), test).await
+    }
+
+    fn with_state<T>(f: impl FnOnce(&mut State) -> T) -> T {
+        #[cfg(test)]
+        if TEST_STATE.try_with(|_| ()).is_ok() {
+            return TEST_STATE.with(|state| f(&mut state.lock().unwrap_or_else(|e| e.into_inner())));
+        }
+        f(&mut STATE.lock().unwrap_or_else(|e| e.into_inner()))
     }
 
     /// The key unlocked with the master password `master`, if kept.
     pub(crate) fn get(master: u64) -> Option<Arc<Passphrase>> {
-        state().kept.as_ref().filter(|k| k.master == master).map(|k| k.key.clone())
+        with_state(|state| state.kept.as_ref().filter(|k| k.master == master).map(|k| k.key.clone()))
     }
 
     pub(crate) fn keep(master: u64, key: Arc<Passphrase>) {
-        state().kept = Some(Kept { master, key });
+        with_state(|state| state.kept = Some(Kept { master, key }));
     }
 
     /// Drop this key, if it is still the one kept: the CLI refused it.
     pub(crate) fn drop_key(serial: u64) {
-        let mut s = state();
-        if s.kept.as_ref().is_some_and(|k| k.key.serial() == serial) {
-            s.kept = None;
-        }
+        with_state(|state| {
+            if state.kept.as_ref().is_some_and(|k| k.key.serial() == serial) {
+                state.kept = None;
+            }
+        });
     }
 
     /// Forget the key: every time the master password is forgotten.
     pub(crate) fn forget() {
-        *state() = State::default();
+        with_state(|state| *state = State::default());
     }
 
     pub(crate) fn synced_within(window: std::time::Duration) -> bool {
-        state().synced.is_some_and(|at| at.elapsed() < window)
+        with_state(|state| state.synced.is_some_and(|at| at.elapsed() < window))
     }
 
     pub(crate) fn mark_synced() {
-        state().synced = Some(Instant::now());
+        with_state(|state| state.synced = Some(Instant::now()));
     }
 }
 

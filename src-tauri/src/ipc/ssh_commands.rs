@@ -350,8 +350,9 @@ pub async fn ssh_connect(
         // typed into it: the init would land in a tmux window, again on
         // every reattach.
         // Ask mode: the shell stays as it is until the picker answers, once
-        // logged in (see `ssh::tmux::Ask`).
-        let tmux_ask = tmux.as_ref().filter(|t| t.ask).map(|t| crate::ssh::tmux::Ask {
+        // logged in (see `ssh::tmux::Ask`); so does a name to settle
+        // between the old and the current one (`TmuxStart::legacy`).
+        let tmux_ask = tmux.as_ref().filter(|t| t.ask || t.legacy.is_some()).map(|t| crate::ssh::tmux::Ask {
             id: id.clone(),
             start: t.clone(),
             shell: shell.clone(),
@@ -360,7 +361,7 @@ pub async fn ssh_connect(
             port,
         });
         let shell = match &tmux {
-            Some(t) if !t.ask => Some(crate::ssh::tmux::start_command(t, shell.as_deref())?),
+            Some(t) if !t.ask && t.legacy.is_none() => Some(crate::ssh::tmux::start_command(t, shell.as_deref())?),
             _ => shell,
         };
         let login = crate::ssh::client::LoginOptions {

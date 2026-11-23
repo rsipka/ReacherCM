@@ -165,7 +165,7 @@ tauri-plugin-process = "2.3.1"
 # The Android half of vault unlock (fingerprint, security keys); a no-op elsewhere.
 tauri-plugin-reach-unlock = { path = "plugins/reach-unlock" }
 # The QR code that links another device (Settings > Sync), drawn as SVG.
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+qrcode = { version = "0.15", default-features = false, features = ["svg"] }
 # VNC (RFB) client for VNC sessions.
 vnc-rs = "0.6"
 # SPICE desktops (KVM/QEMU, Proxmox, libvirt): protocol, image codecs and the
@@ -182,7 +182,7 @@ zune-jpeg = "0.5"
 # the tree through other crates.
 num-bigint = "0.5"
 md-5 = "0.11"
-aes = "0.8"
+aes = "0.9"
 rsa = "0.9"
 hmac = "0.13"
 subtle = "2"
@@ -232,7 +232,7 @@ http = "1"
 kube = { version = "5.1", default-features = false, features = ["client", "rustls-tls", "ring", "ws", "http-proxy"] }
 k8s-openapi = { version = "0.29", features = ["v1_33"] }
 # YAML for viewing and editing resources: the same parser kube itself uses.
-serde-saphyr = { version = "0.0.29", features = ["serialize"] }
+serde-saphyr = { version = "2.1.1", features = ["serialize"] }
 
 # PTY, Serial, Autostart, Updater, native drag-out (desktop only). Neither
 # phone builds them: Android and iOS have no PTY, serial port, autostart,
@@ -323,8 +323,8 @@ windows = { version = "0.62", features = [
     "Win32_Media_Audio",
     "Win32_Storage_FileSystem",
 ] }
-# The #[implement] macro expands to paths rooted at this crate, so it has to
-# be a direct dependency even though everything else comes through `windows`.
+# The #[implement] macro references this crate directly. Keep it on the
+# same 0.62 series as the COM interfaces from `windows` and `webview2-com`.
 windows-core = "0.62"
 # Reaching the WebView2 controller to tell it focus moved (issue #49).
 webview2-com = "0.39"

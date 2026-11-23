@@ -40,7 +40,7 @@ Reacher CM adds what people moving from Remote Desktop Manager and similar tools
 - **Session notes and custom fields**, like RDM's Documentation tab, encrypted and synced with the session.
 - **Edit many sessions at once**, and favorites on the start screen.
 - **Telnet and serial sessions** for switches, routers and console servers, and **macOS login** for Macs over VNC.
-- **tmux on the server**: sessions that survive a dropped connection, with tmux windows as tabs.
+- **tmux on the server**: sessions that survive a dropped connection, with tmux windows as tabs, and the tmux session and window in the terminal bar with a dropdown to switch.
 - **Broadcast input**: type into several terminals at once.
 - **RDP clipboard with pictures and file drops**: copy pictures both ways, drop files onto the desktop, see transfer progress, choose per session what the clipboard carries, and send and save files from a phone.
 - **Searchable session history**, encrypted, with secrets masked.

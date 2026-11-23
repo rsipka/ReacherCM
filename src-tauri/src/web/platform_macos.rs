@@ -19,7 +19,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use block2::Block;
 use objc2::encode::{Encode, Encoding, RefEncode};
-use objc2::runtime::{AnyClass, AnyObject, Sel};
+use objc2::runtime::{AnyClass, AnyObject, Bool, Sel};
 use objc2::{class, msg_send, sel};
 use objc2_foundation::NSString;
 use tauri::WebviewWindow;
@@ -181,10 +181,21 @@ unsafe fn add_method(cls: &AnyClass) {
 }
 
 pub(super) fn install(win: &WebviewWindow, label: String) {
+    let popups = super::window::popups_allowed(&label);
     let result = win.with_webview(move |pv| unsafe {
         let view = pv.inner() as *mut AnyObject;
         if view.is_null() {
             return;
+        }
+        // WebKit blocks `window.open` unless it comes straight from a
+        // click; a console button that asks the server first loses the
+        // click. Windows the page opens are this session's own.
+        let configuration: *mut AnyObject = msg_send![view, configuration];
+        if let Some(c) = configuration.as_ref() {
+            let preferences: *mut AnyObject = msg_send![c, preferences];
+            if let Some(p) = preferences.as_ref() {
+                let _: () = msg_send![p, setJavaScriptCanOpenWindowsAutomatically: Bool::new(popups)];
+            }
         }
         views().insert(view as usize, label);
         let delegate: *mut AnyObject = msg_send![view, navigationDelegate];

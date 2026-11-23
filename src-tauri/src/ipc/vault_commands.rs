@@ -818,7 +818,8 @@ pub async fn vault_secret_list(
     let mut secrets = manager.list_secrets(&vault_id).await.map_err(|e| e.to_string())?;
     // A shared vault keeps its session folders; they are the sidebar's
     // structure, not secrets to list here.
-    secrets.retain(|s| s.category != "folder");
+    // Credential folders likewise order the credentials list.
+    secrets.retain(|s| s.category != "folder" && s.category != "custom:credential_folder");
     Ok(secrets)
 }
 

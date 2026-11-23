@@ -96,7 +96,7 @@ await page.addInitScript(() => {
 	localStorage.setItem('reach-settings', JSON.stringify({ setupComplete: true, seenFeatures: [], checkForUpdates: false, serverMonitoring: false, theme: 'dark' }));
 });
 const calls = [];
-page.on('pageerror', (e) => console.log(`  page error: ${e.message}`));
+page.on('pageerror', (e) => console.log(`  page error: ${e.message}`, process.env.STACK ? e.stack : ""));
 await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 	calls.push({ cmd, args });
 	switch (cmd) {
@@ -136,6 +136,7 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 		case 'snippet_list':
 		case 'theme_list_installed':
 		case 'saved_credential_list':
+		case 'credential_folder_list':
 		case 'plugin:window|available_monitors':
 			return [];
 		case 'share_load':
@@ -146,7 +147,8 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 		case 'history_start':
 			return { recording: 'off', paused: false, logFile: null };
 		default:
-			return null;
+			// Lists (password managers, password history, SSH algorithms…) are empty.
+			return /list|history|catalog|pwmanager_status/.test(cmd) ? [] : null;
 	}
 });
 await page.addInitScript(() => {

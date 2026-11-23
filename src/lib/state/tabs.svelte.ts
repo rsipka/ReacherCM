@@ -5,6 +5,7 @@ import { spiceDisconnect, type SpiceConnectParams } from '#lib/ipc/spice.js';
 import type { TelnetConnectParams } from '#lib/ipc/telnet.js';
 import type { SerialConnectParams } from '#lib/ipc/serial.js';
 import { ftpDisconnect } from '#lib/ipc/ftp.js';
+import { dropQueue } from '#lib/explorer/transfer-queue.svelte.js';
 import type { FilesProtocol } from '#lib/ipc/sessions.js';
 import type { HistoryMode } from '#lib/ipc/history.js';
 import * as splits from '#lib/terminal/split.js';
@@ -329,6 +330,7 @@ export function closeTab(id: string): void {
 	} else if (tabs[index].type === 'spice') {
 		void spiceDisconnect(id).catch(() => {});
 	} else if (tabs[index].type === 'ftp' && tabs[index].ftpConnectionId) {
+		dropQueue(tabs[index].ftpConnectionId!);
 		void ftpDisconnect(tabs[index].ftpConnectionId!).catch(() => {});
 	}
 

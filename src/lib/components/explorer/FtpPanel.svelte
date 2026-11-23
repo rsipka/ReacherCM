@@ -8,6 +8,7 @@
 	import { onMount, tick, untrack } from 'svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { setFtpConnection, setTabLink, type Tab } from '#lib/state/tabs.svelte.js';
+	import { dropQueue } from '#lib/explorer/transfer-queue.svelte.js';
 	import { ftpConnect, ftpDisconnect, ftpTrustCert, FTP_PASSWORD_NEEDED, FTP_UNTRUSTED_CERT } from '#lib/ipc/ftp.js';
 	import Button from '#lib/components/shared/Button.svelte';
 	import DualPane from './DualPane.svelte';
@@ -42,6 +43,7 @@
 		const old = tab.ftpConnectionId;
 		if (old) {
 			setFtpConnection(tab.id, undefined);
+			dropQueue(old);
 			await ftpDisconnect(old).catch(() => {});
 		}
 		const id = crypto.randomUUID();

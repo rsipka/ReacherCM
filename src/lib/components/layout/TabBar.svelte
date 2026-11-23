@@ -8,8 +8,8 @@
 	} from '#lib/state/tabs.svelte.js';
 	import { canDuplicate, duplicateTab } from '#lib/terminal/duplicate-tab.js';
 	import { sshConnectionAlgorithms, sshTmuxKill, sshTmuxList, sshTmuxWindows, sshTmuxWindow, type NegotiatedAlgorithms, type TmuxListed, type TmuxWindow, type TmuxWindowOp } from '#lib/ipc/ssh.js';
-	import { validTmuxName, newViewTag } from '#lib/terminal/tmux.js';
-	import { newTab, isTmuxViewTab, openTmuxWindowTab } from '#lib/terminal/tmux-tabs.js';
+	import { validTmuxName } from '#lib/terminal/tmux.js';
+	import { newTab, isTmuxViewTab, openTmuxWindowTab, switchTmuxSession, tmuxSessionOf } from '#lib/terminal/tmux-tabs.js';
 	import { SPLIT_MIN_WIDTH, contains, leaves } from '#lib/terminal/split.js';
 	import { isMobile } from '#lib/platform.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
@@ -335,10 +335,7 @@
 		return items;
 	}
 
-	/** The tmux session an SSH tab runs in, if it does. */
-	function tmuxOf(tab: Tab): string | null {
-		return tab.type === 'ssh' ? (tab.sshConnectParams?.tmux?.name ?? null) : null;
-	}
+	const tmuxOf = tmuxSessionOf;
 
 	/** Switch tmux session: the tab, the server's sessions, a new name. */
 	let switchTab = $state<Tab | null>(null);
@@ -359,21 +356,10 @@
 		}
 	}
 
-	/** The tab connects again, into `name` (its terminal does it, see tmuxSwitch). */
 	function switchTo(name: string): void {
 		const tab = switchTab;
 		switchTab = null;
-		const params = tab?.sshConnectParams;
-		if (!tab || !params?.tmux) return;
-		if (!validTmuxName(name)) {
-			addToast(t('tmux.name_invalid'), 'error');
-			return;
-		}
-		if (name === params.tmux.name) return;
-		// A tab in a view of its own gets a new view, of the new session.
-		tab.sshConnectParams = { ...params, tmux: { ...params.tmux, name, ask: false, view: params.tmux.view ? newViewTag() : undefined, window: undefined } };
-		tab.tmuxWindow = undefined;
-		tab.tmuxSwitch = (tab.tmuxSwitch ?? 0) + 1;
+		if (tab) switchTmuxSession(tab, name);
 	}
 
 	/** tmux windows: the tab's session's windows, to switch, open in a tab,

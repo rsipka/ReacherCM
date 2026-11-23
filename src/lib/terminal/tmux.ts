@@ -4,7 +4,9 @@
  *
  * A session says `off` or `attach` itself, or leaves it to its folder; the
  * nearest folder that says on or off decides, else it is off. The name is
- * the session's own, or `reacher-` and the session's name in plain letters.
+ * the session's own, or `reachercm-` and the session's name in plain letters
+ * (`reacher-` before: such a session is still attached to while it is the
+ * only one there, see TmuxStart.legacy).
  */
 
 import type { Folder, SessionConfig, TmuxSetting } from '#lib/ipc/sessions.js';
@@ -19,17 +21,30 @@ export function validTmuxName(name: string): boolean {
 	return name.length > 0 && name.length <= MAX_NAME && !name.startsWith('-') && /^[A-Za-z0-9_-]+$/.test(name);
 }
 
-/** "Web 01 (prod)" → "reacher-web-01-prod". */
-export function defaultTmuxName(sessionName: string): string {
+const PREFIX = 'reachercm';
+/** What the default names started with before. */
+const OLD_PREFIX = 'reacher';
+
+function nameWith(prefix: string, sessionName: string): string {
 	const slug = sessionName
 		.normalize('NFKD')
-		.replace(/[̀-ͯ]/g, '')
+		.replace(/[\u0300-\u036f]/g, '')
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
 		.replace(/^-+|-+$/g, '')
-		.slice(0, MAX_NAME - 'reacher-'.length)
+		.slice(0, MAX_NAME - prefix.length - 1)
 		.replace(/-+$/, '');
-	return slug ? `reacher-${slug}` : 'reacher';
+	return slug ? `${prefix}-${slug}` : prefix;
+}
+
+/** "Web 01 (prod)" → "reachercm-web-01-prod". */
+export function defaultTmuxName(sessionName: string): string {
+	return nameWith(PREFIX, sessionName);
+}
+
+/** The default name earlier versions gave: "reacher-web-01-prod". */
+export function legacyTmuxName(sessionName: string): string {
+	return nameWith(OLD_PREFIX, sessionName);
 }
 
 /** The folder setting that applies to a session in `folderId`: the nearest that says. */
@@ -57,7 +72,11 @@ export function tmuxFor(session: Pick<SessionConfig, 'name' | 'kind' | 'folder_i
 	const on = mode === 'attach' || mode === 'ask' ? true : mode === 'off' ? false : folderTmux(session.folder_id, folders) === true;
 	if (!on) return null;
 	const name = own?.name?.trim();
-	const start: TmuxStart = { name: name && validTmuxName(name) ? name : defaultTmuxName(session.name) };
+	const ownName = !!name && validTmuxName(name);
+	const start: TmuxStart = { name: ownName ? name : defaultTmuxName(session.name) };
+	// The default name changed: a session started under the old one is
+	// still there to go back to (the backend picks it while it is the only one).
+	if (!ownName) start.legacy = legacyTmuxName(session.name);
 	if (mode === 'ask' && kind === 'ssh') start.ask = true;
 	if (own?.mouse) start.mouse = true;
 	return start;

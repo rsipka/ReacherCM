@@ -31,7 +31,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { folderPath } from '#lib/sessions/folder-tree.js';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { savedCredentialList, credentialsFor, type SavedCredential } from '#lib/ipc/savedCredentials.js';
+	import { savedCredentialList, credentialsFor, credentialFolderList, groupByFolder, type SavedCredential, type CredentialFolder } from '#lib/ipc/savedCredentials.js';
 	import { DEFAULT_TELNET_OPTIONS, type TelnetOptions } from '#lib/ipc/telnet.js';
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
@@ -128,6 +128,7 @@
 	let webPassSel = $state('');
 	let webSubmitSel = $state('');
 	let webSubmit = $state(true);
+	let webPopups = $state(true);
 	let webCerts = $state<WebCert[]>([]);
 	let webCertTyped = $state('');
 	let webCertError = $state('');
@@ -166,6 +167,7 @@
 			o.submit_selector = webSubmitSel.trim() || null;
 		}
 		if (!webSubmit) o.submit = false;
+		if (!webPopups) o.popups = false;
 		return o;
 	}
 
@@ -228,12 +230,17 @@
 		folders.filter((f) => (f.vault_id ?? null) === sessionVault || (!!source?.folder_id && f.id === source.folder_id))
 	);
 	let credentials = $derived(credentialsFor(allCredentials, sessionVault));
+	let credentialFolders = $state<CredentialFolder[]>([]);
+	let credentialGroups = $derived(groupByFolder(credentials, credentialFolders));
 
 	$effect(() => {
 		if (open) {
 			savedCredentialList()
 				.then((list) => (allCredentials = list))
 				.catch(() => (allCredentials = []));
+			credentialFolderList()
+				.then((list) => (credentialFolders = list))
+				.catch(() => (credentialFolders = []));
 		}
 	});
 
@@ -371,11 +378,13 @@
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
-	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer'; kinds: Protocol[] }[] = [
+	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer' | 'other'; kinds: Protocol[] }[] = [
 		{ id: 'terminal', kinds: ['ssh', 'telnet', 'serial', 'wsl'] },
-		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice', 'winbox', 'web'] },
+		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice'] },
 		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
-		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] }
+		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] },
+		// Neither a terminal nor a remote desktop: a device's web page, MikroTik's own app.
+		{ id: 'other', kinds: ['web', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -563,6 +572,7 @@
 		webPassSel = w?.password_selector ?? '';
 		webSubmitSel = w?.submit_selector ?? '';
 		webSubmit = w?.submit !== false;
+		webPopups = w?.popups !== false;
 		webCerts = w?.certs ?? [];
 		webCertTyped = '';
 		webCertError = '';
@@ -1170,8 +1180,18 @@
 					{:else}
 						<option value="">{t('credential.own_login')}</option>
 					{/if}
-					{#each credentials as c (c.id)}
-						<option value={c.id}>{c.name} ({c.username})</option>
+					{#each credentialGroups as g (g.label ?? '')}
+						{#if g.label === null}
+							{#each g.credentials as c (c.id)}
+								<option value={c.id}>{c.name} ({c.username})</option>
+							{/each}
+						{:else}
+							<optgroup label={g.label}>
+								{#each g.credentials as c (c.id)}
+									<option value={c.id}>{c.name} ({c.username})</option>
+								{/each}
+							</optgroup>
+						{/if}
 					{/each}
 					{#if credentialId && credentialId !== OWN_LOGIN && !credentials.some((c) => c.id === credentialId)}
 						<option value={credentialId}>{t('credential.missing')}</option>
@@ -1397,6 +1417,13 @@
 				<p class="shell-hint">{webOpenIn === 'browser' || isMobile() ? t('web.open_browser_hint') : t('web.open_window_hint')}</p>
 			</div>
 			{#if webOpenIn !== 'browser' && !isMobile()}
+				<div class="shell-field">
+					<label class="jump-toggle">
+						<input type="checkbox" bind:checked={webPopups} disabled={saving} />
+						<span class="jump-toggle-text">{t('web.popups')}</span>
+					</label>
+					<p class="shell-hint">{t('web.popups_hint')}</p>
+				</div>
 				<div class="shell-field">
 					<label class="via-label" for="web-storage">{t('web.storage')}</label>
 					<select id="web-storage" class="via-select" bind:value={webStorage} disabled={saving}>

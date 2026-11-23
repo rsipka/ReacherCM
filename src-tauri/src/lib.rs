@@ -76,6 +76,7 @@ use ipc::winbox_commands::*;
 use ipc::telnet_commands::*;
 use ipc::zmodem_commands::*;
 use ipc::saved_credential_commands::*;
+use ipc::credential_folder_commands::*;
 use ipc::session_commands::*;
 use ipc::sftp_commands::*;
 #[cfg(desktop)]
@@ -673,6 +674,13 @@ pub fn run() {
             saved_credential_create,
             saved_credential_update,
             saved_credential_delete,
+            saved_credential_move,
+            credential_folder_list,
+            credential_folder_create,
+            credential_folder_rename,
+            credential_folder_move,
+            credential_folder_set_icon,
+            credential_folder_delete,
             session_update_folder_parent,
             session_delete_folder,
             session_share,
@@ -1195,6 +1203,13 @@ pub fn run() {
             saved_credential_create,
             saved_credential_update,
             saved_credential_delete,
+            saved_credential_move,
+            credential_folder_list,
+            credential_folder_create,
+            credential_folder_rename,
+            credential_folder_move,
+            credential_folder_set_icon,
+            credential_folder_delete,
             session_update_folder_parent,
             session_delete_folder,
             session_share,
