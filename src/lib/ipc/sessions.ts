@@ -148,6 +148,9 @@ export interface WebOptions {
   submit_selector?: string | null;
   /** Press the login button once filled; unset: yes. */
   submit?: boolean | null;
+  /** Let the page open windows (a virtual console) as more windows of
+   *  this session; unset: yes. */
+  popups?: boolean | null;
   /** Read only: certificates trusted by answering the prompt; changed
    *  with webSessionCertAdd / webSessionCertRemove, a save keeps them. */
   certs?: WebCert[];

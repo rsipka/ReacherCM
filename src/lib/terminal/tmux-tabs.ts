@@ -12,7 +12,7 @@ import { isMobile } from '#lib/platform.js';
 import { addToast } from '#lib/state/toasts.svelte.js';
 import { t } from '#lib/state/i18n.svelte.js';
 import { keepSession } from './duplicate-tab.js';
-import { newViewTag, tmuxWindowFromTitle } from './tmux.js';
+import { newViewTag, tmuxWindowFromTitle, validTmuxName } from './tmux.js';
 
 /** An SSH tab in a tmux view of its own, connected. */
 export function isTmuxViewTab(tab: Tab | undefined): tab is Tab {
@@ -93,4 +93,25 @@ export function takeTmuxTitle(tab: Tab, title: string): boolean {
  *  the status line as Settings says. */
 export function tmuxView(start: TmuxStart | null): TmuxStart | null {
 	return start ? { ...start, view: newViewTag(), hideStatus: getSettings().tmuxHideStatus || undefined } : null;
+}
+
+/** The tmux session an SSH tab runs in, if it does. */
+export function tmuxSessionOf(tab: Tab | undefined): string | null {
+	return tab?.type === 'ssh' ? (tab.sshConnectParams?.tmux?.name ?? null) : null;
+}
+
+/** Switch tmux session: the tab connects again, into `name` (its terminal
+ *  does it, see tmuxSwitch). */
+export function switchTmuxSession(tab: Tab, name: string): void {
+	const params = tab.sshConnectParams;
+	if (!params?.tmux) return;
+	if (!validTmuxName(name)) {
+		addToast(t('tmux.name_invalid'), 'error');
+		return;
+	}
+	if (name === params.tmux.name) return;
+	// A tab in a view of its own gets a new view, of the new session.
+	tab.sshConnectParams = { ...params, tmux: { ...params.tmux, name, ask: false, legacy: undefined, view: params.tmux.view ? newViewTag() : undefined, window: undefined } };
+	tab.tmuxWindow = undefined;
+	tab.tmuxSwitch = (tab.tmuxSwitch ?? 0) + 1;
 }
