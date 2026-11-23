@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS 隐式（从一开始即 TLS，端口 990）",
   "ftp.tls_none": "无（明文 FTP）",
   "ftp.tls_hint": "登录和文件均加密传输。系统不信任的证书会询问一次，之后保存。",
-  "ftp.tls_none_hint": "密码和文件以明文传输：途经的任何人都能读取。"
+  "ftp.tls_none_hint": "密码和文件以明文传输：途经的任何人都能读取。",
+  "files.keys_hint_files": "Tab 切换窗格 · Insert 或空格标记 · 输入名称跳转"
 }

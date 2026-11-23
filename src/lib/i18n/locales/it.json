@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS implicito (TLS dall'inizio, porta 990)",
   "ftp.tls_none": "Nessuna (FTP in chiaro)",
   "ftp.tls_hint": "Accesso e file viaggiano cifrati. Per un certificato non attendibile per il sistema viene chiesto una volta e poi salvato.",
-  "ftp.tls_none_hint": "Password e file viaggiano in chiaro: chiunque lungo il percorso può leggerli."
+  "ftp.tls_none_hint": "Password e file viaggiano in chiaro: chiunque lungo il percorso può leggerli.",
+  "files.keys_hint_files": "Tab cambia lato · Ins o Spazio contrassegna · digita per saltare"
 }

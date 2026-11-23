@@ -83,7 +83,9 @@
 		void (async () => {
 			if (scp) await sshFilesScp(conn).catch(() => {});
 			// Where it was, where the sidebar is, else the login folder.
-			const start = remote.path || getCurrentPath(conn) || (await sftpHome(conn).catch(() => null)) || '/';
+			// The sidebar's folder; it says `/` when it has none of its own.
+			const sidebar = getCurrentPath(conn);
+			const start = remote.path || (sidebar !== '/' ? sidebar : '') || (await sftpHome(conn).catch(() => null)) || '/';
 			if (conn !== loadedFor) return;
 			const ok = await remote.load(start);
 			if (!ok && start !== '/') void remote.load('/');
@@ -811,7 +813,7 @@
 				</button>
 			{/if}
 		{/each}
-		<span class="hint">{t('files.keys_hint', { key: actionLabel('files.toggle') })}</span>
+		<span class="hint">{terminal ? t('files.keys_hint', { key: actionLabel('files.toggle') }) : t('files.keys_hint_files')}</span>
 	</div>
 </div>
 

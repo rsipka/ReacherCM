@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS, implicitní (TLS od začátku, port 990)",
   "ftp.tls_none": "Žádné (čisté FTP)",
   "ftp.tls_hint": "Přihlášení i soubory jdou šifrovaně. Na certifikát, kterému systém nedůvěřuje, se zeptá jednou a pak si ho pamatuje.",
-  "ftp.tls_none_hint": "Heslo i soubory jdou nešifrovaně: kdokoli po cestě je může přečíst."
+  "ftp.tls_none_hint": "Heslo i soubory jdou nešifrovaně: kdokoli po cestě je může přečíst.",
+  "files.keys_hint_files": "Tab přepne stranu · Insert nebo mezerník označí · psaním skočíte na název"
 }

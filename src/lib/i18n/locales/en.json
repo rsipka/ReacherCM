@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS, implicit (TLS from the start, port 990)",
   "ftp.tls_none": "None (plain FTP)",
   "ftp.tls_hint": "The login and files go encrypted. A certificate the system does not trust is asked about once and then kept.",
-  "ftp.tls_none_hint": "The password and files go unencrypted: anyone on the way can read them."
+  "ftp.tls_none_hint": "The password and files go unencrypted: anyone on the way can read them.",
+  "files.keys_hint_files": "Tab switches side · Insert or Space marks · type to jump"
 }

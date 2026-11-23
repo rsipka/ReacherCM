@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS implícito (TLS desde el inicio, puerto 990)",
   "ftp.tls_none": "Ninguno (FTP sin cifrar)",
   "ftp.tls_hint": "El acceso y los archivos van cifrados. Un certificado en el que el sistema no confía se pregunta una vez y luego se guarda.",
-  "ftp.tls_none_hint": "La contraseña y los archivos van sin cifrar: cualquiera en el camino puede leerlos."
+  "ftp.tls_none_hint": "La contraseña y los archivos van sin cifrar: cualquiera en el camino puede leerlos.",
+  "files.keys_hint_files": "Tab cambia de lado · Insert o Espacio marca · escribe para saltar"
 }

@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS, implizit (TLS von Anfang an, Port 990)",
   "ftp.tls_none": "Keine (einfaches FTP)",
   "ftp.tls_hint": "Anmeldung und Dateien gehen verschlüsselt. Nach einem Zertifikat, dem das System nicht vertraut, wird einmal gefragt; dann wird es gespeichert.",
-  "ftp.tls_none_hint": "Passwort und Dateien gehen unverschlüsselt: jeder auf dem Weg kann sie lesen."
+  "ftp.tls_none_hint": "Passwort und Dateien gehen unverschlüsselt: jeder auf dem Weg kann sie lesen.",
+  "files.keys_hint_files": "Tab wechselt die Seite · Einfg oder Leertaste markiert · tippen springt"
 }

@@ -3850,5 +3850,6 @@
   "ftp.tls_implicit": "FTPS implicite (TLS dès le début, port 990)",
   "ftp.tls_none": "Aucun (FTP en clair)",
   "ftp.tls_hint": "La connexion et les fichiers sont chiffrés. Un certificat auquel le système ne fait pas confiance est demandé une fois puis gardé.",
-  "ftp.tls_none_hint": "Le mot de passe et les fichiers circulent en clair : n'importe qui sur le chemin peut les lire."
+  "ftp.tls_none_hint": "Le mot de passe et les fichiers circulent en clair : n'importe qui sur le chemin peut les lire.",
+  "files.keys_hint_files": "Tab change de côté · Inser ou Espace marque · tapez pour aller à un nom"
 }
