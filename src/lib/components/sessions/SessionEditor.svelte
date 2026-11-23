@@ -36,6 +36,7 @@
 	import { DEFAULT_TELNET_OPTIONS, type TelnetOptions } from '#lib/ipc/telnet.js';
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
+	import { parseResolution, type RdpOptions } from '#lib/ipc/rdp.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
 	import type { CursorStyle } from '#lib/terminal/cursor.js';
 	import { jumpChainToSave } from '#lib/utils/route.js';
@@ -109,6 +110,95 @@
 	let rdpClipboard = $state<'' | 'text' | 'off'>('');
 	let rdpClient = $state<'ironrdp' | 'freerdp'>('ironrdp');
 	let rdpForwardLockKeys = $state(true);
+	/** RDP only: the session's own settings, as the form shows them ('' = default). */
+	let rdpResolution = $state('');
+	let rdpScale = $state('');
+	let rdpColors = $state('');
+	let rdpKeyboard = $state('');
+	let rdpSound = $state('');
+	let rdpAudioQuality = $state('');
+	let rdpPerformance = $state('');
+	let rdpCompression = $state(true);
+	let rdpKeepalive = $state('');
+	let rdpJiggler = $state('');
+	let rdpAdmin = $state(false);
+	let rdpProgram = $state('');
+	let rdpWorkDir = $state('');
+	const RDP_RESOLUTIONS = ['1280x720', '1280x1024', '1366x768', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3840x2160'];
+	const RDP_SCALES = ['100', '125', '150', '175', '200', '250', '300'];
+	/** Seconds; shown as seconds or minutes. */
+	const RDP_INTERVALS = ['30', '60', '120', '240', '540'];
+	/** Windows keyboard layout ids, each named in its own language. */
+	const RDP_KEYBOARDS: [string, string][] = [
+		['0409', 'English (US)'],
+		['0809', 'English (UK)'],
+		['0405', 'Čeština'],
+		['041B', 'Slovenčina'],
+		['0407', 'Deutsch'],
+		['0807', 'Deutsch (Schweiz)'],
+		['040C', 'Français'],
+		['080C', 'Français (Belgique)'],
+		['0410', 'Italiano'],
+		['040A', 'Español'],
+		['0816', 'Português'],
+		['0416', 'Português (Brasil)'],
+		['0413', 'Nederlands'],
+		['0415', 'Polski'],
+		['040E', 'Magyar'],
+		['0406', 'Dansk'],
+		['0414', 'Norsk'],
+		['041D', 'Svenska'],
+		['040B', 'Suomi'],
+		['0408', 'Ελληνικά'],
+		['0402', 'Български'],
+		['0419', 'Русский'],
+		['0422', 'Українська'],
+		['041F', 'Türkçe'],
+		['0411', '日本語'],
+		['0412', '한국어'],
+		['0804', '中文 (简体)'],
+	];
+	/** A saved size or scale not in the lists still shows as itself. */
+	const rdpResolutionChoices = $derived(rdpResolution && !RDP_RESOLUTIONS.includes(rdpResolution) ? [rdpResolution, ...RDP_RESOLUTIONS] : RDP_RESOLUTIONS);
+	const rdpScaleChoices = $derived(rdpScale && !RDP_SCALES.includes(rdpScale) ? [...RDP_SCALES, rdpScale] : RDP_SCALES);
+	const rdpIntervalLabel = (secs: string) => (Number(secs) < 120 ? t('session.rdp_interval_secs', { count: secs }) : t('session.rdp_interval_mins', { count: String(Number(secs) / 60) }));
+
+	function fillRdpOptions(o: RdpOptions | null | undefined): void {
+		rdpResolution = o?.resolution ?? '';
+		rdpScale = o?.scale ? String(o.scale) : '';
+		rdpColors = o?.color_depth ? String(o.color_depth) : '';
+		rdpKeyboard = o?.keyboard_layout ? o.keyboard_layout.toString(16).toUpperCase().padStart(4, '0') : '';
+		rdpSound = o?.sound ?? '';
+		rdpAudioQuality = o?.audio_quality ?? '';
+		rdpPerformance = o?.performance ?? '';
+		rdpCompression = o?.compression !== false;
+		rdpKeepalive = o?.keepalive ? String(o.keepalive) : '';
+		rdpJiggler = o?.jiggler ? String(o.jiggler) : '';
+		rdpAdmin = o?.admin === true;
+		rdpProgram = o?.program ?? '';
+		rdpWorkDir = o?.work_dir ?? '';
+	}
+
+	/** The settings as saved; null when all are the defaults. */
+	function rdpOptionsToSave(): RdpOptions | null {
+		const num = (v: string) => (v ? Number(v) : null);
+		const o: RdpOptions = {
+			resolution: parseResolution(rdpResolution) ? rdpResolution : null,
+			scale: num(rdpScale),
+			color_depth: num(rdpColors),
+			keyboard_layout: rdpKeyboard ? parseInt(rdpKeyboard, 16) : null,
+			sound: rdpSound === 'off' ? 'off' : null,
+			audio_quality: (rdpAudioQuality || null) as RdpOptions['audio_quality'],
+			performance: (rdpPerformance || null) as RdpOptions['performance'],
+			compression: rdpCompression ? null : false,
+			keepalive: num(rdpKeepalive),
+			jiggler: num(rdpJiggler),
+			admin: rdpAdmin || null,
+			program: rdpProgram.trim() || null,
+			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
+		};
+		return Object.values(o).some((v) => v !== null) ? o : null;
+	}
 	/** VNC only: the saved SSH session to go through, or '' for direct. */
 	let viaSessionId = $state('');
 	let wslDistro = $state('');
@@ -607,6 +697,7 @@
 			rdpClipboard = editSession.rdp_clipboard ?? '';
 			rdpClient = editSession.rdp_use_freerdp ? 'freerdp' : 'ironrdp';
 			rdpForwardLockKeys = editSession.rdp_forward_lock_keys ?? true;
+			fillRdpOptions(editSession.rdp);
 			viaSessionId = editSession.via_session_id ?? '';
 			wslDistro = editSession.wsl_distro ?? '';
 			telnetOptions = { ...DEFAULT_TELNET_OPTIONS, ...(editSession.telnet ?? {}) };
@@ -698,6 +789,7 @@
 			rdpClipboard = '';
 			rdpClient = 'ironrdp';
 			rdpForwardLockKeys = true;
+			fillRdpOptions(null);
 			viaSessionId = '';
 			telnetOptions = { ...DEFAULT_TELNET_OPTIONS };
 			serialOptions = { ...DEFAULT_SERIAL_OPTIONS };
@@ -943,6 +1035,7 @@
 					rdp_clipboard: rdp && rdpClipboard ? rdpClipboard : null,
 					rdp_use_freerdp: rdp && rdpClient === 'freerdp',
 					rdp_forward_lock_keys: rdp ? rdpForwardLockKeys : null,
+					rdp: rdp ? rdpOptionsToSave() : null,
 					via_session_id: via,
 					try_agent_keys: !desktop && authType === 'Key' && tryAgentKeys ? true : null,
 					wsl_distro: kind === 'wsl' ? wslDistro.trim() : null,
@@ -996,6 +1089,7 @@
 					rdpClipboard: rdp && rdpClipboard ? rdpClipboard : null,
 					rdpUseFreerdp: rdp && rdpClient === 'freerdp',
 					rdpForwardLockKeys: rdp ? rdpForwardLockKeys : null,
+					rdp: rdp ? rdpOptionsToSave() : null,
 					viaSessionId: via,
 					tryAgentKeys: !desktop && authType === 'Key' && tryAgentKeys,
 					sshOptions: sshOptionsToSave,
@@ -1305,6 +1399,106 @@
 					<p id="rdp-forward-lock-keys-hint" class="shell-hint">{t('session.rdp_forward_lock_keys_hint')}</p>
 				</div>
 			{/if}
+			<details class="rdp-more">
+				<summary>{t('session.rdp_more')}</summary>
+				<div class="rdp-more-body">
+					<div class="shell-field">
+						<label class="via-label" for="rdp-resolution">{t('session.rdp_resolution')}</label>
+						<select id="rdp-resolution" class="via-select" bind:value={rdpResolution} disabled={saving}>
+							<option value="">{t('session.rdp_resolution_fit')}</option>
+							{#each rdpResolutionChoices as r (r)}<option value={r}>{r.replace('x', ' × ')}</option>{/each}
+						</select>
+						{#if rdpResolution}<p class="shell-hint">{t('session.rdp_resolution_hint')}</p>{/if}
+					</div>
+					<div class="shell-field">
+						<label class="via-label" for="rdp-scale">{t('session.rdp_scale')}</label>
+						<select id="rdp-scale" class="via-select" bind:value={rdpScale} disabled={saving}>
+							<option value="">{t('session.rdp_scale_auto')}</option>
+							{#each rdpScaleChoices as v (v)}<option value={v}>{v} %</option>{/each}
+						</select>
+					</div>
+					<div class="shell-field">
+						<label class="via-label" for="rdp-colors">{t('session.rdp_colors')}</label>
+						<select id="rdp-colors" class="via-select" bind:value={rdpColors} disabled={saving}>
+							<option value="">{t('session.rdp_colors_32')}</option>
+							<option value="16">{t('session.rdp_colors_16')}</option>
+						</select>
+					</div>
+					<div class="shell-field">
+						<label class="via-label" for="rdp-keyboard">{t('session.rdp_keyboard')}</label>
+						<select id="rdp-keyboard" class="via-select" bind:value={rdpKeyboard} disabled={saving}>
+							<option value="">{t('session.rdp_keyboard_default')}</option>
+							{#if rdpKeyboard && !RDP_KEYBOARDS.some(([id]) => id === rdpKeyboard)}<option value={rdpKeyboard}>0x{rdpKeyboard}</option>{/if}
+							{#each RDP_KEYBOARDS as [id, label] (id)}<option value={id}>{label}</option>{/each}
+						</select>
+						<p class="shell-hint">{t('session.rdp_keyboard_hint')}</p>
+					</div>
+					{#if !isMobile()}
+						<div class="shell-field">
+							<label class="via-label" for="rdp-sound">{t('session.rdp_sound')}</label>
+							<select id="rdp-sound" class="via-select" bind:value={rdpSound} disabled={saving}>
+								<option value="">{t('session.rdp_sound_here')}</option>
+								<option value="off">{t('session.rdp_sound_off')}</option>
+							</select>
+						</div>
+						{#if rdpSound !== 'off' && rdpClient === 'ironrdp'}
+							<div class="shell-field">
+								<label class="via-label" for="rdp-audio-quality">{t('session.rdp_audio_quality')}</label>
+								<select id="rdp-audio-quality" class="via-select" bind:value={rdpAudioQuality} disabled={saving}>
+									<option value="">{t('session.rdp_audio_high')}</option>
+									<option value="medium">{t('session.rdp_audio_medium')}</option>
+									<option value="dynamic">{t('session.rdp_audio_dynamic')}</option>
+								</select>
+							</div>
+						{/if}
+					{/if}
+					<div class="shell-field">
+						<label class="via-label" for="rdp-performance">{t('session.rdp_performance')}</label>
+						<select id="rdp-performance" class="via-select" bind:value={rdpPerformance} disabled={saving}>
+							<option value="">{t('session.rdp_performance_default')}</option>
+							<option value="fast">{t('session.rdp_performance_fast')}</option>
+							<option value="best">{t('session.rdp_performance_best')}</option>
+						</select>
+					</div>
+					{#if rdpClient === 'ironrdp' || isMobile()}
+						<div class="shell-field">
+							<label class="via-label" for="rdp-keepalive">{t('session.rdp_keepalive')}</label>
+							<select id="rdp-keepalive" class="via-select" bind:value={rdpKeepalive} disabled={saving}>
+								<option value="">{t('session.rdp_interval_off')}</option>
+								{#each RDP_INTERVALS as v (v)}<option value={v}>{rdpIntervalLabel(v)}</option>{/each}
+							</select>
+							<p class="shell-hint">{t('session.rdp_keepalive_hint')}</p>
+						</div>
+						<div class="shell-field">
+							<label class="via-label" for="rdp-jiggler">{t('session.rdp_jiggler')}</label>
+							<select id="rdp-jiggler" class="via-select" bind:value={rdpJiggler} disabled={saving}>
+								<option value="">{t('session.rdp_interval_off')}</option>
+								{#each RDP_INTERVALS as v (v)}<option value={v}>{rdpIntervalLabel(v)}</option>{/each}
+							</select>
+							<p class="shell-hint">{t('session.rdp_jiggler_hint')}</p>
+						</div>
+					{/if}
+					<div class="shell-field">
+						<label class="jump-toggle">
+							<input type="checkbox" bind:checked={rdpCompression} disabled={saving} />
+							<span class="jump-toggle-text">{t('session.rdp_compression')}</span>
+						</label>
+					</div>
+					<div class="shell-field">
+						<label class="jump-toggle">
+							<input type="checkbox" bind:checked={rdpAdmin} disabled={saving} />
+							<span class="jump-toggle-text">{t('session.rdp_admin')}</span>
+						</label>
+					</div>
+					<div class="shell-field">
+						<Input label={t('session.rdp_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
+						<p class="shell-hint">{t('session.rdp_program_hint')}</p>
+					</div>
+					{#if rdpProgram.trim()}
+						<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+					{/if}
+				</div>
+			</details>
 		{:else if kind === 'vnc'}
 			<div class="shell-field">
 				<Input label={t('session.vnc_mac_username')} bind:value={username} placeholder={t('session.vnc_mac_username_placeholder')} disabled={saving} />
@@ -2505,6 +2699,20 @@
 		font-size: 0.625rem;
 		color: var(--color-text-secondary);
 		opacity: 0.7;
+	}
+
+	.rdp-more summary {
+		cursor: pointer;
+		font-size: 0.8125rem;
+		color: var(--color-text-secondary);
+		padding: 4px 0;
+	}
+
+	.rdp-more-body {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		padding-top: 8px;
 	}
 
 	.via-label {

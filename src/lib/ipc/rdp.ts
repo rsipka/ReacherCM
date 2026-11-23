@@ -30,9 +30,51 @@ export interface RdpConnectParams {
 	clipboard?: RdpClipboardMode | null;
 	/** Whether the desktop panel forwards lock key presses. Enabled by default. */
 	forwardLockKeys?: boolean;
+	/** The saved session's own settings. */
+	options?: RdpOptions | null;
+	/** The remote's display scaling in percent; worked out by the panel. */
+	scale?: number | null;
 	/** The size the panel can show. The server renders at this size. */
 	width: number;
 	height: number;
+}
+
+/**
+ * A saved RDP session's own settings (src-tauri/src/rdp/options.rs). Every
+ * field left out keeps the default.
+ */
+export interface RdpOptions {
+	/** A fixed desktop size, `1920x1080`. Absent: follows the panel. */
+	resolution?: string | null;
+	/** Display scaling in percent, 100 to 500. Absent: the screen's own. */
+	scale?: number | null;
+	/** 16 or 32. */
+	color_depth?: number | null;
+	/** Windows keyboard layout id, 0x0405 for Czech. Absent: the server's. */
+	keyboard_layout?: number | null;
+	sound?: 'off' | null;
+	audio_quality?: 'dynamic' | 'medium' | 'high' | null;
+	performance?: 'fast' | 'best' | null;
+	/** False turns compression off. */
+	compression?: boolean | null;
+	/** Seconds between keep-alive input while idle. */
+	keepalive?: number | null;
+	/** Seconds between small mouse moves while idle. */
+	jiggler?: number | null;
+	admin?: boolean | null;
+	/** Started instead of the desktop. */
+	program?: string | null;
+	work_dir?: string | null;
+}
+
+/** `1920x1080` as width and height, or null when it is not a size the server takes. */
+export function parseResolution(text: string | null | undefined): { width: number; height: number } | null {
+	const m = /^\s*(\d{3,4})\s*[xX×]\s*(\d{3,4})\s*$/.exec(text ?? '');
+	if (!m) return null;
+	const width = Number(m[1]);
+	const height = Number(m[2]);
+	const ok = (v: number) => v >= 200 && v <= 8192;
+	return ok(width) && ok(height) ? { width: width & ~1, height: height & ~1 } : null;
 }
 
 /** A session's clipboard choice, as saved with it; absent means everything. */
