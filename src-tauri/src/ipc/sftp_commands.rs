@@ -3,6 +3,7 @@ use tauri::Emitter;
 use crate::state::AppState;
 use crate::sftp::browser::{self, RemoteEntry};
 use crate::plugin::hooks;
+use crate::sftp::local_download::DownloadTarget;
 
 /// The FTP session a connection id names, if it is one: the file
 /// manager sends FTP sessions' ids to these same commands.
@@ -160,12 +161,12 @@ pub async fn sftp_upload(
 /// Download a file from the remote host. Returns the transfer_id immediately
 /// and runs the download in a background task, emitting progress events.
 #[tauri::command]
-pub async fn sftp_download(
+pub(crate) async fn sftp_download(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     connection_id: String,
     remote_path: String,
-    local_path: String,
+    local_path: DownloadTarget,
     transfer_id: Option<String>,
 ) -> Result<String, String> {
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
@@ -199,7 +200,7 @@ pub async fn sftp_download(
     let plugin_mgr = state.plugin_manager.clone();
     let conn_id = connection_id.clone();
     let rpath = remote_path.clone();
-    let lpath = local_path.clone();
+    let lpath = local_path.path();
     let cancel = register_transfer(&state, &transfer_id, &connection_id);
     let transfers = state.transfers.clone();
 
@@ -214,7 +215,7 @@ pub async fn sftp_download(
             tracing::error!("Download failed for {}: {}", tid, e);
             let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
         } else {
-            let hook = hooks::sftp_download_complete(&conn_id, &rpath, &lpath);
+            let hook = hooks::sftp_download_complete(&conn_id, &rpath, &lpath.to_string_lossy());
             let mut mgr = plugin_mgr.lock().await;
             mgr.dispatch_hook(&hook, Some(&app)).await;
         }

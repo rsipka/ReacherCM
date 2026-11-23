@@ -19,6 +19,7 @@ mod devops_projects;
 pub mod devops_store;
 pub mod k8s;
 pub mod logfiles;
+mod local_paths;
 pub mod dragout;
 pub mod hardening;
 pub mod history;
@@ -634,6 +635,7 @@ pub fn run() {
             // This computer's files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
+            local_prepare_download_dir,
             local_rename,
             local_delete,
             local_join,

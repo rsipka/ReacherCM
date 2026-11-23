@@ -7,7 +7,7 @@ use base64::Engine;
 pub use tokio_util::sync::CancellationToken;
 use super::backend::{RemoteFs, SftpProtocol};
 use super::pipeline;
-use super::local_download::LocalDownload;
+use super::local_download::{DownloadTarget, LocalDownload};
 
 #[derive(Debug, Error)]
 pub enum TransferError {
@@ -36,10 +36,10 @@ pub struct TransferProgress {
 }
 
 /// Download to a sibling staging file and publish it after the transfer succeeds.
-pub async fn download_file(
+pub(crate) async fn download_file(
     fs: &RemoteFs,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
@@ -72,12 +72,12 @@ async fn download_file_sftp(
     fs: &RemoteFs,
     proto: &SftpProtocol,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
 ) -> Result<(), TransferError> {
-    tracing::info!("Downloading {} to {} (sftp)", remote_path, local_path);
+    tracing::info!("Downloading {} to {} (sftp)", remote_path, local_path.path().display());
     let filename = file_name_of(remote_path);
 
     let total_bytes = match proto.session.stat(remote_path).await {
@@ -97,7 +97,7 @@ async fn download_file_sftp(
         }
     };
     emit(0);
-    let bytes = download_sftp_contents(proto, remote_path, Path::new(local_path), total_bytes, cancel, emit).await?;
+    let bytes = download_sftp_contents(proto, remote_path, local_path, total_bytes, cancel, emit).await?;
 
     // The file may have shrunk while it was read; it is whole as it is now.
     emit_progress(app_handle, transfer_id, &filename, bytes, bytes);
@@ -109,13 +109,13 @@ async fn download_file_sftp(
 pub(super) async fn download_sftp_contents(
     proto: &SftpProtocol,
     remote_path: &str,
-    destination: &Path,
+    destination: &DownloadTarget,
     size: Option<u64>,
     cancel: &CancellationToken,
     mut progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
     use std::io::Write;
-    let mut file = LocalDownload::new(destination)?;
+    let mut file = LocalDownload::for_target(destination)?;
     let mut last = 0;
     // With no size attribute, EOF is the only available end marker.
     let bytes = pipeline::read_file(proto, remote_path, size.unwrap_or(u64::MAX), cancel,
@@ -134,12 +134,12 @@ pub(super) async fn download_sftp_contents(
 async fn download_file_exec(
     handle: &SharedHandle,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
 ) -> Result<(), TransferError> {
-    tracing::info!("Downloading {} to {}", remote_path, local_path);
+    tracing::info!("Downloading {} to {}", remote_path, local_path.path().display());
 
     let filename = Path::new(remote_path)
         .file_name()
@@ -177,7 +177,7 @@ async fn download_file_exec(
         }
     };
     progress(0);
-    let received = download_exec_contents(&mut channel, Path::new(local_path), cancel, progress).await;
+    let received = download_exec_contents(&mut channel, local_path, cancel, progress).await;
     if matches!(received, Err(TransferError::Cancelled)) {
         let _ = channel.close().await;
     }
@@ -191,11 +191,11 @@ async fn download_file_exec(
 
 async fn download_exec_contents(
     channel: &mut impl ChannelMessages,
-    destination: &Path,
+    destination: &DownloadTarget,
     cancel: &CancellationToken,
     progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
-    let mut file = LocalDownload::new(destination)?;
+    let mut file = LocalDownload::for_target(destination)?;
     let bytes = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(TransferError::Cancelled),
@@ -955,7 +955,7 @@ mod tests {
         let path = dir.path().join("report");
         std::fs::write(&path, b"original").unwrap();
         let mut channel = Sends(VecDeque::from([stdout(HELLO_B64), exit(1), ChannelMsg::Eof]));
-        assert!(download_exec_contents(&mut channel, &path, &CancellationToken::new(), |_| {}).await.is_err());
+        assert!(download_exec_contents(&mut channel, &DownloadTarget::Chosen(path.clone()), &CancellationToken::new(), |_| {}).await.is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
@@ -966,7 +966,7 @@ mod tests {
         let path = dir.path().join("new-folder").join("report");
         for content in [HELLO_B64, ""] {
             let mut channel = Sends(VecDeque::from([stdout(content), exit(0), ChannelMsg::Eof]));
-            download_exec_contents(&mut channel, &path, &CancellationToken::new(), |_| {}).await.unwrap();
+            download_exec_contents(&mut channel, &DownloadTarget::Chosen(path.clone()), &CancellationToken::new(), |_| {}).await.unwrap();
             let expected: &[u8] = if content.is_empty() { b"" } else { b"hello world\n" };
             assert_eq!(std::fs::read(&path).unwrap(), expected);
         }

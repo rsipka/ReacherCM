@@ -6,6 +6,8 @@ use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, UNIX_EPOCH};
 
+use cap_std::fs::Dir;
+use crate::local_paths::{download_subdir, open_root, plain_name, PendingFile};
 use zmodem2::{Action, Event, FileInfo, Position, Receiver, Sender};
 
 /// Where a transfer is, for the progress bar.
@@ -35,7 +37,7 @@ pub enum End {
 
 struct Incoming {
     file: BufWriter<File>,
-    path: PathBuf,
+    pending: PendingFile,
     name: String,
     modified: Option<u32>,
 }
@@ -55,7 +57,7 @@ enum Role {
     },
     Receive {
         receiver: Box<Receiver>,
-        folder: PathBuf,
+        folder: Dir,
         current: Option<Incoming>,
     },
 }
@@ -97,9 +99,7 @@ impl Transfer {
 
     /// Receive from a remote `sz` into `folder`.
     pub fn receive(folder: PathBuf) -> Result<Self, String> {
-        if !folder.is_dir() {
-            return Err(format!("{} is not a folder", folder.display()));
-        }
+        let folder = open_root(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
         // Nonstop, written while receiving: what lets `sz` stream.
         let receiver = Box::new(Receiver::with_flow_control(0, true).map_err(err)?);
         Ok(Self {
@@ -232,7 +232,7 @@ impl Transfer {
                     Action::WriteFile(b) => {
                         let n = b.len();
                         let wrote = match current.as_mut() {
-                            Some(c) => c.file.write_all(b).map_err(|e| format!("{}: {e}", c.path.display())),
+                            Some(c) => c.file.write_all(b).map_err(|e| format!("{}: {e}", c.name)),
                             None => Ok(()),
                         };
                         match wrote.and_then(|_| receiver.file_written(n).map_err(err)) {
@@ -248,12 +248,8 @@ impl Transfer {
                         let total = info.size.map(|s| u64::from(s.get()));
                         let modified = info.modified;
                         match create_unique(folder, &name) {
-                            Ok((file, path)) => {
-                                let saved = path
-                                    .strip_prefix(folder.as_path())
-                                    .map(|p| p.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/"))
-                                    .unwrap_or_default();
-                                *current = Some(Incoming { file: BufWriter::with_capacity(64 * 1024, file), path, name: saved.clone(), modified });
+                            Ok((file, pending, saved)) => {
+                                *current = Some(Incoming { file: BufWriter::with_capacity(64 * 1024, file), pending, name: saved.clone(), modified });
                                 self.progress = Progress { file: saved, index: self.progress.index + 1, count: None, done: 0, total };
                                 Step::Continue
                             }
@@ -334,10 +330,11 @@ impl Transfer {
         match &mut self.role {
             Role::Receive { current, .. } => {
                 if let Some(mut c) = current.take() {
-                    c.file.flush().map_err(|e| format!("{}: {e}", c.path.display()))?;
-                    if let (Some(t), Ok(f)) = (c.modified, c.file.into_inner()) {
-                        let _ = f.set_modified(UNIX_EPOCH + Duration::from_secs(u64::from(t)));
+                    c.file.flush().map_err(|e| format!("{}: {e}", c.name))?;
+                    if let Some(t) = c.modified {
+                        let _ = c.file.get_ref().set_modified(UNIX_EPOCH + Duration::from_secs(u64::from(t)));
                     }
+                    c.pending.keep();
                     self.done_files.push(c.name);
                 }
                 Ok(())
@@ -381,10 +378,7 @@ impl Transfer {
     /// A download that did not finish is not left behind half written.
     fn discard_partial(&mut self) {
         if let Role::Receive { current, .. } = &mut self.role {
-            if let Some(c) = current.take() {
-                drop(c.file);
-                let _ = std::fs::remove_file(&c.path);
-            }
+            *current = None;
         }
     }
 }
@@ -503,25 +497,27 @@ fn expand(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
 /// Make a new file for `name` (which may have folders in it) in `folder`,
 /// as "name (1).ext" and so on when it is taken: a download never
 /// overwrites. Folders that are already there are used as they are.
-fn create_unique(folder: &Path, name: &str) -> Result<(File, PathBuf), String> {
+fn create_unique(root: &Dir, name: &str) -> Result<(File, PendingFile, String), String> {
     let (dirs, name) = safe_path(name);
-    let mut folder = folder.to_path_buf();
-    for d in dirs {
-        folder.push(d);
-    }
-    std::fs::create_dir_all(&folder).map_err(|e| format!("{}: {e}", folder.display()))?;
+    plain_name(&name).map_err(|e| format!("{name}: {e}"))?;
+    let dir = download_subdir(root, &dirs).map_err(|e| format!("{name}: {e}"))?;
     let (stem, ext) = match name.rfind('.') {
         Some(i) if i > 0 => (&name[..i], &name[i..]),
         _ => (name.as_str(), ""),
     };
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
     for n in 0..1000 {
         let candidate = if n == 0 { name.clone() } else { format!("{stem} ({n}){ext}") };
-        let path = folder.join(candidate);
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(f) => return Ok((f, path)),
+        match dir.open_with(&candidate, &options) {
+            Ok(file) => {
+                let path = dirs.iter().map(String::as_str).chain(std::iter::once(candidate.as_str()))
+                    .collect::<Vec<_>>().join("/");
+                return Ok((file.into_std(), PendingFile::new(dir, candidate), path));
+            }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(format!("{}: {e}", path.display())),
+            Err(e) => return Err(format!("{candidate}: {e}")),
         }
     }
-    Err(format!("Could not find a free name for {name} in {}", folder.display()))
+    Err(format!("Could not find a free name for {name}"))
 }

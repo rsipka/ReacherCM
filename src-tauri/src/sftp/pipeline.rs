@@ -354,7 +354,7 @@ mod tests {
         let data = pattern(800_000);
         let (proto, _) = serve(data.clone(), usize::MAX).await;
         let cancel = CancellationToken::new();
-        let result = download_sftp_contents(&proto, "/f", &path, Some(data.len() as u64), &cancel, |_| {
+        let result = download_sftp_contents(&proto, "/f", &crate::sftp::local_download::DownloadTarget::Chosen(path.clone()), Some(data.len() as u64), &cancel, |_| {
             assert_eq!(std::fs::read(&path).unwrap(), b"original");
             cancel.cancel();
         }).await;
@@ -362,7 +362,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
 
-        download_sftp_contents(&proto, "/f", &path, None, &CancellationToken::new(), |_| {}).await.unwrap();
+        download_sftp_contents(&proto, "/f", &crate::sftp::local_download::DownloadTarget::Chosen(path.clone()), None, &CancellationToken::new(), |_| {}).await.unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), data);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }

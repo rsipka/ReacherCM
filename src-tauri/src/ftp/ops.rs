@@ -13,7 +13,7 @@ use super::client::{Client, FtpError, DATA_IDLE};
 use super::list::{self, base_name, parent};
 use super::{with_client, FtpConn};
 use crate::sftp::browser::RemoteEntry;
-use crate::sftp::local_download::LocalDownload;
+use crate::sftp::local_download::{DownloadTarget, LocalDownload};
 use crate::sftp::transfer::plan_directory;
 
 /// Hears a transfer's bytes done so far and its total.
@@ -235,12 +235,12 @@ pub async fn write_text(conn: &FtpConn, path: &str, content: &str) -> Result<(),
 async fn download_on(
     c: &mut Client,
     remote: &str,
-    local: &str,
+    local: &DownloadTarget,
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<u64, FtpError> {
     let size = size_of(c, remote).await?;
-    let mut file = LocalDownload::new(Path::new(local)).map_err(|e| FtpError::Other(e.to_string()))?;
+    let mut file = LocalDownload::for_target(local).map_err(|e| FtpError::Other(e.to_string()))?;
     let mut s = c.data(&format!("RETR {remote}")).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut done: u64 = 0;
@@ -284,10 +284,10 @@ async fn download_on(
     Ok(done)
 }
 
-pub async fn download(
+pub(crate) async fn download(
     conn: &FtpConn,
     remote: &str,
-    local: &str,
+    local: &DownloadTarget,
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<u64, FtpError> {

@@ -66,8 +66,9 @@ async fn live_ftp_operations() {
     upload(&conn, up.to_str().unwrap(), &format!("{base}/up"), &never, &progress).await.unwrap();
     let down = tmp.path().join("big.down");
     let (big_path, sub_path) = (format!("{base}/up/big.bin"), format!("{base}/up/sub"));
+    let destination = DownloadTarget::Chosen(down.clone());
     let (a, b) = tokio::join!(
-        download(&conn, &big_path, down.to_str().unwrap(), &never, &progress),
+        download(&conn, &big_path, &destination, &never, &progress),
         list_dir(&conn, &sub_path),
     );
     assert_eq!(a.unwrap(), big.len() as u64);
@@ -78,7 +79,7 @@ async fn live_ftp_operations() {
     let stop = CancellationToken::new();
     stop.cancel();
     let gone = tmp.path().join("cancelled");
-    assert!(matches!(download(&conn, &format!("{base}/up/big.bin"), gone.to_str().unwrap(), &stop, &progress).await, Err(FtpError::Cancelled)));
+    assert!(matches!(download(&conn, &format!("{base}/up/big.bin"), &DownloadTarget::Chosen(gone.clone()), &stop, &progress).await, Err(FtpError::Cancelled)));
     assert!(!gone.exists());
 
     delete(&conn, &base).await.unwrap();
