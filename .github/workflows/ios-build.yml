@@ -44,10 +44,10 @@ jobs:
     outputs:
       build: ${{ steps.pick.outputs.build }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: github.event_name == 'push'
 
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         if: github.event_name != 'workflow_dispatch'
         with:
@@ -86,11 +86,11 @@ jobs:
     runs-on: ${{ github.event_name != 'pull_request' && vars.MACOS_RUNNER_LABEL || 'macos-15' }}
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Rust
         # The same fixed Rust as build-check.yml and release.yml.
-        uses: dtolnay/rust-toolchain@1.99.1
+        uses: dtolnay/rust-toolchain@263313d2989f864a2b8613f97277288638e7d8f8 # 1.99.1
         with:
           targets: aarch64-apple-ios
 
@@ -145,13 +145,13 @@ jobs:
 
       - name: Rust cache
         if: runner.environment != 'self-hosted'
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: src-tauri -> target
           key: ios
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
 
@@ -168,7 +168,7 @@ jobs:
         run: npx tauri ios build --no-sign --target aarch64
 
       - name: Upload the IPA
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ReacherCM-ios-unsigned
           path: src-tauri/gen/apple/build/arm64/*.ipa

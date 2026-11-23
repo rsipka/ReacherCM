@@ -536,9 +536,8 @@ pub(crate) struct PlannedFile {
 /// Walk `local` and map it onto `remote`.
 ///
 /// Remote paths are joined with `/` whatever the local separator is. A
-/// symbolic link to a file is uploaded as the file it points to; a link to a
-/// directory is left out, since following it could walk in a circle, and so
-/// is a link that points nowhere. Entries are taken in name order.
+/// folder containing a link is refused before transfer. Otherwise a move
+/// could delete a link it never copied. Entries are taken in name order.
 pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<DirectoryPlan> {
     let mut plan = DirectoryPlan::default();
     let mut pending = vec![(local.to_path_buf(), remote.to_string())];
@@ -555,19 +554,13 @@ pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<Dire
                 remote_dir.trim_end_matches('/'),
                 entry.file_name().to_string_lossy()
             );
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
+            let metadata = entry.metadata()?;
+            crate::local_paths::reject_upload_link(&path, &metadata)?;
+            if metadata.is_dir() {
                 subdirs.push((path, remote_child));
-                continue;
-            }
-            match std::fs::metadata(&path) {
-                Ok(meta) if meta.is_file() => {
-                    plan.total_bytes += meta.len();
-                    plan.files.push(PlannedFile { local: path, remote: remote_child });
-                }
-                Ok(_) => {}
-                Err(_) if file_type.is_symlink() => {}
-                Err(e) => return Err(e),
+            } else if metadata.is_file() {
+                plan.total_bytes += metadata.len();
+                plan.files.push(PlannedFile { local: path, remote: remote_child });
             }
         }
 
@@ -901,6 +894,19 @@ mod tests {
     use russh::ChannelMsg;
     use std::collections::VecDeque;
     use std::time::Duration;
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_upload_rejects_links_during_planning() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("selected");
+        std::fs::create_dir(&root).unwrap();
+        let sibling = temp.path().join("other");
+        std::fs::write(&sibling, b"example").unwrap();
+        std::os::unix::fs::symlink(&sibling, root.join("shortcut")).unwrap();
+        let error = plan_directory(&root, "/upload").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
 
     #[test]
     fn a_path_is_never_read_as_an_option() {

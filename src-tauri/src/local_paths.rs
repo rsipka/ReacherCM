@@ -54,6 +54,20 @@ fn valid_platform_name(name: &str) -> bool {
         })
 }
 
+/// Inspect metadata obtained without following links during a directory walk.
+pub(crate) fn reject_upload_link(path: &Path, metadata: &std::fs::Metadata) -> io::Result<()> {
+    #[cfg(windows)]
+    use std::os::windows::fs::MetadataExt;
+    let is_link = metadata.is_symlink();
+    #[cfg(windows)]
+    let is_link = is_link || metadata.file_attributes() & windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+    if is_link {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput,
+            format!("{}: folder uploads cannot include links", path.display())));
+    }
+    Ok(())
+}
+
 /// Open the folder selected locally. All names below it are resolved through
 /// directory handles, so a link supplied by a listing cannot redirect a write.
 pub(crate) fn open_root(path: &Path) -> io::Result<Dir> {
