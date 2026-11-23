@@ -44,6 +44,8 @@ pub struct TrayLabels {
     pub recent: String,
     pub local_terminal: String,
     pub quick_connect: String,
+    /// "Mute sounds" or "Unmute sounds", whichever applies now.
+    pub mute: String,
     pub lock: String,
     pub settings: String,
     pub quit: String,
@@ -124,6 +126,7 @@ fn plan(state: Option<&TrayState>, visible: bool) -> Vec<Entry> {
     let status = if s.status.is_empty() { APP_NAME.to_string() } else { format!("{APP_NAME} · {}", s.status) };
     out.push(Entry::Item { id: "tray:status".into(), text: menu_text(&status), enabled: false });
     out.push(item("tray:toggle", if visible { &l.hide } else { &l.show }));
+    out.push(item("tray:mute", &l.mute));
 
     if !s.locked {
         let mut connect = Vec::new();
@@ -253,6 +256,7 @@ fn action_for(id: &str) -> Option<serde_json::Value> {
         "tray:local" => "local-terminal",
         "tray:quick-connect" => "quick-connect",
         "tray:lock" => "lock",
+        "tray:mute" => "mute",
         "tray:settings" => "settings",
         _ => return None,
     };
@@ -274,6 +278,12 @@ pub fn handle_menu_event<R: Runtime>(app: &AppHandle<R>, id: &str) {
                 sync_visibility(app);
             } else {
                 show_main(app);
+            }
+        }
+        // Muting changes nothing on screen, so the window stays where it is.
+        "tray:mute" => {
+            if let (Some(w), Some(payload)) = (app.get_webview_window("main"), action_for(id)) {
+                let _ = w.emit("tray-action", payload);
             }
         }
         _ => {
@@ -301,6 +311,7 @@ mod tests {
             recent: "Recent".into(),
             local_terminal: "New local terminal".into(),
             quick_connect: "Quick connect…".into(),
+            mute: "Mute sounds".into(),
             lock: "Lock".into(),
             settings: "Settings…".into(),
             quit: "Quit".into(),
@@ -343,6 +354,7 @@ mod tests {
             [
                 "tray:status",
                 "tray:toggle",
+                "tray:mute",
                 "-",
                 "tray:favorites",
                 "tray:local",
@@ -361,7 +373,7 @@ mod tests {
     fn locked_menu_offers_only_show_and_quit() {
         let mut s = state();
         s.locked = true;
-        assert_eq!(ids(&plan(Some(&s), false)), ["tray:status", "tray:toggle", "-", "quit"]);
+        assert_eq!(ids(&plan(Some(&s), false)), ["tray:status", "tray:toggle", "tray:mute", "-", "quit"]);
     }
 
     #[test]

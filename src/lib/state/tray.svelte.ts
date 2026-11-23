@@ -14,6 +14,7 @@ import { vaultState, lock } from './vault.svelte';
 import { requestSessionAction } from './palette.svelte';
 import { openSettings } from './shortcuts.svelte';
 import { setActivePage } from './navigation.svelte';
+import { isMuted, toggleMute } from './mute.svelte';
 import { t } from './i18n.svelte';
 import { sessionList, type SessionConfig } from '#lib/ipc/sessions.js';
 import { isMobile } from '#lib/platform.js';
@@ -69,6 +70,7 @@ function trayState() {
 			recent: t('tray.recent'),
 			localTerminal: t('tray.local_terminal'),
 			quickConnect: t('tray.quick_connect'),
+			mute: isMuted() ? t('titlebar.unmute') : t('titlebar.mute'),
 			lock: t('tray.lock'),
 			settings: t('tray.settings'),
 			quit: t('tray.quit')
@@ -78,7 +80,7 @@ function trayState() {
 
 type TrayAction =
 	| { action: 'connect'; sessionId: string }
-	| { action: 'local-terminal' | 'quick-connect' | 'lock' | 'settings' };
+	| { action: 'local-terminal' | 'quick-connect' | 'lock' | 'mute' | 'settings' };
 
 function run(a: TrayAction): void {
 	switch (a.action) {
@@ -96,6 +98,9 @@ function run(a: TrayAction): void {
 			break;
 		case 'lock':
 			void lock().catch((err) => console.error('Lock from the tray failed:', err));
+			break;
+		case 'mute':
+			toggleMute();
 			break;
 		case 'settings':
 			openSettings();
