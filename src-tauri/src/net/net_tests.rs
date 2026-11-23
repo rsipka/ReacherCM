@@ -107,3 +107,15 @@ fn icmp_reaches_this_machine_where_allowed() {
         Err(e) => panic!("{e}"),
     }
 }
+
+#[test]
+fn the_system_ping_output_is_read() {
+    use super::icmp::parse_ping_output;
+    let iputils = "PING 10.0.0.5 (10.0.0.5) 56(84) bytes of data.\n64 bytes from 10.0.0.5: icmp_seq=1 ttl=63 time=0.412 ms\n";
+    let r = parse_ping_output(iputils).unwrap();
+    assert!((r.ms - 0.412).abs() < 1e-9 && r.ttl == Some(63));
+    let mac6 = "16 bytes from ::1, icmp_seq=0 hlim=64 time=0.077 ms";
+    assert_eq!(parse_ping_output(mac6).unwrap().ttl, Some(64));
+    let lost = "PING 10.0.0.9 (10.0.0.9) 56(84) bytes of data.\n\n--- 10.0.0.9 ping statistics ---\n1 packets transmitted, 0 received, 100% packet loss\nrtt min/avg/max/mdev = 0.1/0.1/0.1/0.0 ms";
+    assert!(parse_ping_output(lost).is_none());
+}

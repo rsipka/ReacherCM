@@ -23,6 +23,7 @@ export type ActionId =
 	| 'app.settings'
 	| 'app.palette'
 	| 'app.aiPanel'
+	| 'app.mute'
 	| 'zoom.in'
 	| 'zoom.out'
 	| 'zoom.reset'
@@ -35,7 +36,9 @@ export type ActionId =
 	| 'split.down'
 	| 'split.unsplit'
 	| 'broadcast.toggle'
-	| 'files.toggle';
+	| 'files.toggle'
+	| 'capture.copy'
+	| 'capture.save';
 
 export type ActionGroup = 'tabs' | 'app' | 'terminal' | 'split';
 
@@ -66,6 +69,7 @@ export const ACTIONS: ActionDef[] = [
 	{ id: 'app.palette', group: 'app', label: 'shortcuts.palette', defaults: ['Mod+Shift+P'] },
 	{ id: 'app.settings', group: 'app', label: 'shortcuts.settings', defaults: ['Mod+,'] },
 	{ id: 'app.aiPanel', group: 'app', label: 'shortcuts.ai_panel', defaults: ['Mod+Shift+A'] },
+	{ id: 'app.mute', group: 'app', label: 'shortcuts.mute', defaults: ['Mod+Shift+M'] },
 	// Plus is Shift+= on most layouts and plain + on the number pad.
 	{ id: 'zoom.in', group: 'app', label: 'shortcuts.zoom_in', defaults: ['Mod+=', 'Mod++', 'Mod+Shift++'] },
 	{ id: 'zoom.out', group: 'app', label: 'shortcuts.zoom_out', defaults: ['Mod+-'] },
@@ -83,7 +87,10 @@ export const ACTIONS: ActionDef[] = [
 	{ id: 'split.unsplit', group: 'split', label: 'shortcuts.unsplit', defaults: ['Mod+Shift+U'] },
 	{ id: 'broadcast.toggle', group: 'split', label: 'shortcuts.broadcast', defaults: ['Mod+Shift+B'] },
 	// An SSH tab's full-pane file manager, and back to its terminal.
-	{ id: 'files.toggle', group: 'terminal', label: 'shortcuts.files_view', defaults: ['Mod+Shift+S'] }
+	{ id: 'files.toggle', group: 'terminal', label: 'shortcuts.files_view', defaults: ['Mod+Shift+S'] },
+	// A picture of the pane in front: a terminal, or a remote desktop.
+	{ id: 'capture.copy', group: 'terminal', label: 'shortcuts.capture_copy', defaults: ['Mod+Shift+K'] },
+	{ id: 'capture.save', group: 'terminal', label: 'shortcuts.capture_save', defaults: ['Mod+Alt+Shift+K'] }
 ];
 
 const BY_ID = new Map(ACTIONS.map((a) => [a.id, a]));

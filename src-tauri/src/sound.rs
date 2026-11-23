@@ -197,6 +197,16 @@ pub fn play_bell_sound(volume: f32) {
     let _ = volume;
 }
 
+/// The top bar's mute switch. The page's own sounds check the setting
+/// themselves; this silences what the backend plays: a remote desktop's audio.
+#[tauri::command]
+pub fn set_audio_muted(muted: bool) {
+    #[cfg(not(mobile))]
+    ironrdp_client::audio::set_muted(muted);
+    #[cfg(mobile)]
+    let _ = muted;
+}
+
 #[cfg(test)]
 #[path = "sound_tests.rs"]
 mod tests;
