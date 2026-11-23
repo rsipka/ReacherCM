@@ -3843,6 +3843,8 @@
   "files.compare_folders": "Comparer les dossiers",
   "files.copy_folder_path": "Copier le chemin du dossier",
   "files.cd_terminal_here": "Amener le terminal ici (cd)",
+  "web.popups": "Autoriser les fenêtres pop-up",
+  "web.popups_hint": "La page peut ouvrir ses propres fenêtres, comme une console virtuelle iDRAC ou iLO. Elles s'ouvrent comme d'autres fenêtres de cette session, avec ses cookies et ses certificats de confiance.",
   "files.queue": "File de transferts",
   "files.queue_left": "{{count}} restant(s)",
   "files.queue_finished": "Tout est terminé",

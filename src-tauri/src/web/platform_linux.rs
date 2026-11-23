@@ -14,7 +14,7 @@ use tauri::WebviewWindow;
 use webkit2gtk::gio;
 use webkit2gtk::gio::prelude::TlsCertificateExt;
 use webkit2gtk::glib::translate::ToGlibPtr;
-use webkit2gtk::{AuthenticationRequestExt, AuthenticationScheme, WebContextExt, WebViewExt};
+use webkit2gtk::{AuthenticationRequestExt, AuthenticationScheme, SettingsExt, WebContextExt, WebViewExt};
 
 /// What `retry` needs once the user trusts a certificate: it, its host and
 /// the page that failed. GTK objects stay on the main thread.
@@ -29,8 +29,17 @@ thread_local! {
 }
 
 pub(super) fn install(win: &WebviewWindow, label: String) {
+    let popups = super::window::popups_allowed(&label);
     let result = win.with_webview(move |pv| {
         let view = pv.inner();
+        // WebKit blocks `window.open` unless it comes straight from a
+        // click. A device's console button usually asks the server for a
+        // session first and opens the window after the answer, which no
+        // longer counts as a click, so the console never opened. Windows
+        // the page opens are this session's own (see `window::popup`).
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_javascript_can_open_windows_automatically(popups);
+        }
         let l = label.clone();
         view.connect_load_failed_with_tls_errors(move |view, uri, certificate, _errors| {
             let Some(der) = certificate.certificate() else { return false };

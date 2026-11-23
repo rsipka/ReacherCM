@@ -3843,6 +3843,8 @@
   "files.compare_folders": "Comparar carpetas",
   "files.copy_folder_path": "Copiar ruta de la carpeta",
   "files.cd_terminal_here": "Llevar el terminal aquí (cd)",
+  "web.popups": "Permitir ventanas emergentes",
+  "web.popups_hint": "La página puede abrir sus propias ventanas, como una consola virtual de iDRAC o iLO. Se abren como otras ventanas de esta sesión, con sus cookies y certificados de confianza.",
   "files.queue": "Cola de transferencias",
   "files.queue_left": "Quedan {{count}}",
   "files.queue_finished": "Todo terminado",

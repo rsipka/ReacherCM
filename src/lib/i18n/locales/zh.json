@@ -3843,6 +3843,8 @@
   "files.compare_folders": "比较文件夹",
   "files.copy_folder_path": "复制文件夹路径",
   "files.cd_terminal_here": "将终端切换到此处 (cd)",
+  "web.popups": "允许弹出窗口",
+  "web.popups_hint": "允许页面打开自己的窗口，例如 iDRAC 或 iLO 虚拟控制台。它们会作为此会话的其他窗口打开，使用相同的 Cookie 和受信任证书。",
   "files.queue": "传输队列",
   "files.queue_left": "剩余 {{count}} 项",
   "files.queue_finished": "全部完成",

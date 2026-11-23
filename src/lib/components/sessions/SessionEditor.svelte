@@ -118,6 +118,7 @@
 	let webPassSel = $state('');
 	let webSubmitSel = $state('');
 	let webSubmit = $state(true);
+	let webPopups = $state(true);
 	let webCerts = $state<WebCert[]>([]);
 	let webCertTyped = $state('');
 	let webCertError = $state('');
@@ -156,6 +157,7 @@
 			o.submit_selector = webSubmitSel.trim() || null;
 		}
 		if (!webSubmit) o.submit = false;
+		if (!webPopups) o.popups = false;
 		return o;
 	}
 
@@ -547,6 +549,7 @@
 		webPassSel = w?.password_selector ?? '';
 		webSubmitSel = w?.submit_selector ?? '';
 		webSubmit = w?.submit !== false;
+		webPopups = w?.popups !== false;
 		webCerts = w?.certs ?? [];
 		webCertTyped = '';
 		webCertError = '';
@@ -1380,6 +1383,13 @@
 				<p class="shell-hint">{webOpenIn === 'browser' || isMobile() ? t('web.open_browser_hint') : t('web.open_window_hint')}</p>
 			</div>
 			{#if webOpenIn !== 'browser' && !isMobile()}
+				<div class="shell-field">
+					<label class="jump-toggle">
+						<input type="checkbox" bind:checked={webPopups} disabled={saving} />
+						<span class="jump-toggle-text">{t('web.popups')}</span>
+					</label>
+					<p class="shell-hint">{t('web.popups_hint')}</p>
+				</div>
 				<div class="shell-field">
 					<label class="via-label" for="web-storage">{t('web.storage')}</label>
 					<select id="web-storage" class="via-select" bind:value={webStorage} disabled={saving}>
