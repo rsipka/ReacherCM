@@ -157,13 +157,170 @@ pub fn put(list: &mut Vec<SavedHostKey>, entry: SavedHostKey) {
     }
 }
 
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
+}
+
+/// A key removed from a session (from the editor, or Remove all), kept as a
+/// mark so that sync does not bring it back from a device that still has it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemovedHostKey {
+    /// The server, `host:port`, as in [`SavedHostKey::host`].
+    pub host: String,
+    /// When it was removed, in seconds since 1970.
+    pub removed_at: i64,
+}
+
+/// The JSON fields of a session record that hold its keys.
+pub const KEYS_FIELD: &str = "host_keys";
+pub const REMOVED_FIELD: &str = "host_keys_removed";
+
+fn list_of<T: serde::de::DeserializeOwned>(obj: &serde_json::Map<String, serde_json::Value>, field: &str) -> Vec<T> {
+    obj.get(field).and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default()
+}
+
+/// The keys and removal marks stored on a session record.
+pub fn keys_in(obj: &serde_json::Map<String, serde_json::Value>) -> (Vec<SavedHostKey>, Vec<RemovedHostKey>) {
+    (list_of(obj, KEYS_FIELD), list_of(obj, REMOVED_FIELD))
+}
+
+/// Store `keys` on a session record that held `before`: a server whose key
+/// is gone gets a removal mark, one that has a key loses its mark. Empty
+/// lists are no field.
+pub fn set_keys(obj: &mut serde_json::Map<String, serde_json::Value>, before: &[SavedHostKey], keys: &[SavedHostKey]) {
+    let (_, mut removed) = keys_in(obj);
+    let at = now();
+    for k in before {
+        if !keys.iter().any(|n| n.host == k.host) {
+            removed.retain(|r| r.host != k.host);
+            removed.push(RemovedHostKey { host: k.host.clone(), removed_at: at });
+        }
+    }
+    removed.retain(|r| !keys.iter().any(|k| k.host == r.host));
+    write_lists(obj, keys, &removed);
+}
+
+fn write_lists(obj: &mut serde_json::Map<String, serde_json::Value>, keys: &[SavedHostKey], removed: &[RemovedHostKey]) {
+    for (field, value) in [(KEYS_FIELD, serde_json::to_value(keys)), (REMOVED_FIELD, serde_json::to_value(removed))] {
+        match value {
+            Ok(serde_json::Value::Array(a)) if !a.is_empty() => {
+                obj.insert(field.into(), serde_json::Value::Array(a));
+            }
+            _ => {
+                obj.remove(field);
+            }
+        }
+    }
+}
+
+/// Two copies of one session's keys, as two devices have them: for each
+/// server the latest of what was saved and what was removed counts, so a
+/// key saved on one device is not lost when the other writes the session
+/// from a copy that does not have it yet (or with a build that does not
+/// know host keys), and a key removed on purpose stays removed. A key
+/// without a time (typed in by an older build) is older than any removal.
+pub fn merge_keys(
+    ours: (&[SavedHostKey], &[RemovedHostKey]),
+    theirs: (&[SavedHostKey], &[RemovedHostKey]),
+) -> (Vec<SavedHostKey>, Vec<RemovedHostKey>) {
+    let mut keys: Vec<SavedHostKey> = Vec::new();
+    for k in theirs.0.iter().chain(ours.0) {
+        match keys.iter_mut().find(|n| n.host == k.host) {
+            Some(n) if k.saved_at.unwrap_or(0) > n.saved_at.unwrap_or(0) => *n = k.clone(),
+            Some(_) => {}
+            None => keys.push(k.clone()),
+        }
+    }
+    let mut removed: Vec<RemovedHostKey> = Vec::new();
+    for r in theirs.1.iter().chain(ours.1) {
+        match removed.iter_mut().find(|n| n.host == r.host) {
+            Some(n) => n.removed_at = n.removed_at.max(r.removed_at),
+            None => removed.push(r.clone()),
+        }
+    }
+    keys.retain(|k| !removed.iter().any(|r| r.host == k.host && r.removed_at >= k.saved_at.unwrap_or(0)));
+    removed.retain(|r| !keys.iter().any(|k| k.host == r.host));
+    (keys, removed)
+}
+
+/// Merge the keys of `theirs`, another copy of the same session record, into
+/// `ours`. Returns whether `ours` changed. Not a session object: nothing.
+pub fn merge_into(ours: &mut serde_json::Value, theirs: &serde_json::Value) -> bool {
+    let (Some(o), Some(t)) = (ours.as_object_mut(), theirs.as_object()) else { return false };
+    let (ok, or) = keys_in(o);
+    let (tk, tr) = keys_in(t);
+    let (keys, removed) = merge_keys((&ok, &or), (&tk, &tr));
+    let same = |a: &[SavedHostKey], b: &[SavedHostKey]| a.len() == b.len() && a.iter().all(|k| b.contains(k));
+    let same_r = |a: &[RemovedHostKey], b: &[RemovedHostKey]| a.len() == b.len() && a.iter().all(|k| b.contains(k));
+    if same(&keys, &ok) && same_r(&removed, &or) {
+        return false;
+    }
+    write_lists(o, &keys, &removed);
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn k(host: &str, fp: &str, at: i64) -> SavedHostKey {
+        SavedHostKey { host: host.into(), key_type: "ssh-ed25519".into(), fingerprint: with_prefix(fp), saved_at: Some(at) }
+    }
+    fn gone(host: &str, at: i64) -> RemovedHostKey {
+        RemovedHostKey { host: host.into(), removed_at: at }
+    }
+
+    #[test]
+    fn sync_keeps_a_key_the_other_copy_lacks() {
+        // Saved here; the other device wrote the session without it.
+        let (keys, removed) = merge_keys((&[k("a.example.com:22", "A", 10)], &[]), (&[], &[]));
+        assert_eq!(keys, vec![k("a.example.com:22", "A", 10)]);
+        assert!(removed.is_empty());
+        // And the other way round.
+        let (keys, _) = merge_keys((&[], &[]), (&[k("a.example.com:22", "A", 10)], &[]));
+        assert_eq!(keys.len(), 1);
+    }
+
+    #[test]
+    fn sync_keeps_the_newer_key_and_honours_removals() {
+        let old = k("a.example.com:22", "OLD", 10);
+        let new = k("a.example.com:22", "NEW", 20);
+        assert_eq!(merge_keys((&[old.clone()], &[]), (&[new.clone()], &[])).0, vec![new.clone()]);
+        assert_eq!(merge_keys((&[new.clone()], &[]), (&[old.clone()], &[])).0, vec![new.clone()]);
+        // Removed after it was saved: stays removed, and the mark is kept.
+        let (keys, removed) = merge_keys((&[old.clone()], &[]), (&[], &[gone("a.example.com:22", 15)]));
+        assert!(keys.is_empty());
+        assert_eq!(removed, vec![gone("a.example.com:22", 15)]);
+        // Saved again after the removal: the key is back, the mark gone.
+        let (keys, removed) = merge_keys((&[new.clone()], &[]), (&[], &[gone("a.example.com:22", 15)]));
+        assert_eq!(keys, vec![new]);
+        assert!(removed.is_empty());
+        // A key without a time is older than any removal.
+        let untimed = SavedHostKey { saved_at: None, ..old };
+        assert!(merge_keys((&[untimed], &[]), (&[], &[gone("a.example.com:22", 1)])).0.is_empty());
+    }
+
+    #[test]
+    fn removal_marks_on_the_record() {
+        let mut v = serde_json::json!({ "id": "s", "host_keys": [k("a.example.com:22", "A", 1), k("b.example.com:22", "B", 1)] });
+        let o = v.as_object_mut().unwrap();
+        let (before, _) = keys_in(o);
+        set_keys(o, &before, &[k("b.example.com:22", "B", 1)]);
+        let (keys, removed) = keys_in(o);
+        assert_eq!(keys.len(), 1);
+        assert_eq!(removed.len(), 1);
+        assert_eq!(removed[0].host, "a.example.com:22");
+        // Saving that server again drops its mark; nothing left is no field.
+        let (before, _) = keys_in(o);
+        set_keys(o, &before, &[k("a.example.com:22", "A", 2)]);
+        let (_, removed) = keys_in(o);
+        assert_eq!(removed.iter().map(|r| r.host.as_str()).collect::<Vec<_>>(), vec!["b.example.com:22"]);
+        set_keys(o, &[], &[]);
+        let mut w = serde_json::json!({ "id": "s" });
+        assert!(!merge_into(&mut w, &serde_json::json!({ "id": "s" })), "nothing to merge changes nothing");
+        assert!(merge_into(&mut w, &v));
+        assert_eq!(keys_in(w.as_object().unwrap()).1.len(), 1);
+    }
 
     #[test]
     fn answers_from_the_dialog() {

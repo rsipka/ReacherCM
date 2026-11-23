@@ -216,6 +216,10 @@ pub struct SessionConfig {
     /// `session_host_key_*` commands; an editor's save keeps the stored ones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_keys: Option<Vec<crate::ssh::session_hostkeys::SavedHostKey>>,
+    /// Servers whose key was removed from this session, and when, so that
+    /// sync does not bring the key back from a device that still has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_keys_removed: Option<Vec<crate::ssh::session_hostkeys::RemovedHostKey>>,
     /// A name for the main address (`host`), shown when the session has
     /// other addresses ("Office").
     #[serde(default, skip_serializing_if = "Option::is_none")]
