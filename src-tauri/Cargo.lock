@@ -7540,7 +7540,7 @@ dependencies = [
 
 [[package]]
 name = "reacher-cm"
-version = "26.11.1-dev.7"
+version = "26.11.1-dev.8"
 dependencies = [
  "aes 0.9.4",
  "anyhow",
