@@ -792,6 +792,7 @@ pub async fn session_create(
     connect_mode: Option<String>,
     address_check: Option<bool>,
     web: Option<crate::web::WebOptions>,
+    wol: Option<crate::state::WakeOnLan>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -881,6 +882,7 @@ pub async fn session_create(
             w.certs.clear();
             w
         }),
+        wol,
     };
     session.tidy_documentation();
 

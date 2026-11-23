@@ -245,6 +245,24 @@ pub struct SessionConfig {
     /// Web only: address, storage, sign-in and trusted certificates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web: Option<crate::web::WebOptions>,
+    /// Wake-on-LAN for the machine: its MAC address and where the magic
+    /// packet goes (Wake in the session's menu, Network tools).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wol: Option<WakeOnLan>,
+}
+
+/// How to wake a session's machine over the network.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WakeOnLan {
+    /// Its network card's MAC address, as typed.
+    pub mac: String,
+    /// Where the packet goes: a broadcast address (10.0.0.255 for another
+    /// subnet) or a name; unset: 255.255.255.255.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub broadcast: Option<String>,
+    /// UDP port; unset: 9.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
 }
 
 /// A password a session or saved credential used before it was changed.
@@ -322,6 +340,14 @@ impl SessionConfig {
             self.spice = None;
         }
         self.tidy_addresses();
+        if let Some(w) = self.wol.as_mut() {
+            w.mac = w.mac.trim().to_string();
+            w.broadcast = w.broadcast.take().map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+            w.port = w.port.filter(|p| *p != 0);
+        }
+        if self.wol.as_ref().is_some_and(|w| w.mac.is_empty()) {
+            self.wol = None;
+        }
         if self.kind == SessionKind::Web {
             if let Some(w) = self.web.as_mut() {
                 w.tidy();

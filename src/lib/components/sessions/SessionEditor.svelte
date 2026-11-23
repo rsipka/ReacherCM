@@ -6,7 +6,8 @@
 	import OsIconSelect from './OsIconSelect.svelte';
 	import { osChoices } from '#lib/data/distro-icons.js';
 	import Input from '#lib/components/shared/Input.svelte';
-	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { formatMac, parseMac } from '#lib/net/tools.js';
 	import { defaultTmuxName, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
 	import { isIos, isMobile, isWindows } from '#lib/platform.js';
 
@@ -432,6 +433,17 @@
 		const parts = [notes.trim() ? t('session.docs_has_notes') : '', fields ? t('session.docs_field_count', { count: String(fields) }) : ''].filter(Boolean);
 		return parts.length ? parts.join(' · ') : t('session.docs_empty');
 	});
+	/** Wake-on-LAN: the machine's MAC and where the magic packet goes. */
+	let wolMac = $state('');
+	let wolBroadcast = $state('');
+	let wolPort = $state('');
+	let wolOpen = $state(false);
+	let wolMacBad = $derived(wolMac.trim() !== '' && !parseMac(wolMac));
+	let wolSummary = $derived(wolMac.trim() ? formatMac(wolMac.trim()) : t('session.wol_none'));
+	function wolToSave(): WakeOnLan | null {
+		if (!wolMac.trim() || kind === 'serial' || kind === 'wsl') return null;
+		return { mac: formatMac(wolMac.trim()), broadcast: wolBroadcast.trim() || null, port: Number(wolPort) || null };
+	}
 	/** The terminal theme its tabs use; empty: the default from Settings. */
 	let terminalTheme = $state('');
 	/** The cursor in its tabs: '' the default from Settings. */
@@ -597,6 +609,10 @@
 			tagsStr = editSession.tags.join(', ');
 			folderIdStr = editSession.folder_id ?? '';
 			notes = editSession.notes ?? '';
+			wolMac = editSession.wol?.mac ?? '';
+			wolBroadcast = editSession.wol?.broadcast ?? '';
+			wolPort = editSession.wol?.port ? String(editSession.wol.port) : '';
+			wolOpen = !!wolMac;
 			customFields = (editSession.custom_fields ?? []).map((f) => ({ ...f, hidden: !!f.hidden, shown: false }));
 			docsOpen = !!notes.trim() || customFields.length > 0;
 			terminalTheme = editSession.terminal_theme ?? '';
@@ -680,6 +696,10 @@
 			tagsStr = '';
 			folderIdStr = folderId ?? '';
 			notes = '';
+			wolMac = '';
+			wolBroadcast = '';
+			wolPort = '';
+			wolOpen = false;
 			customFields = [];
 			docsOpen = false;
 			terminalTheme = '';
@@ -717,6 +737,11 @@
 		const ssh = kind === 'ssh';
 		if (ssh && ((authType === 'Manager' && !passwordRef && !usedCredential) || (jumpEnabled && jumpHops.some((h) => h.authType === 'Manager' && !h.passwordRef && !hopCredential(h))))) {
 			error = t('session.manager_pick_entry');
+			return;
+		}
+		if (wolMac.trim() && !parseMac(wolMac) && kind !== 'serial' && kind !== 'wsl') {
+			error = t('net.bad_mac');
+			wolOpen = true;
 			return;
 		}
 		saving = true;
@@ -909,6 +934,7 @@
 					alt_addresses: altToSave,
 					connect_mode: altToSave ? addressMode : null,
 					address_check: altToSave ? addressCheckToSave() : null,
+					wol: wolToSave(),
 				});
 				// Its open tabs take the new colours (and monitoring choice) at once.
 				setSessionTerminalTheme(editSession.id, themeToSave);
@@ -957,6 +983,7 @@
 					hostLabel: altToSave ? hostLabel : null,
 					altAddresses: altToSave,
 					connectMode: altToSave ? addressMode : null,
+					wol: wolToSave(),
 					addressCheck: altToSave ? addressCheckToSave() : null
 				});
 			}
@@ -1900,6 +1927,23 @@
 			{/if}
 		{/if}
 
+		{#if kind !== 'serial' && kind !== 'wsl'}
+			<Disclosure title={t('session.wol')} summary={wolSummary} bind:open={wolOpen}>
+				<div class="docs">
+					<div class="shell-field">
+						<label class="via-label" for="session-wol-mac">{t('net.mac')}</label>
+						<input id="session-wol-mac" class="field-input" class:invalid={wolMacBad} bind:value={wolMac} placeholder="00:11:22:AA:BB:CC" spellcheck="false" autocomplete="off" autocapitalize="off" disabled={saving} />
+						{#if wolMacBad}<p class="shell-hint">{t('net.bad_mac')}</p>{/if}
+					</div>
+					<div class="field-row">
+						<input class="field-input wol-broadcast" bind:value={wolBroadcast} placeholder="255.255.255.255" aria-label={t('net.broadcast')} title={t('net.broadcast')} spellcheck="false" autocomplete="off" autocapitalize="off" disabled={saving} />
+						<input class="field-input wol-port" type="number" min="1" max="65535" bind:value={wolPort} placeholder="9" aria-label={t('net.udp_port')} title={t('net.udp_port')} disabled={saving} />
+					</div>
+					<p class="shell-hint">{t('session.wol_hint')}</p>
+				</div>
+			</Disclosure>
+		{/if}
+
 		<Disclosure title={t('session.docs')} summary={docsSummary} bind:open={docsOpen}>
 			<div class="docs">
 				<div class="shell-field">
@@ -2125,6 +2169,20 @@
 	.field-name {
 		width: 30%;
 		min-width: 0;
+	}
+
+	.wol-broadcast {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.wol-port {
+		width: 72px;
+		flex: none;
+	}
+
+	.field-input.invalid {
+		border-color: var(--color-danger);
 	}
 
 	.field-value {

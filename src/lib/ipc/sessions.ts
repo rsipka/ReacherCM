@@ -128,6 +128,19 @@ export interface SessionConfig {
   address_check?: boolean | null;
   /** Web only: address, storage, sign-in, trusted certificates. */
   web?: WebOptions | null;
+  /** Wake-on-LAN for the machine (Wake in its menu, Network tools). */
+  wol?: WakeOnLan | null;
+}
+
+/** How to wake a session's machine over the network. */
+export interface WakeOnLan {
+  /** Its network card's MAC address, as typed. */
+  mac: string;
+  /** A broadcast address (10.0.0.255 for another subnet) or name; unset:
+   *  255.255.255.255. */
+  broadcast?: string | null;
+  /** UDP port; unset: 9. */
+  port?: number | null;
 }
 
 /** A web session's settings (see src-tauri/src/web/mod.rs). */
@@ -408,6 +421,7 @@ export async function sessionCreate(params: {
   connectMode?: ConnectMode | null;
   addressCheck?: boolean | null;
   web?: WebOptions | null;
+  wol?: WakeOnLan | null;
 }): Promise<SessionConfig> {
   return invoke<SessionConfig>('session_create', {
     name: params.name,
@@ -452,6 +466,7 @@ export async function sessionCreate(params: {
     connectMode: params.altAddresses?.length ? (params.connectMode ?? null) : null,
     addressCheck: params.altAddresses?.length ? (params.addressCheck ?? null) : null,
     web: params.kind === 'web' ? (params.web ?? {}) : null,
+    wol: params.wol?.mac.trim() ? params.wol : null,
   });
 }
 
