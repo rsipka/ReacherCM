@@ -71,7 +71,7 @@
 	import { addressName, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
-	import { createTab, updateTabOs, getSessionTabStates } from '#lib/state/tabs.svelte.js';
+	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView } from '#lib/state/tabs.svelte.js';
 	import { getSettings, sessionLogConfig } from '#lib/state/settings.svelte.js';
 	import { isMobile } from '#lib/platform.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -1585,7 +1585,26 @@
 		}
 	}
 
+	/** The session whose new SSH tab opens on the file manager, not the
+	 *  terminal (Open file manager in its menu). */
+	let filesOnConnect: string | undefined;
+
+	/** Session menu > Open file manager: the full-pane file manager of an
+	 *  SSH session. A connected tab of it switches over; otherwise it is
+	 *  connected first. */
+	function openFileManager(session: SessionConfig): void {
+		const open = getTabs().find((tab) => tab.type === 'ssh' && tab.sessionId === session.id && tab.connectionId && !tab.link);
+		if (open) {
+			activateTab(open.id);
+			toggleFilesView(open.id, true);
+			return;
+		}
+		filesOnConnect = session.id;
+		void handleConnect(session);
+	}
+
 	async function handleConnect(session: SessionConfig, address?: ResolvedAddress): Promise<void> {
+		if (filesOnConnect !== session.id) filesOnConnect = undefined;
 		// A session set to Ask: the address first.
 		if (!address && sessionKind(session) === 'ssh' && connectMode(session) === 'ask') {
 			pickAddressFor = session;
@@ -1876,6 +1895,10 @@
 			tab.cursorBlink = session.cursor_blink ?? null;
 			tab.monitoring = session.monitoring ?? null;
 			tab.historyMode = session.history ?? null;
+			if (filesOnConnect === session.id) {
+				filesOnConnect = undefined;
+				toggleFilesView(tab.id, true);
+			}
 			addToast(t('session.connected_toast', { name: session.name }), 'success');
 			void openOtherWindows(tab);
 			connectSession = undefined;
@@ -2537,6 +2560,11 @@
 				<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(contextMenu.session); closeContextMenu(); }} type="button">
 					{t('session.connect')}
 				</button>
+				{#if sessionKind(contextMenu.session) === 'ssh' && !isMobile()}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button">
+						{t('session.open_file_manager')}
+					</button>
+				{/if}
 				{#if hasAltAddresses(contextMenu.session)}
 					{@const menuSession = contextMenu.session}
 					<div class="context-label">{t('session.connect_via')}</div>
