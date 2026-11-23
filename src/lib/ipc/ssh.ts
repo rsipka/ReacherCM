@@ -18,6 +18,9 @@ export interface TmuxStart {
   window?: string;
   /** tmux's status line off in the view. */
   hideStatus?: boolean;
+  /** The name earlier versions gave the same session: attached to instead
+   *  while only it is on the server (see sshTmuxChosen). */
+  legacy?: string;
 }
 
 /** One window of a tab's tmux session. */

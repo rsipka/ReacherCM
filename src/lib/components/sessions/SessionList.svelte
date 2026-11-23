@@ -1872,11 +1872,12 @@
 			}
 			if (hasAltAddresses(session)) rememberAddress(session.id, used);
 			if (fallback) Object.assign(connectParams, { fallback });
-			// Asked which tmux session: the tab keeps the answer, so a
-			// reconnect goes straight back to it rather than asking again.
-			if (connectParams.tmux?.ask) {
+			// Asked which tmux session (or the old name or the new one): the
+			// tab keeps the answer, so a reconnect goes straight back to it
+			// rather than asking again.
+			if (connectParams.tmux?.ask || connectParams.tmux?.legacy) {
 				const chosen = await sshTmuxChosen(id).catch(() => undefined);
-				connectParams.tmux = chosen === null ? null : { ...connectParams.tmux, name: chosen ?? connectParams.tmux.name, ask: false };
+				connectParams.tmux = chosen === null ? null : { ...connectParams.tmux, name: chosen ?? connectParams.tmux.name, ask: false, legacy: undefined };
 			}
 
 			// Cancelled while the handshake was in flight: the backend had no
