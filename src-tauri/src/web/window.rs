@@ -422,6 +422,7 @@ pub fn answer(label: &str, fingerprint: &str, trust: bool) -> Result<Option<(Str
 }
 
 /// Whether the page in `label` may open windows of its own.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(super) fn popups_allowed(label: &str) -> bool {
     entry(label).is_some_and(|e| lock(&e).popups)
 }
