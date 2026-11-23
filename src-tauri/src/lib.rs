@@ -639,6 +639,7 @@ pub fn run() {
             report::report_reveal,
             sound::play_notification_sound,
             sound::play_bell_sound,
+            sound::set_audio_muted,
             // Session commands
             session_list,
             session_get,
@@ -1166,6 +1167,7 @@ pub fn run() {
             report::report_reveal,
             sound::play_notification_sound,
             sound::play_bell_sound,
+            sound::set_audio_muted,
             // Session commands
             session_list,
             session_get,

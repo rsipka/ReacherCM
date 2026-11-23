@@ -5,7 +5,8 @@
 # "IronRDP"; the sound channel is announced initialized and encrypted
 # (RdpsndAnnounced); ConfigBuilder::with_egfx_thin_client announces the
 # graphics pipeline as a thin client, keeping the server to the older codecs
-# (EgfxHandler). Path dependencies
+# (EgfxHandler); audio::set_muted drops the remote audio while the app is
+# muted. Path dependencies
 # were rewritten to the same git rev and workspace fields filled in.
 [package]
 name = "ironrdp-client"
