@@ -173,16 +173,19 @@ fn the_master_password_is_always_asked_for() {
     assert!(p.check_entry(ID, Some("totp")).is_err());
 }
 
-#[test]
-fn a_session_key_is_kept_for_its_master_password_only() {
-    let key = std::sync::Arc::new(parse_session(SESSION.as_bytes()).unwrap());
-    // Serials no real typing in this test run has.
-    let (master, other) = (u64::MAX - 11, u64::MAX - 12);
-    sessions::keep(master, key.clone());
-    assert!(sessions::get(other).is_none());
-    assert_eq!(sessions::get(master).map(|k| k.serial()), Some(key.serial()));
-    sessions::drop_key(key.serial());
-    assert!(sessions::get(master).is_none());
+#[tokio::test]
+async fn a_session_key_is_kept_for_its_master_password_only() {
+    sessions::isolated(async {
+        let key = std::sync::Arc::new(parse_session(SESSION.as_bytes()).unwrap());
+        // Serials no real typing in this test run has.
+        let (master, other) = (u64::MAX - 11, u64::MAX - 12);
+        sessions::keep(master, key.clone());
+        assert!(sessions::get(other).is_none());
+        assert_eq!(sessions::get(master).map(|k| k.serial()), Some(key.serial()));
+        sessions::drop_key(key.serial());
+        assert!(sessions::get(master).is_none());
+    })
+    .await;
 }
 
 /// A stand-in `bw`: unlocks with "right", wants the session key it gave,
@@ -217,31 +220,34 @@ esac
 #[cfg(all(unix, desktop))]
 #[tokio::test]
 async fn a_whole_run_against_a_stand_in_cli() {
-    let bin = fake_bw("run");
-    let dir = bin.parent().unwrap().to_path_buf();
-    let cfg = BitwardenConfig { cli_path: Some(bin.to_str().unwrap().into()), enabled: true, ..Default::default() };
-    let p = Bitwarden::new(cfg, true);
-    assert_eq!(p.status().await.version.as_deref(), Some("2025.1.3"));
+    sessions::isolated(async {
+        let bin = fake_bw("run");
+        let dir = bin.parent().unwrap().to_path_buf();
+        let cfg = BitwardenConfig { cli_path: Some(bin.to_str().unwrap().into()), enabled: true, ..Default::default() };
+        let p = Bitwarden::new(cfg, true);
+        assert_eq!(p.status().await.version.as_deref(), Some("2025.1.3"));
 
-    let wrong = Passphrase::new("wrong".into()).unwrap();
-    assert!(matches!(p.list(Some(&wrong)).await, Err(Failure::WrongPassphrase(_))));
-    assert!(matches!(p.list(None).await, Err(Failure::Other(_))));
+        let wrong = Passphrase::new("wrong".into()).unwrap();
+        assert!(matches!(p.list(Some(&wrong)).await, Err(Failure::WrongPassphrase(_))));
+        assert!(matches!(p.list(None).await, Err(Failure::Other(_))));
 
-    let right = Passphrase::new("right".into()).unwrap();
-    let list = p.list(Some(&right)).await.map_err(Failure::into_message).unwrap();
-    assert_eq!(list.len(), 2);
-    assert_eq!(p.resolve(ID, Some(&right)).await.map_err(Failure::into_message).unwrap().as_str(), "hunter2");
-    let missing = p.resolve("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", Some(&right)).await.unwrap_err();
-    assert!(missing.into_message().contains("entry not found"));
+        let right = Passphrase::new("right".into()).unwrap();
+        let list = p.list(Some(&right)).await.map_err(Failure::into_message).unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(p.resolve(ID, Some(&right)).await.map_err(Failure::into_message).unwrap().as_str(), "hunter2");
+        let missing = p.resolve("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", Some(&right)).await.unwrap_err();
+        assert!(missing.into_message().contains("entry not found"));
 
-    // One unlock for the right password, however many calls followed.
-    let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
-    let unlocks = calls.lines().filter(|l| l.starts_with("unlock")).count();
-    assert_eq!(unlocks, 2, "one for the wrong password, one for the right: {calls}");
-    assert!(calls.contains("sync"), "{calls}");
+        // One unlock for the right password, however many calls followed.
+        let calls = std::fs::read_to_string(dir.join("calls.log")).unwrap();
+        let unlocks = calls.lines().filter(|l| l.starts_with("unlock")).count();
+        assert_eq!(unlocks, 2, "one for the wrong password, one for the right: {calls}");
+        assert!(calls.contains("sync"), "{calls}");
 
-    // The key was dropped elsewhere (`bw lock`, "Forget now"): unlocked anew.
-    sessions::forget();
-    assert_eq!(p.resolve(ID, Some(&right)).await.map_err(Failure::into_message).unwrap().as_str(), "hunter2");
-    let _ = std::fs::remove_dir_all(dir);
+        // The key was dropped elsewhere (`bw lock`, "Forget now"): unlocked anew.
+        sessions::forget();
+        assert_eq!(p.resolve(ID, Some(&right)).await.map_err(Failure::into_message).unwrap().as_str(), "hunter2");
+        let _ = std::fs::remove_dir_all(dir);
+    })
+    .await;
 }

@@ -211,7 +211,7 @@ pub(super) fn dh_answer(
     username: &str,
     password: &str,
 ) -> Result<(Zeroizing<Vec<u8>>, [u8; 16]), String> {
-    use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+    use aes::cipher::{BlockCipherEncrypt, KeyInit};
 
     let len = prime.len();
     let p = BigUint::from_bytes_be(prime);
@@ -234,9 +234,9 @@ pub(super) fn dh_answer(
     credentials[username.len()] = 0;
     credentials[64..64 + password.len()].copy_from_slice(password.as_bytes());
     credentials[64 + password.len()] = 0;
-    let cipher = aes::Aes128::new(GenericArray::from_slice(&key));
+    let cipher = aes::Aes128::new((&key).into());
     for block in credentials.as_chunks_mut::<16>().0 {
-        cipher.encrypt_block(GenericArray::from_mut_slice(&mut block[..]));
+        cipher.encrypt_block(block.into());
     }
 
     let mut message = Zeroizing::new(Vec::with_capacity(128 + len));
