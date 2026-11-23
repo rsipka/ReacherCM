@@ -57,6 +57,8 @@ pub enum SessionKind {
     /// A web management page (iDRAC, iLO, Proxmox VE...), shown in a window
     /// of its own that cannot reach the app; see `crate::web`.
     Web,
+    /// FTP or FTPS, shown in the full-pane file manager. Desktop only.
+    Ftp,
 }
 
 impl SessionKind {
@@ -216,6 +218,10 @@ pub struct SessionConfig {
     /// `session_host_key_*` commands; an editor's save keeps the stored ones.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_keys: Option<Vec<crate::ssh::session_hostkeys::SavedHostKey>>,
+    /// Servers whose key was removed from this session, and when, so that
+    /// sync does not bring the key back from a device that still has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_keys_removed: Option<Vec<crate::ssh::session_hostkeys::RemovedHostKey>>,
     /// A name for the main address (`host`), shown when the session has
     /// other addresses ("Office").
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -245,6 +251,23 @@ pub struct SessionConfig {
     /// Web only: address, storage, sign-in and trusted certificates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web: Option<crate::web::WebOptions>,
+    /// SSH only: open in the full-pane file manager rather than the
+    /// terminal, over `sftp` or `scp` (see `sftp::backend`). Unset: a terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<FilesProtocol>,
+    /// FTP only: encryption and the certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ftp: Option<crate::ftp::FtpOptions>,
+}
+
+/// How an SSH session that opens as files reaches them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FilesProtocol {
+    Sftp,
+    /// The scp program for copies, shell commands for the rest: for
+    /// servers without the SFTP subsystem.
+    Scp,
 }
 
 /// A password a session or saved credential used before it was changed.
@@ -603,6 +626,8 @@ pub struct AppState {
     pub serial_manager: Arc<tokio::sync::Mutex<SerialManager>>,
     pub rdp_manager: Arc<tokio::sync::Mutex<RdpManager>>,
     pub telnet_manager: Arc<tokio::sync::Mutex<crate::telnet::TelnetManager>>,
+    /// Open FTP sessions; their ids are answered by the `sftp_*` commands.
+    pub ftp_manager: Arc<crate::ftp::FtpManager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -651,6 +676,7 @@ impl AppState {
             serial_manager: Arc::new(tokio::sync::Mutex::new(SerialManager::new())),
             rdp_manager: Arc::new(tokio::sync::Mutex::new(RdpManager::new())),
             telnet_manager: Arc::new(tokio::sync::Mutex::new(crate::telnet::TelnetManager::new())),
+            ftp_manager: Arc::new(crate::ftp::FtpManager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),

@@ -37,7 +37,7 @@ export function parseAddress(raw: string): TypedAddress | null {
 
 /** The port a session of this kind uses unless told otherwise. */
 export function defaultPort(kind: string | undefined): number {
-	return kind === 'rdp' ? 3389 : kind === 'vnc' || kind === 'spice' ? 5900 : kind === 'telnet' ? 23 : kind === 'winbox' ? 8291 : kind === 'web' ? 443 : 22;
+	return kind === 'rdp' ? 3389 : kind === 'vnc' || kind === 'spice' ? 5900 : kind === 'telnet' ? 23 : kind === 'winbox' ? 8291 : kind === 'web' ? 443 : kind === 'ftp' ? 21 : 22;
 }
 
 /** `user@host`, with `:port` only when it is not the protocol's own, as the

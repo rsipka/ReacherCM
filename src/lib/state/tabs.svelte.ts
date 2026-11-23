@@ -4,12 +4,15 @@ import { vncDisconnect, type VncConnectParams } from '#lib/ipc/vnc.js';
 import { spiceDisconnect, type SpiceConnectParams } from '#lib/ipc/spice.js';
 import type { TelnetConnectParams } from '#lib/ipc/telnet.js';
 import type { SerialConnectParams } from '#lib/ipc/serial.js';
+import { ftpDisconnect } from '#lib/ipc/ftp.js';
+import { dropQueue } from '#lib/explorer/transfer-queue.svelte.js';
+import type { FilesProtocol } from '#lib/ipc/sessions.js';
 import type { HistoryMode } from '#lib/ipc/history.js';
 import * as splits from '#lib/terminal/split.js';
 import { isMobile } from '#lib/platform.js';
 import type { Direction, Layout, Side } from '#lib/terminal/split.js';
 
-export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial';
+export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial' | 'ftp';
 
 /** A tab that shows a remote desktop rather than a terminal. */
 export function isDesktopTab(tab: Pick<Tab, 'type'> | undefined): boolean {
@@ -83,9 +86,24 @@ export interface Tab {
 	/** An SSH tab showing the full-pane file manager (this computer beside
 	 *  the server) in place of its terminal, which keeps running behind it. */
 	filesView?: boolean;
+	/** An SSH tab opened from an SFTP or SCP session: it starts in the
+	 *  file manager, and SCP copies go through scp. */
+	filesProtocol?: FilesProtocol;
+	/** What an FTP tab connects to; its panel connects it. */
+	ftpConnectParams?: FtpConnectParams;
+	/** An FTP tab's open connection, kept apart like `telnetConnectionId`. */
+	ftpConnectionId?: string;
 	/** A remote desktop tab whose desktop is up (set by its panel); unset
 	 *  while it connects, and once it closed. */
 	desktopUp?: boolean;
+}
+
+/** An FTP tab's saved session; the backend takes the rest from it. */
+export interface FtpConnectParams {
+	sessionId: string;
+	host: string;
+	port: number;
+	username: string;
 }
 
 export interface Handoff {
@@ -234,7 +252,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 
 	const tab: Tab = {
 		id,
-		title: title ?? numbered(type === 'local' ? 'Local' : type === 'rdp' ? 'RDP' : type === 'vnc' ? 'VNC' : type === 'spice' ? 'SPICE' : type === 'telnet' ? 'Telnet' : type === 'serial' ? 'Serial' : 'SSH'),
+		title: title ?? numbered(type === 'local' ? 'Local' : type === 'rdp' ? 'RDP' : type === 'vnc' ? 'VNC' : type === 'spice' ? 'SPICE' : type === 'telnet' ? 'Telnet' : type === 'serial' ? 'Serial' : type === 'ftp' ? 'FTP' : 'SSH'),
 		type,
 		connectionId,
 		active: true,
@@ -256,7 +274,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 const released = new Set<string>();
 
 function connectionIds(tab: Tab): string[] {
-	return [tab.id, tab.connectionId, tab.telnetConnectionId, tab.serialConnectionId].filter((x): x is string => !!x);
+	return [tab.id, tab.connectionId, tab.telnetConnectionId, tab.serialConnectionId, tab.ftpConnectionId].filter((x): x is string => !!x);
 }
 
 /** Was this tab or connection handed to another window? */
@@ -311,6 +329,9 @@ export function closeTab(id: string): void {
 		void vncDisconnect(id).catch(() => {});
 	} else if (tabs[index].type === 'spice') {
 		void spiceDisconnect(id).catch(() => {});
+	} else if (tabs[index].type === 'ftp' && tabs[index].ftpConnectionId) {
+		dropQueue(tabs[index].ftpConnectionId!);
+		void ftpDisconnect(tabs[index].ftpConnectionId!).catch(() => {});
 	}
 
 	const wasActive = tabs[index].active;
@@ -376,7 +397,7 @@ export function setDesktopUp(id: string, up: boolean): void {
 /** The saved session a tab was opened from: remote desktops keep it in
  *  their connect params only. */
 export function tabSessionId(tab: Tab): string | undefined {
-	return tab.sessionId ?? tab.rdpConnectParams?.sessionId ?? tab.vncConnectParams?.sessionId ?? tab.spiceConnectParams?.sessionId ?? undefined;
+	return tab.sessionId ?? tab.ftpConnectParams?.sessionId ?? tab.rdpConnectParams?.sessionId ?? tab.vncConnectParams?.sessionId ?? tab.spiceConnectParams?.sessionId ?? undefined;
 }
 
 /** Is the tab's connection up: not dropped, not still connecting? A local
@@ -390,6 +411,8 @@ export function isTabConnected(tab: Tab): boolean {
 			return !!tab.telnetConnectionId;
 		case 'serial':
 			return !!tab.serialConnectionId;
+		case 'ftp':
+			return !!tab.ftpConnectionId;
 		case 'local':
 			return true;
 		default:
@@ -437,6 +460,11 @@ export function setTelnetConnection(tabId: string, connectionId: string): void {
 export function setSerialConnection(tabId: string, connectionId: string): void {
 	const tab = tabs.find((t) => t.id === tabId);
 	if (tab) tab.serialConnectionId = connectionId;
+}
+
+export function setFtpConnection(tabId: string, connectionId: string | undefined): void {
+	const tab = tabs.find((t) => t.id === tabId);
+	if (tab) tab.ftpConnectionId = connectionId;
 }
 
 export function updateTabConnection(tabId: string, newConnectionId: string): void {
