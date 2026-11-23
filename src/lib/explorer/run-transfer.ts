@@ -26,6 +26,9 @@ export interface TransferRun {
 	visible?: boolean;
 	/** Also told when the user cancels, after the backend is asked to stop. */
 	onCancel?: () => void;
+	/** Told the transfer's id once its row exists (the queue cancels and
+	 *  follows it by that id). */
+	onId?: (transferId: string) => void;
 }
 
 /**
@@ -69,6 +72,7 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 				run.onCancel?.();
 			}, run.connectionId);
 		}
+		run.onId?.(id);
 		try {
 			await run.start(id);
 		} catch (err) {
