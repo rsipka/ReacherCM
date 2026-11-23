@@ -3709,6 +3709,8 @@
   "session.connect_address": "地址",
   "session.connect_login": "登录",
   "session.connect_login_own": "会话自身的",
+  "session.connect_no_tmux": "不使用 tmux 连接",
+  "session.connect_without_tmux": "本次不使用 tmux",
   "session.connect_with_ref": "使用密码管理器条目，该条目需按会话批准。请在编辑器中将其关联到会话后再用它连接。",
   "session.connect_with_route": "会话的跳板机或代理使用的密码管理器条目是为其自身用户名批准的，因此这里不能使用其他用户名。",
   "session.trying_address": "正在尝试 {{name}}…",

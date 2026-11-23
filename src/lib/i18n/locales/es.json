@@ -3709,6 +3709,8 @@
   "session.connect_address": "Dirección",
   "session.connect_login": "Inicio de sesión",
   "session.connect_login_own": "El de la sesión",
+  "session.connect_no_tmux": "Conectar sin tmux",
+  "session.connect_without_tmux": "Sin tmux, esta vez",
   "session.connect_with_ref": "Usa una entrada del gestor de contraseñas, que se aprueba por sesión. Vincúlala a la sesión en el editor para conectar con ella.",
   "session.connect_with_route": "Los hosts de salto o el proxy de la sesión usan entradas del gestor de contraseñas aprobadas para su propio nombre de usuario, así que aquí no se puede usar otro.",
   "session.trying_address": "Probando {{name}}…",

@@ -1035,6 +1035,8 @@
 	 *  and a saved credential id (null: the session's own login). */
 	let menuAddress = $state<number | null>(null);
 	let menuCredential = $state<string | null>(null);
+	/** Connect to's choice to leave tmux out this once. */
+	let menuNoTmux = $state(false);
 
 	function openFolderContextMenu(e: MouseEvent, folder: Folder): void {
 		e.preventDefault();
@@ -1552,14 +1554,22 @@
 		const last = lastAddress(s.id);
 		menuAddress = connectMode(s) === 'auto' ? null : (list.find((a) => last && addressKey(a) === last)?.index ?? 0);
 		menuCredential = null;
+		menuNoTmux = false;
 		sessionMenuPage = 'connect';
 	}
 	/** Connect to's Connect: the picked address with the picked login. */
 	function connectChosen(session: SessionConfig): void {
 		const address = menuAddress === null ? undefined : sessionAddresses(session).find((a) => a.index === menuAddress);
 		const c = menuCredential ? savedCredentials.find((x) => x.id === menuCredential) : undefined;
+		const noTmux = menuNoTmux;
 		closeContextMenu();
-		void handleConnect(c ? withCredential(session, c) : session, address);
+		const s = c ? withCredential(session, c) : session;
+		void handleConnect(noTmux ? withoutTmux(s) : s, address);
+	}
+	/** A session as one connect sees it with tmux left out: a plain shell,
+	 *  this once. Never saved (like a container's shell). */
+	function withoutTmux<T extends SessionConfig>(s: T): T {
+		return { ...s, tmux: { mode: 'off' } };
 	}
 
 	function hasRefs(s: SessionConfig): boolean {
@@ -2619,6 +2629,13 @@
 							</button>
 						{/each}
 					{/if}
+					{#if tmuxFor(menuSession, folders)}
+						<div class="context-label">tmux</div>
+						<button class="context-item context-via" class:context-current={menuNoTmux} role="menuitemcheckbox" aria-checked={menuNoTmux} onclick={() => (menuNoTmux = !menuNoTmux)} type="button">
+							{t('session.connect_without_tmux')}
+							<span class="context-hint">{menuNoTmux ? '✓' : ''}</span>
+						</button>
+					{/if}
 				</div>
 				<div class="context-sep"></div>
 				<button class="context-item context-go" onclick={() => connectChosen(menuSession)} type="button">
@@ -2631,6 +2648,11 @@
 				{#if sessionKind(contextMenu.session) === 'ssh' && !isMobile()}
 					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button">
 						{t('session.open_file_manager')}
+					</button>
+				{/if}
+				{#if tmuxFor(contextMenu.session, folders)}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(withoutTmux(contextMenu.session)); closeContextMenu(); }} type="button">
+						{t('session.connect_no_tmux')}
 					</button>
 				{/if}
 				{#if hasConnectChoices(contextMenu.session)}

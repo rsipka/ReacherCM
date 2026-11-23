@@ -3709,6 +3709,8 @@
   "session.connect_address": "Adresse",
   "session.connect_login": "Anmeldung",
   "session.connect_login_own": "Die der Sitzung",
+  "session.connect_no_tmux": "Ohne tmux verbinden",
+  "session.connect_without_tmux": "Diesmal ohne tmux",
   "session.connect_with_ref": "Verwendet einen Passwortmanager-Eintrag, der pro Sitzung freigegeben wird. Verknüpfen Sie ihn im Editor mit der Sitzung, um damit zu verbinden.",
   "session.connect_with_route": "Die Jump-Hosts oder der Proxy der Sitzung verwenden Passwortmanager-Einträge, die für ihren eigenen Benutzernamen freigegeben sind; ein anderer Benutzername ist hier nicht möglich.",
   "session.trying_address": "Versuche {{name}}…",

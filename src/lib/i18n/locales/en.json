@@ -3709,6 +3709,8 @@
   "session.connect_address": "Address",
   "session.connect_login": "Login",
   "session.connect_login_own": "The session's own",
+  "session.connect_no_tmux": "Connect without tmux",
+  "session.connect_without_tmux": "Without tmux, this once",
   "session.connect_with_ref": "Uses a password manager entry, which is approved per session. Link it to the session in the editor to connect with it.",
   "session.connect_with_route": "The session's jump hosts or proxy use password manager entries, approved for its own user name, so this credential's other user name cannot be used here.",
   "session.trying_address": "Trying {{name}}…",

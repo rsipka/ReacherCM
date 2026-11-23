@@ -3709,6 +3709,8 @@
   "session.connect_address": "Адрес",
   "session.connect_login": "Вход",
   "session.connect_login_own": "Този на сесията",
+  "session.connect_no_tmux": "Свързване без tmux",
+  "session.connect_without_tmux": "Без tmux, този път",
   "session.connect_with_ref": "Използва запис от мениджър на пароли, одобряван за всяка сесия. Свържете го със сесията в редактора, за да се свързвате с него.",
   "session.connect_with_route": "Междинните хостове или проксито на сесията използват записи от мениджър на пароли, одобрени за нейното потребителско име, затова тук не може да се ползва друго.",
   "session.trying_address": "Опит с {{name}}…",

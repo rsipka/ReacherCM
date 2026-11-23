@@ -3709,6 +3709,8 @@
   "session.connect_address": "Adresa",
   "session.connect_login": "Přihlášení",
   "session.connect_login_own": "Vlastní přihlášení relace",
+  "session.connect_no_tmux": "Připojit bez tmux",
+  "session.connect_without_tmux": "Tentokrát bez tmux",
   "session.connect_with_ref": "Používá položku ze správce hesel, která se schvaluje pro každou relaci zvlášť. Pro připojení s ní ji v editoru propojte s relací.",
   "session.connect_with_route": "Skokové hostitele nebo proxy relace používají položky ze správce hesel schválené pro její vlastní uživatelské jméno, takže jiné uživatelské jméno tohoto přihlášení zde použít nelze.",
   "session.trying_address": "Zkouším {{name}}…",
