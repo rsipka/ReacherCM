@@ -387,6 +387,7 @@
   "session.category_terminal": "Терминали",
   "session.category_desktop": "Отдалечен работен плот",
   "session.category_transfer": "Прехвърляне",
+  "session.category_other": "Други",
   "session.column_connection": "Връзка",
   "session.column_terminal": "Терминал и подреждане",
   "session.column_organising": "Подреждане",

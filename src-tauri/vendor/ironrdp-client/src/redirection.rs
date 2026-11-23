@@ -168,6 +168,24 @@ pub(crate) fn apply_server_redirection(
             Credentials::SmartCard { .. } => debug!("Keeping the smart card identity across the redirection"),
         }
     }
+    // Reach: a password sent in the clear (not encrypted for the target) is the password to log in
+    // to the target with, as FreeRDP uses it for NLA. GNOME Remote Desktop's Remote Login sends one-time
+    // credentials this way to clients that say they are Android or iOS; CredSSP with the original
+    // password was refused there.
+    if let Some(password) = redirection
+        .password
+        .as_deref()
+        .filter(|_| !redirection.flags.contains(ServerRedirectionFlags::PASSWORD_IS_PK_ENCRYPTED))
+        .and_then(clear_text_password)
+    {
+        match &mut config.connector.credentials {
+            Credentials::UsernamePassword { password: current, .. } => {
+                debug!("Logging in to the redirection target with the password it handed over");
+                *current = password;
+            }
+            Credentials::SmartCard { .. } => {}
+        }
+    }
     if let Some(domain) = &redirection.domain {
         config.connector.domain = (!domain.is_empty()).then(|| domain.clone());
     }
@@ -227,6 +245,17 @@ pub(crate) fn apply_server_redirection(
     });
 
     return Ok(config.destination.to_string());
+
+    /// The redirection password as text: UTF-16LE up to its null terminator, which FreeRDP requires too.
+    /// Anything else (an opaque broker cookie) is not a password and is left to the Client Info PDU.
+    fn clear_text_password(bytes: &[u8]) -> Option<String> {
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .collect();
+        let end = units.iter().position(|&unit| unit == 0)?;
+        String::from_utf16(&units[..end]).ok().filter(|p| !p.is_empty())
+    }
 
     /// Converts the opaque load-balancing information into an X.224 routing token, without its CR+LF terminator.
     fn routing_token(load_balance_info: &[u8]) -> ConnectorResult<String> {

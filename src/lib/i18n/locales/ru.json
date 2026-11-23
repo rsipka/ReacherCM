@@ -387,6 +387,7 @@
   "session.category_terminal": "Терминалы",
   "session.category_desktop": "Удалённый рабочий стол",
   "session.category_transfer": "Передача файлов",
+  "session.category_other": "Другое",
   "session.column_connection": "Подключение",
   "session.column_terminal": "Терминал и упорядочивание",
   "session.column_organising": "Упорядочивание",

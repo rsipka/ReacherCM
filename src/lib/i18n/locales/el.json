@@ -387,6 +387,7 @@
   "session.category_terminal": "Τερματικά",
   "session.category_desktop": "Απομακρυσμένη επιφάνεια",
   "session.category_transfer": "Μεταφορές",
+  "session.category_other": "Άλλα",
   "session.column_connection": "Σύνδεση",
   "session.column_terminal": "Τερματικό και οργάνωση",
   "session.column_organising": "Οργάνωση",
