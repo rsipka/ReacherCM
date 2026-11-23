@@ -277,7 +277,11 @@ impl Tap {
             }
             State::Draining { until, last_input, over_and_out, .. } => {
                 let quiet = !*over_and_out && last_input.elapsed() >= DRAIN_QUIET;
-                if now >= *until || quiet {
+                if quiet || (!*over_and_out && now >= *until) {
+                    // A header cut off by the cancel may still end in its
+                    // CR LF XON: those are not shown either.
+                    self.drain(true);
+                } else if now >= *until {
                     self.idle();
                 }
             }
@@ -292,13 +296,25 @@ impl Tap {
         match &mut self.state {
             State::Idle => {
                 let scan = self.detector.scan(data);
-                out.display.extend(scan.display);
+                let mut shown = scan.display;
                 if let Some((direction, _header)) = scan.start {
+                    // The header's own `*`s are not text, and the line the
+                    // program printed ("rz waiting to receive.", or sz's
+                    // "rz") is cleared: the bar over the terminal says what
+                    // is going on, and the prompt after the transfer starts
+                    // on a clean line.
+                    while shown.last() == Some(&b'*') {
+                        shown.pop();
+                    }
+                    shown.extend_from_slice(b"\r\x1b[K");
+                    out.display.extend(shown);
                     // What came with the header is the opening handshake,
                     // which the transfer starts again once it is set up.
                     self.set_busy(true);
                     self.state = State::Offered { direction, since: Instant::now() };
                     (self.emit)(ZmodemEvent::Offer { direction });
+                } else {
+                    out.display.extend(shown);
                 }
             }
             // The remote repeats its opening until it is answered.
@@ -328,12 +344,13 @@ impl Tap {
                 if !*over_and_out {
                     return;
                 }
-                // The end of the last header (CR LF, XON) may come first.
+                // What is left of the last header (its CR LF, with the high
+                // bit set, and XON) and sz's "OO" are not shown.
                 let mut eaten = 0;
                 for &b in data {
                     if b == b'O' && *os_left > 0 {
                         *os_left -= 1;
-                    } else if !(matches!(b, b'\r' | b'\n' | 0x8d | 0x8a | 0x11) && *os_left == 2) {
+                    } else if !matches!(b, b'\r' | b'\n' | 0x8d | 0x8a | 0x11) {
                         break;
                     }
                     eaten += 1;
@@ -374,11 +391,7 @@ impl Tap {
         match end {
             End::Done(files) => {
                 (self.emit)(ZmodemEvent::Finished { direction, files, folder });
-                if direction == Direction::Download {
-                    self.drain(true);
-                } else {
-                    self.idle();
-                }
+                self.drain(true);
             }
             End::Cancelled => {
                 (self.emit)(ZmodemEvent::Cancelled { direction });
@@ -393,7 +406,7 @@ impl Tap {
 
     fn drain(&mut self, over_and_out: bool) {
         let now = Instant::now();
-        let until = now + if over_and_out { Duration::from_secs(2) } else { DRAIN_MAX };
+        let until = now + if over_and_out { Duration::from_secs(1) } else { DRAIN_MAX };
         self.state = State::Draining { until, last_input: now, over_and_out, os_left: 2 };
     }
 
