@@ -261,9 +261,12 @@
 		return null;
 	});
 
+	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
+	 *  own fields even when a credential was picked before switching to it. */
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web');
 	/** The saved credential the login comes from; null: the fields below. */
 	let usedCredential = $derived(
-		credentialId === OWN_LOGIN
+		!takesCredential || credentialId === OWN_LOGIN
 			? null
 			: credentialId
 				? (credentials.find((c) => c.id === credentialId) ?? null)
@@ -800,7 +803,7 @@
 				}
 			: null;
 		/** WSL and VNC have no username to share; their login stays their own. */
-		const credential = rdp || telnet || winbox || web || kind === 'ssh' ? credentialId || null : null;
+		const credential = takesCredential ? credentialId || null : null;
 		// RDP and VNC are password logons; the toggle below is SSH-only and
 		// its value is ignored here rather than trusted. WSL signs in by
 		// itself: nothing to keep, so a password left in the form is not saved.
@@ -1197,7 +1200,7 @@
 			{/if}
 		{/snippet}
 
-		{#if kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web'}
+		{#if takesCredential}
 			<div class="shell-field">
 				<label class="via-label" for="session-login">{t('credential.login')}</label>
 				<select id="session-login" class="via-select" value={credentialId} onchange={(e) => pickCredential(e.currentTarget.value)} disabled={saving}>
