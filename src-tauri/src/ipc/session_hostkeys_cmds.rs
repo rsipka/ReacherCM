@@ -8,7 +8,7 @@ use super::*;
 use crate::ssh::session_hostkeys::{self as hk, SavedHostKey};
 use serde::Serialize;
 
-const FIELD: &str = "host_keys";
+const FIELD: &str = hk::KEYS_FIELD;
 
 /// The keys stored on a session record, as JSON.
 fn keys_of(obj: &serde_json::Map<String, serde_json::Value>) -> Vec<SavedHostKey> {
@@ -16,7 +16,8 @@ fn keys_of(obj: &serde_json::Map<String, serde_json::Value>) -> Vec<SavedHostKey
 }
 
 /// Change the host keys of one session; `edit` returns whether it changed
-/// anything, and only then is the record written. An empty list is no field.
+/// anything, and only then is the record written. An empty list is no field;
+/// a server whose key is removed gets a removal mark (see `hk::set_keys`).
 async fn edit_keys(
     manager: &crate::vault::VaultManager,
     session_id: &str,
@@ -31,15 +32,12 @@ async fn edit_keys(
     let mut value: serde_json::Value =
         serde_json::from_slice(plaintext.expose_secret()).map_err(|e| format!("Invalid session data: {e}"))?;
     let Some(obj) = value.as_object_mut() else { return Err(format!("Invalid session data: {session_id}")) };
-    let mut keys = keys_of(obj);
+    let before = keys_of(obj);
+    let mut keys = before.clone();
     if !edit(&mut keys) {
         return Ok(keys);
     }
-    if keys.is_empty() {
-        obj.remove(FIELD);
-    } else {
-        obj.insert(FIELD.into(), serde_json::to_value(&keys).map_err(|e| e.to_string())?);
-    }
+    hk::set_keys(obj, &before, &keys);
     let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     manager
         .update_secret(&loc.vault_id, &loc.secret_id, SecretBox::new(Box::new(json)))
@@ -166,9 +164,11 @@ async fn clear_all(manager: &crate::vault::VaultManager) -> HostKeysCleared {
             let Ok(plaintext) = plaintext else { continue };
             let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(plaintext.expose_secret()) else { continue };
             let Some(obj) = value.as_object_mut() else { continue };
-            if obj.remove(FIELD).is_none() {
+            let before = keys_of(obj);
+            if before.is_empty() {
                 continue;
             }
+            hk::set_keys(obj, &before, &[]);
             let written = match serde_json::to_vec(&value) {
                 Ok(json) => manager.update_secret(&vault_id, &meta.id, SecretBox::new(Box::new(json))).await.map_err(|e| e.to_string()),
                 Err(e) => Err(e.to_string()),
