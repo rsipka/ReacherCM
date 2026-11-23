@@ -3,6 +3,7 @@ pub mod dragout_commands;
 pub mod ai_commands;
 pub mod plugin_commands;
 pub mod marketplace_commands;
+pub mod net_commands;
 pub mod credential_commands;
 pub mod settings_commands;
 pub mod history_commands;
@@ -31,6 +32,8 @@ pub mod local_fs_commands;
 pub mod editor_detect;
 #[cfg(desktop)]
 pub mod winbox_commands;
+#[cfg(desktop)]
+pub mod local_server_commands;
 pub mod ssh_commands;
 pub mod sshconfig_commands;
 pub mod import_commands;

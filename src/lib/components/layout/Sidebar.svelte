@@ -2,16 +2,19 @@
 	import FileExplorer from '#lib/components/explorer/FileExplorer.svelte';
 	import SessionList from '#lib/components/sessions/SessionList.svelte';
 	import TunnelManager from '#lib/components/tunnel/TunnelManager.svelte';
+	import NetworkTools from '#lib/components/net/NetworkTools.svelte';
 	import PluginPanel from '#lib/components/plugin/PluginPanel.svelte';
 	import SnippetPanel from '#lib/components/snippets/SnippetPanel.svelte';
 	import RecipePanel from '#lib/components/recipes/RecipePanel.svelte';
 	import VaultPanel from '#lib/components/vault/VaultPanel.svelte';
+	import ServerPanel from '#lib/components/servers/ServerPanel.svelte';
+	import { isMobile } from '#lib/platform.js';
 	import NewIndicator from '#lib/components/shared/NewIndicator.svelte';
 	import { sidebarHasNew, markSidebarSeen, newSince } from '#lib/state/whats-new.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { pendingSessionAction } from '#lib/state/palette.svelte.js';
 
-	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'snippets' | 'recipes' | 'plugins';
+	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'servers' | 'network' | 'snippets' | 'recipes' | 'plugins';
 
 	const STORAGE_KEY = 'reach-sidebar-width';
 	/* `sidebarWidth` is the width of the *panel*, not of the whole sidebar. The
@@ -98,6 +101,24 @@
 			id: 'tunnels',
 			label: t('sidebar.tunnels'),
 			icon: 'M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71'
+		},
+		// Local TFTP, FTP, SFTP and HTTP servers: desktop only, as a phone
+		// is not where a switch pulls its firmware from.
+		...(isMobile()
+			? []
+			: [
+					{
+						id: 'servers' as const,
+						label: t('sidebar.servers'),
+						// A server rack: two units with their lights.
+						icon: 'M4 4h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1zM4 13h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1v-5a1 1 0 011-1zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6'
+					}
+				]),
+		{
+			id: 'network',
+			label: t('sidebar.network'),
+			// A pulse: ping, port scan and Wake-on-LAN check what answers.
+			icon: 'M22 12h-4l-3 9L9 3l-3 9H2'
 		},
 		{
 			id: 'snippets',
@@ -243,6 +264,10 @@
 						<FileExplorer {connectionId} />
 					{:else if activeSection === 'tunnels'}
 						<TunnelManager />
+					{:else if activeSection === 'servers'}
+						<ServerPanel />
+					{:else if activeSection === 'network'}
+						<NetworkTools />
 					{:else if activeSection === 'snippets'}
 						<SnippetPanel {connectionId} />
 					{:else if activeSection === 'vault'}
