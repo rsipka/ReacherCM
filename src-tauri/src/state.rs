@@ -96,6 +96,9 @@ pub struct SessionConfig {
     /// Forward lock key presses to the remote desktop. Enabled when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rdp_forward_lock_keys: Option<bool>,
+    /// RDP only: display, keyboard, sound, performance and program settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rdp: Option<crate::rdp::options::RdpOptions>,
     /// Key sessions only: offer the SSH agent's keys if this session's own key
     /// is refused. Off unless the user turned it on; see `build_auth`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

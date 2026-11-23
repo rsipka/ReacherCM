@@ -769,6 +769,7 @@ pub async fn session_create(
     rdp_clipboard: Option<String>,
     rdp_use_freerdp: Option<bool>,
     rdp_forward_lock_keys: Option<bool>,
+    rdp: Option<crate::rdp::options::RdpOptions>,
     via_session_id: Option<String>,
     try_agent_keys: Option<bool>,
     ssh_options: Option<crate::ssh::sshconf::session::SshOptions>,
@@ -834,6 +835,7 @@ pub async fn session_create(
         rdp_clipboard: rdp_clipboard_setting(rdp_clipboard, kind),
         rdp_use_freerdp: kind == crate::state::SessionKind::Rdp && rdp_use_freerdp.unwrap_or(false),
         rdp_forward_lock_keys: rdp_forward_lock_keys.filter(|_| kind == crate::state::SessionKind::Rdp),
+        rdp: rdp.filter(|_| kind == crate::state::SessionKind::Rdp).and_then(crate::rdp::options::RdpOptions::tidy),
         via_session_id: via_session_id.filter(|s| !s.is_empty()),
         try_agent_keys: try_agent_keys.filter(|t| *t),
         folder_id,
@@ -978,7 +980,9 @@ async fn prepare_update(
     if session.kind != crate::state::SessionKind::Rdp {
         session.rdp_use_freerdp = false;
         session.rdp_forward_lock_keys = None;
+        session.rdp = None;
     }
+    session.rdp = session.rdp.take().and_then(crate::rdp::options::RdpOptions::tidy);
 
     // Find which vault contains this session
     let loc = locate_session(manager, &session.id).await

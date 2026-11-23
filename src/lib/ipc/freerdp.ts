@@ -1,4 +1,5 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
+import type { RdpOptions } from './rdp';
 
 interface FreerdpLaunchParams {
 	host: string;
@@ -11,6 +12,7 @@ interface FreerdpLaunchParams {
 	graphicsPipeline: boolean;
 	sharePath: string | null;
 	program: string | null;
+	rdp?: RdpOptions | null;
 }
 
 export function freerdpFind(program: string): Promise<string | null> {

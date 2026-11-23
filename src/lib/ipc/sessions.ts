@@ -3,6 +3,7 @@ import type { SecretRef } from './pwmanager';
 import type { TelnetOptions } from './telnet';
 import type { SerialOptions } from './serial';
 import type { SpiceOptions } from './spice';
+import type { RdpOptions } from './rdp';
 import type { HistoryMode } from './history';
 import type { CursorStyle } from '#lib/terminal/cursor.js';
 import { t } from '#lib/state/i18n.svelte.js';
@@ -61,6 +62,8 @@ export interface SessionConfig {
   rdp_clipboard?: 'text' | 'off' | null;
   rdp_use_freerdp?: boolean;
   rdp_forward_lock_keys?: boolean | null;
+  /** RDP only: display, keyboard, sound, performance and program settings. */
+  rdp?: RdpOptions | null;
   /** VNC and SPICE only: a saved SSH session to reach the server through. */
   via_session_id?: string | null;
   /** Key sessions: also offer the SSH agent's keys if this key is refused. Off by default. */
@@ -401,6 +404,7 @@ export async function sessionCreate(params: {
   rdpClipboard?: 'text' | 'off' | null;
   rdpUseFreerdp?: boolean;
   rdpForwardLockKeys?: boolean | null;
+  rdp?: RdpOptions | null;
   viaSessionId?: string | null;
   tryAgentKeys?: boolean | null;
   sshOptions?: SshOptions | null;
@@ -447,6 +451,7 @@ export async function sessionCreate(params: {
     rdpClipboard: params.kind === 'rdp' ? (params.rdpClipboard ?? null) : null,
     rdpUseFreerdp: params.kind === 'rdp' && params.rdpUseFreerdp === true,
     rdpForwardLockKeys: params.kind === 'rdp' ? (params.rdpForwardLockKeys ?? null) : null,
+    rdp: params.kind === 'rdp' ? (params.rdp ?? null) : null,
     viaSessionId: params.viaSessionId || null,
     tryAgentKeys: params.tryAgentKeys || null,
     sshOptions: params.sshOptions ?? null,
