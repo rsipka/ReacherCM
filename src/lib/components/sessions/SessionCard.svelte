@@ -41,7 +41,9 @@
 	}
 
 	let { session, vault = null, onconnect, onedit, ondelete, oncontextmenu, ondragstart, ondragend, selecting = false, selected = false, onselect, viaName = null, open = false, current = false, connected = false }: Props = $props();
-	let unavailable = $derived((session.kind === 'wsl' && !isWindows()) || ((session.kind === 'serial' || session.kind === 'winbox' || !!session.x11_desktop) && isMobile()));
+	let unavailable = $derived((session.kind === 'wsl' && !isWindows()) || ((session.kind === 'serial' || session.kind === 'winbox' || session.kind === 'ftp' || !!session.files || !!session.x11_desktop) && isMobile()));
+	/** A session that opens in the file manager: which protocol, for its badge. */
+	let filesBadge = $derived(session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
 	/** WinBox only ever manages a MikroTik: its logo until another is picked. */
 	let osId = $derived(session.detected_os ?? (session.kind === 'winbox' ? 'mikrotik' : null));
 	/** Double-click to open (Settings > General): a mouse click only focuses
@@ -124,7 +126,7 @@
 			? `${session.username ? `${session.username} · ` : ''}${session.wsl_distro || 'WSL'}`
 			: sessionAddress(session));
 		if (otherAddresses) lines.push(otherAddresses);
-		const type = t(`session.protocol_${kind}`);
+		const type = t(`session.protocol_${session.files ?? kind}`);
 		lines.push(kind === 'wsl' || kind === 'serial' ? type : `${type} · ${t('session.auth_type', { type: session.auth_method.type })}`);
 		if (kind !== 'wsl' && session.tags.length > 0) lines.push(t('session.tooltip_tags', { tags: session.tags.join(', ') }));
 		if (jumpTip) lines.push(jumpTip);
@@ -188,6 +190,9 @@
 					{:else if session.kind === 'web'}
 						<!-- A globe: a device's web page. -->
 						<circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+					{:else if session.kind === 'ftp'}
+						<!-- A folder: files on a server. -->
+						<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
 					{:else if session.kind === 'serial'}
 						<!-- A serial (DB9) connector. -->
 						<path d="M3 7h18l-2.5 10h-13z" /><path d="M8 10h.01M12 10h.01M16 10h.01M10 14h.01M14 14h.01" />
@@ -301,6 +306,9 @@
 		{:else if session.x11_desktop}
 			<!-- A whole desktop, in a window of its own. -->
 			<span class="auth-badge" title={t(`x11desktop.${session.x11_desktop.desktop}`)}>{unavailable ? t('serial.desktop_only_short') : 'X11'}</span>
+		{:else if filesBadge}
+			<!-- Opens in the file manager, not a terminal. -->
+			<span class="auth-badge" title={authLabel}>{unavailable ? t('serial.desktop_only_short') : filesBadge}</span>
 		{:else if session.kind === 'winbox'}
 			<!-- Opens in WinBox, not in a tab here. -->
 			<span class="auth-badge">{unavailable ? t('serial.desktop_only_short') : t('session.protocol_winbox')}</span>

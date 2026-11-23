@@ -2,6 +2,7 @@
 	import FileExplorer from '#lib/components/explorer/FileExplorer.svelte';
 	import SessionList from '#lib/components/sessions/SessionList.svelte';
 	import TunnelManager from '#lib/components/tunnel/TunnelManager.svelte';
+	import NetworkTools from '#lib/components/net/NetworkTools.svelte';
 	import PluginPanel from '#lib/components/plugin/PluginPanel.svelte';
 	import SnippetPanel from '#lib/components/snippets/SnippetPanel.svelte';
 	import RecipePanel from '#lib/components/recipes/RecipePanel.svelte';
@@ -13,7 +14,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { pendingSessionAction } from '#lib/state/palette.svelte.js';
 
-	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'servers' | 'snippets' | 'recipes' | 'plugins';
+	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'servers' | 'network' | 'snippets' | 'recipes' | 'plugins';
 
 	const STORAGE_KEY = 'reach-sidebar-width';
 	/* `sidebarWidth` is the width of the *panel*, not of the whole sidebar. The
@@ -113,6 +114,12 @@
 						icon: 'M4 4h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1zM4 13h16a1 1 0 011 1v5a1 1 0 01-1 1H4a1 1 0 01-1-1v-5a1 1 0 011-1zM7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6'
 					}
 				]),
+		{
+			id: 'network',
+			label: t('sidebar.network'),
+			// A pulse: ping, port scan and Wake-on-LAN check what answers.
+			icon: 'M22 12h-4l-3 9L9 3l-3 9H2'
+		},
 		{
 			id: 'snippets',
 			label: t('sidebar.snippets'),
@@ -259,6 +266,8 @@
 						<TunnelManager />
 					{:else if activeSection === 'servers'}
 						<ServerPanel />
+					{:else if activeSection === 'network'}
+						<NetworkTools />
 					{:else if activeSection === 'snippets'}
 						<SnippetPanel {connectionId} />
 					{:else if activeSection === 'vault'}

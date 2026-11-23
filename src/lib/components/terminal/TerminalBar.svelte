@@ -54,7 +54,7 @@
 		tab.serialConnectParams ? sessionAddress({ kind: 'serial', host: tab.serialConnectParams.port, serial: tab.serialConnectParams.options }) : params ? `${'username' in params && params.username ? params.username + '@' : ''}${params.host}:${params.port}` : ''
 	);
 	let protocol = $derived(
-		tab.type === 'ssh' ? 'SSH' : tab.type === 'telnet' ? 'Telnet' : tab.type === 'serial' ? t('session.protocol_serial') : tab.wslDistro ? 'WSL' : t('termbar.local')
+		tab.type === 'ssh' ? (tab.filesProtocol?.toUpperCase() ?? 'SSH') : tab.type === 'telnet' ? 'Telnet' : tab.type === 'serial' ? t('session.protocol_serial') : tab.wslDistro ? 'WSL' : t('termbar.local')
 	);
 	/** Not a direct connection: the same marks as the session list, with the
 	 *  hops or the proxy in their tooltip. */
