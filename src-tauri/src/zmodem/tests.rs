@@ -208,7 +208,7 @@ fn keys_are_held_while_busy_and_ctrl_c_cancels() {
     let mut tap = Tap::new("keys", WINDOW_SERIAL, Box::new(|_| {}));
     assert!(!intercept_input("keys", b"ls\r"));
     let out = tap.input(b"$ sz x\r\nrz\r**\x18B00000000000000\r\x8a\x11");
-    assert_eq!(out.display, b"$ sz x\r\nrz\r*");
+    assert_eq!(out.display, b"$ sz x\r\nrz\r\r\x1b[K");
     assert!(tap.busy());
     assert!(intercept_input("keys", b"a"));
     assert!(intercept_input("keys", b"\x03"));
@@ -293,4 +293,39 @@ fn a_folder_comes_down_whole() {
     assert_eq!(std::fs::read(here.path().join("logs/now.log")).unwrap(), b"mine");
     assert_eq!(std::fs::read(here.path().join("logs/now (1).log")).unwrap(), b"now");
     assert_eq!(std::fs::read(here.path().join("logs/old/then.log")).unwrap(), b"then");
+}
+
+/// What the terminal shows around a transfer: the line rz or sz printed is
+/// cleared, and no part of a header (`*`, CR with the high bit, XON, "OO")
+/// is left on screen, however the reads are cut.
+#[test]
+fn nothing_of_the_protocol_shows() {
+    if !have("rz") || !have("sz") {
+        return;
+    }
+    for chunk in [4096, 3, 1] {
+        for (name, prog, args, what) in [("cancel", "rz", vec![], 0), ("upload", "rz", vec!["-y"], 1), ("download", "sz", vec!["a.bin"], 2)] {
+            let remote = tempfile::tempdir().unwrap();
+            let here = tempfile::tempdir().unwrap();
+            std::fs::write(remote.path().join("a.bin"), pattern(3000, 1)).unwrap();
+            std::fs::write(here.path().join("u.bin"), pattern(3000, 2)).unwrap();
+            let up = vec![here.path().join("u.bin")];
+            let folder = here.path().to_path_buf();
+            let child = spawn(prog, &args, remote.path());
+            let run = drive(&format!("show-{name}-{chunk}"), child, chunk, |e| match e {
+                ZmodemEvent::Offer { .. } => Some(match what {
+                    0 => Decision::Cancel,
+                    1 => Decision::Upload(up.clone()),
+                    _ => Decision::Download(folder.clone()),
+                }),
+                _ => None,
+            });
+            // A `*` shown before the header is recognised is on the line
+            // that gets cleared; after the clear nothing may follow.
+            let shown = String::from_utf8_lossy(&run.shown).into_owned();
+            let (before, after) = shown.rsplit_once("\r\x1b[K").unwrap_or_else(|| panic!("{name}, reads of {chunk}: no clear in {shown:?}"));
+            assert_eq!(after, "", "{name}, reads of {chunk}: {shown:?}");
+            assert!(!before.contains(['\x18', '\x11', '\u{fffd}']), "{name}, reads of {chunk}: {shown:?}");
+        }
+    }
 }
