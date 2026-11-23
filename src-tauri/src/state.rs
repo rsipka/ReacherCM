@@ -408,6 +408,31 @@ pub struct SavedCredential {
     /// Passwords it held before, newest first; as for sessions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password_history: Option<Vec<PastPassword>>,
+    /// The credential folder it is filed in, in the same vault. None, or a
+    /// folder that is gone or in another vault: the top of the list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
+}
+
+/// A folder in the credentials list, only for keeping credentials in order.
+/// It lives in the vault of the credentials it holds (this device's own
+/// sessions vault, or a user vault, where it syncs with them). It is a
+/// record of its own (`custom:credential_folder`), so an older Reach never
+/// reads it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CredentialFolder {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// As for credentials: None for this device's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vault_id: Option<String>,
+    /// Icon and colour, as for session folders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 /// Which saved credential a session's login came from, as read.

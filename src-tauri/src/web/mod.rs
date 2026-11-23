@@ -84,6 +84,10 @@ pub struct WebOptions {
     /// Press the login button once filled; unset: yes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub submit: Option<bool>,
+    /// Let the page open windows of its own (an iDRAC or iLO virtual
+    /// console), as more windows of this session; unset: yes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popups: Option<bool>,
     /// Certificates this session trusts although the system does not (a
     /// device's self-signed one). Changed only by answering the prompt and
     /// by `web_session_cert_remove`; an editor's save keeps the stored ones.
@@ -161,6 +165,9 @@ impl WebOptions {
         }
         if self.submit == Some(true) {
             self.submit = None;
+        }
+        if self.popups == Some(true) {
+            self.popups = None;
         }
         if let Some(p) = self.path.as_mut() {
             if !p.starts_with('/') {
@@ -307,9 +314,11 @@ mod tests {
             username_selector: Some("#u".into()),
             path: Some("login.html".into()),
             submit: Some(true),
+            popups: Some(true),
             ..opts()
         };
         o.tidy();
+        assert_eq!(o.popups, None);
         assert_eq!(o.scheme, None);
         assert_eq!(o.storage, None);
         assert_eq!(o.profile, None);

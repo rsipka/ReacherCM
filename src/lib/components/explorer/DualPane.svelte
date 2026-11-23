@@ -12,7 +12,6 @@
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { openEditor } from '#lib/state/editor.svelte.js';
 	import { getCurrentPath, type FileEntry, type SortKey } from '#lib/state/explorer.svelte.js';
-	import { getTransfers, type Transfer } from '#lib/state/transfers.svelte.js';
 	import { sftpDelete, sftpListDir, sftpMkdir, sftpReadFile, sftpRename, sftpTerminalCwd, sftpTouch } from '#lib/ipc/sftp.js';
 	import { localDelete, localListDir, localMkdir, localReadText, localRename, localReveal, localTouch } from '#lib/ipc/localfs.js';
 	import { sshSend } from '#lib/ipc/ssh.js';
@@ -23,7 +22,7 @@
 	import { compareFolders } from '#lib/explorer/compare.js';
 	import TextPanel from './TextPanel.svelte';
 	import { Pane, findByPrefix, remoteJoin, remoteParent, type Row } from '#lib/explorer/pane.svelte.js';
-	import { copyEntry } from '#lib/explorer/dual-copy.js';
+	import { enqueue, getQueue, jobPercent, cancelJob, retryJob, removeJob, clearFinished, listenQueue, type QueueJob } from '#lib/explorer/transfer-queue.svelte.js';
 	import { formatModified } from '#lib/explorer/format.js';
 	import { formatBytes } from '#lib/utils/formatters.js';
 	import { actionLabel } from '#lib/state/shortcuts.svelte.js';
@@ -58,14 +57,27 @@
 	/** A pane's path being typed in. */
 	let editingPath = $state<{ pane: Pane; value: string } | undefined>();
 
-	let transfers = $derived(
-		getTransfers().filter(
-			(tr: Transfer) => (tr.status === 'uploading' || tr.status === 'downloading') && tr.connectionId === connectionId
-		)
-	);
+	/** This connection's transfer queue, and whether its list is folded. */
+	let queue = $derived(getQueue(connectionId));
+	let queueOpen = $state(true);
+	let queueLeft = $derived(queue.filter((j) => j.status === 'queued' || j.status === 'running').length);
 
 	onMount(() => {
 		void local.load('');
+	});
+
+	// As each queued copy ends, the side it went to (and the side a move
+	// came from) shows it.
+	$effect(() => {
+		return listenQueue(connectionId, {
+			onJobEnd: (job: QueueJob) => {
+				const to = job.from === 'local' ? remote : local;
+				const from = job.from === 'local' ? local : remote;
+				if (to.path === job.toDir) void to.refresh();
+				if (job.move) void from.refresh();
+				if (job.status === 'failed') addToast(t('files.copy_failed', { name: job.entry.name, error: job.error ?? '' }), 'error');
+			}
+		});
 	});
 
 	// The server side starts where the sidebar's explorer is, and opens the
@@ -111,8 +123,8 @@
 
 	// ---- Actions ---------------------------------------------------------
 
+	/** F5/F6: the selection joins the transfer queue. */
 	async function copy(move = false): Promise<void> {
-		if (busy) return;
 		const src = pane;
 		const dst = other;
 		const items = src.selection();
@@ -125,35 +137,9 @@
 		}
 		if (question && !(await ask(question, { confirmLabel: move ? t('files.move') : t('files.overwrite') }))) return;
 
-		busy = true;
-		let copied = 0;
-		try {
-			for (const item of items) {
-				const outcome = await copyEntry(connectionId, item, src.kind, dst.path);
-				if (outcome === 'cancelled') break;
-				if (outcome !== 'done') {
-					addToast(t('files.copy_failed', { name: item.name, error: outcome.error }), 'error');
-					continue;
-				}
-				copied++;
-				src.marked.delete(item.path);
-				if (move) {
-					try {
-						await removeEntry(src, item);
-					} catch (err) {
-						addToast(t('files.delete_failed', { name: item.name, error: errorText(err) }), 'error');
-					}
-				}
-			}
-		} finally {
-			busy = false;
-			void dst.refresh();
-			if (move) void src.refresh();
-		}
-		if (copied > 0) {
-			const key = move ? 'files.moved' : 'files.copied';
-			addToast(t(key, { what: copied === items.length ? describe(items) : t('files.n_items', { count: copied }) }), 'success');
-		}
+		enqueue(connectionId, items, src.kind, dst.path, move);
+		for (const item of items) src.marked.delete(item.path);
+		queueOpen = true;
 	}
 
 	function removeEntry(p: Pane, entry: FileEntry): Promise<void> {
@@ -297,19 +283,47 @@
 		addToast(differ === 0 ? t('files.folders_same', { count: diff.same }) : t('files.folders_differ', { left: diff.left.length, right: diff.right.length }), differ === 0 ? 'success' : 'info');
 	}
 
-	/** Shift+F9: the two files under the cursors, side by side. */
-	async function compareFiles(): Promise<void> {
-		const a = local.current;
-		const b = remote.current;
-		if (!a || !b || a.isDirectory || b.isDirectory) {
+	type Side = { pane: Pane; entry: FileEntry };
+
+	function fileAt(p: Pane): FileEntry | undefined {
+		const row = p.current;
+		return row && !row.up && !row.isDirectory ? row : undefined;
+	}
+
+	function sameName(p: Pane, name: string): FileEntry | undefined {
+		return p.entries.find((e) => !e.isDirectory && e.name === name);
+	}
+
+	/** What Compare files works on: two files marked in one pane; else the
+	 *  file under the cursor and the file of the same name on the other
+	 *  side, or else the file under the other side's cursor. */
+	function comparePair(p: Pane = pane): [Side, Side] | undefined {
+		const o = p === local ? remote : local;
+		const sel = p.selection();
+		if (p.marked.size === 2 && sel.length === 2 && sel.every((e) => !e.isDirectory)) {
+			return [{ pane: p, entry: sel[0] }, { pane: p, entry: sel[1] }];
+		}
+		let a = fileAt(p);
+		let b = a ? (sameName(o, a.name) ?? fileAt(o)) : fileAt(o);
+		if (!a && b) a = sameName(p, b.name);
+		if (!a || !b) return undefined;
+		const mine: Side = { pane: p, entry: a };
+		const theirs: Side = { pane: o, entry: b };
+		return p === local ? [mine, theirs] : [theirs, mine];
+	}
+
+	/** Shift+F9: two files side by side with their differences. */
+	async function compareFiles(pair = comparePair()): Promise<void> {
+		if (!pair) {
 			addToast(t('files.compare_need_files'), 'info');
 			return;
 		}
+		const [a, b] = pair;
 		try {
-			const [left, right] = await Promise.all([readText(local, a), readText(remote, b)]);
-			panel = { kind: 'diff', leftTitle: a.path, left, rightTitle: b.path, right };
+			const [left, right] = await Promise.all([readText(a.pane, a.entry), readText(b.pane, b.entry)]);
+			panel = { kind: 'diff', leftTitle: a.entry.path, left, rightTitle: b.entry.path, right };
 		} catch (err) {
-			addToast(t('files.view_failed', { name: `${a.name} / ${b.name}`, error: errorText(err) }), 'error');
+			addToast(t('files.view_failed', { name: `${a.entry.name} / ${b.entry.name}`, error: errorText(err) }), 'error');
 		}
 	}
 
@@ -388,7 +402,7 @@
 		const one = sel.length === 1 ? sel[0] : undefined;
 		const file = one && !one.isDirectory ? one : undefined;
 		const otherSide = p.kind === 'local' ? t('files.server') : t('files.this_computer');
-		const otherFile = other.current && !other.current.up && !other.current.isDirectory ? other.current : undefined;
+		const pair = sel.length <= 2 && sel.every((e) => !e.isDirectory) ? comparePair(p) : undefined;
 		const items: MenuItem[] = [];
 		if (one?.isDirectory) items.push({ label: t('files.open'), hint: 'Enter', action: () => p.enter(one) });
 		if (file) {
@@ -398,14 +412,16 @@
 		}
 		if (items.length) items.push({ label: '', separator: true });
 		items.push(
-			{ label: t('files.copy_to', { where: otherSide }), hint: 'F5', disabled: busy, action: () => void copy() },
-			{ label: t('files.move_to', { where: otherSide }), hint: 'F6', disabled: busy, action: () => void copy(true) }
+			{ label: t('files.copy_to', { where: otherSide }), hint: 'F5', action: () => void copy() },
+			{ label: t('files.move_to', { where: otherSide }), hint: 'F6', action: () => void copy(true) }
 		);
 		if (one) items.push({ label: t('explorer.rename'), hint: 'F2', action: startRename });
 		items.push({ label: sel.length > 1 ? t('files.delete_n', { count: sel.length }) : t('common.delete'), hint: 'F8', danger: true, disabled: busy, action: () => void remove() });
-		if (file && otherFile) {
+		if (pair) {
+			const with_ = pair[0].entry === file ? pair[1] : pair[0];
+			const label = sel.length === 2 ? t('files.compare_files') : with_.pane === p ? t('files.compare_with', { name: with_.entry.name }) : t('files.compare_with', { name: `${with_.pane === local ? t('files.this_computer') : t('files.server')}: ${with_.entry.name}` });
 			items.push({ label: '', separator: true });
-			items.push({ label: t('files.compare_with', { name: otherFile.name }), hint: '⇧F9', action: () => void compareFiles() });
+			items.push({ label, hint: '⇧F9', action: () => void compareFiles(pair) });
 		}
 		items.push({ label: '', separator: true });
 		if (one) {
@@ -428,6 +444,7 @@
 			{ label: t('explorer.refresh'), hint: actionHint('R'), action: () => void p.refresh() },
 			{ label: t('files.select_all'), hint: actionHint('A'), disabled: p.entries.length === 0, action: () => p.markAll() },
 			{ label: t('files.compare_folders'), hint: 'F9', action: compareDirs },
+			{ label: t('files.compare_files'), hint: '⇧F9', action: () => void compareFiles() },
 			{ label: '', separator: true },
 			{ label: t('files.copy_folder_path'), disabled: !p.path, action: () => void copyText(p.path) }
 		];
@@ -739,25 +756,52 @@
 	<div class="panes">
 		{@render paneView(local)}
 		<div class="mid" aria-hidden="true">
-			<button class="arrow-btn" type="button" tabindex="-1" disabled={busy} title={`${t('files.copy')} (F5)`} onclick={() => { side = 'local'; void copy(); }}>{@render icon('M5 12h14M13 6l6 6-6 6', 16)}</button>
-			<button class="arrow-btn" type="button" tabindex="-1" disabled={busy} title={`${t('files.copy')} (F5)`} onclick={() => { side = 'remote'; void copy(); }}>{@render icon('M19 12H5M11 6l-6 6 6 6', 16)}</button>
+			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.copy')} (F5)`} onclick={() => { side = 'local'; void copy(); }}>{@render icon('M5 12h14M13 6l6 6-6 6', 16)}</button>
+			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.copy')} (F5)`} onclick={() => { side = 'remote'; void copy(); }}>{@render icon('M19 12H5M11 6l-6 6 6 6', 16)}</button>
+			<span class="mid-gap"></span>
+			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.compare_files')} (⇧F9)`} onclick={() => void compareFiles()}>{@render icon('M8 4v16M16 4v16M4 8h4M4 12h4M16 12h4M16 16h4', 16)}</button>
+			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.compare_folders')} (F9)`} onclick={compareDirs}>{@render icon('M3 6h6l2 2h10v11H3zM12 11v5M9.5 13.5h5', 16)}</button>
 		</div>
 		{@render paneView(remote)}
 	</div>
 
-	{#if transfers.length > 0}
-		<div class="transfers">
-			{#each transfers as tr (tr.id)}
-				<div class="transfer">
-					<span class="tr-dir">{tr.status === 'uploading' ? '↑' : '↓'}</span>
-					<span class="tr-name">{tr.filename}</span>
-					<span class="tr-bar"><span style:width="{Math.min(100, tr.percent)}%"></span></span>
-					<span class="tr-pct">{Math.round(tr.percent)}%</span>
-					{#if tr.cancel}
-						<button class="ib small" type="button" onclick={() => tr.cancel?.()} title={t('explorer.archive_cancel')} aria-label={t('explorer.archive_cancel')}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
-					{/if}
+	{#if queue.length > 0}
+		<div class="queue" class:folded={!queueOpen}>
+			<div class="queue-head">
+				<button class="queue-toggle" type="button" tabindex="-1" onclick={() => (queueOpen = !queueOpen)} aria-expanded={queueOpen}>
+					<span class="chev" class:open={queueOpen}>{@render icon('M9 6l6 6-6 6', 12)}</span>
+					{t('files.queue')}
+					<span class="queue-count">{queueLeft > 0 ? t('files.queue_left', { count: queueLeft }) : t('files.queue_finished')}</span>
+				</button>
+				{#if queue.length > queueLeft}
+					<button class="queue-clear" type="button" tabindex="-1" onclick={() => clearFinished(connectionId)}>{t('files.queue_clear')}</button>
+				{/if}
+			</div>
+			{#if queueOpen}
+				<div class="queue-list">
+					{#each queue as job (job.id)}
+						<div class="job {job.status}">
+							<span class="tr-dir" title={job.from === 'local' ? t('files.upload') : t('files.download')}>{job.from === 'local' ? '↑' : '↓'}</span>
+							<span class="tr-name" title={`${job.entry.path} → ${job.toDir}`}>{job.entry.name}{#if job.move}<span class="job-move"> · {t('files.move')}</span>{/if}</span>
+							{#if job.status === 'running'}
+								<span class="tr-bar"><span style:width="{Math.min(100, jobPercent(job))}%"></span></span>
+							{:else}
+								<span class="job-status" title={job.error ?? ''}>{job.status === 'failed' ? (job.error ?? t('files.job_failed')) : t(`files.job_${job.status}`)}</span>
+							{/if}
+							<span class="job-actions">
+								{#if job.status === 'queued' || job.status === 'running'}
+									<button class="ib small" type="button" tabindex="-1" onclick={() => cancelJob(job.id)} title={t('common.cancel')} aria-label={t('common.cancel')}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
+								{:else}
+									{#if job.status !== 'done'}
+										<button class="ib small" type="button" tabindex="-1" onclick={() => retryJob(job.id)} title={t('files.retry')} aria-label={t('files.retry')}>{@render icon('M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5', 12)}</button>
+									{/if}
+									<button class="ib small" type="button" tabindex="-1" onclick={() => removeJob(job.id)} title={t('files.queue_remove')} aria-label={t('files.queue_remove')}>{@render icon('M5 12h14', 12)}</button>
+								{/if}
+							</span>
+						</div>
+					{/each}
 				</div>
-			{/each}
+			{/if}
 		</div>
 	{/if}
 
@@ -1106,31 +1150,123 @@
 		}
 	}
 
-	.transfers {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		max-height: 96px;
-		overflow-y: auto;
+	.queue {
 		margin: 6px 8px 0;
-		padding: 4px 8px;
 		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		background: var(--color-bg-secondary);
+		font-size: 0.75rem;
 	}
 
-	.transfer {
-		display: grid;
-		grid-template-columns: 14px minmax(0, 1fr) 120px 38px 20px;
+	.queue-head {
+		display: flex;
 		align-items: center;
 		gap: 8px;
-		font-size: 0.75rem;
+		padding: 2px 8px 2px 4px;
+	}
+
+	.queue-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		flex: 1 1 auto;
+		min-width: 0;
+		padding: 3px 4px;
+		border: none;
+		background: transparent;
+		color: var(--color-text-primary);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.chev {
+		display: flex;
+		color: var(--color-text-tertiary);
+		transition: transform 0.12s ease;
+	}
+
+	.chev.open {
+		transform: rotate(90deg);
+	}
+
+	.queue-count {
+		font-weight: 400;
+		color: var(--color-text-secondary);
+	}
+
+	.queue-clear {
+		border: none;
+		background: transparent;
+		color: var(--color-accent);
+		font: inherit;
+		cursor: pointer;
+		padding: 2px 4px;
+		white-space: nowrap;
+	}
+
+	.queue-clear:hover {
+		text-decoration: underline;
+	}
+
+	.queue-list {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		max-height: 132px;
+		overflow-y: auto;
+		padding: 2px 8px 6px;
+		border-top: 1px solid var(--color-border);
+	}
+
+	.job {
+		display: grid;
+		grid-template-columns: 14px minmax(0, 1fr) minmax(80px, 160px) 44px;
+		align-items: center;
+		gap: 8px;
+		min-height: 22px;
+	}
+
+	.tr-dir {
+		color: var(--color-text-secondary);
+		text-align: center;
 	}
 
 	.tr-name {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.job-move {
+		color: var(--color-text-tertiary);
+	}
+
+	.job.done .tr-name,
+	.job.cancelled .tr-name {
+		color: var(--color-text-secondary);
+	}
+
+	.job-status {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--color-text-secondary);
+	}
+
+	.job.done .job-status {
+		color: var(--color-success);
+	}
+
+	.job.failed .job-status {
+		color: var(--color-danger);
+	}
+
+	.job-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 2px;
 	}
 
 	.tr-bar {
@@ -1144,12 +1280,11 @@
 		display: block;
 		height: 100%;
 		background: var(--color-accent);
+		transition: width 0.2s linear;
 	}
 
-	.tr-pct {
-		text-align: right;
-		color: var(--color-text-secondary);
-		font-variant-numeric: tabular-nums;
+	.mid-gap {
+		height: 6px;
 	}
 
 	.prompt {

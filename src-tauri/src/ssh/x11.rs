@@ -200,7 +200,7 @@ pub async fn prepare(cfg: &X11Config) -> Result<X11Auth, String> {
             got = run(&cfg.xauth, &["list", &lookup]).await.as_deref().and_then(parse_list);
         } else {
             let dir = PrivateDir::new().map_err(|e| format!("X11: {e}"))?;
-            let file = dir.0.join("xauthfile");
+            let file = dir.path().join("xauthfile");
             let file = file.to_string_lossy();
             let mut args = vec!["-f", &file, "generate", &lookup, PROTO, "untrusted"];
             let secs;
@@ -255,7 +255,7 @@ async fn prepare_own(cfg: &X11Config, cookie: Vec<u8>, auth_file: &std::path::Pa
         cookie
     } else {
         let dir = PrivateDir::new().map_err(|e| format!("X11: {e}"))?;
-        let file = dir.0.join("xauthfile");
+        let file = dir.path().join("xauthfile");
         let file = file.to_string_lossy();
         let mut args = vec!["-f", &file, "generate", &cfg.display, PROTO, "untrusted"];
         let secs;

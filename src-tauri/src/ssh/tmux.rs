@@ -54,6 +54,11 @@ pub struct TmuxStart {
     /// Turn tmux's status line off in the view.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_status: bool,
+    /// The name this app gave the same session before (`reacher-…`): used
+    /// instead of `name` while a session by it is on the server and none
+    /// by `name` is, so an upgrade does not leave the old one behind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy: Option<String>,
 }
 
 /// A view's tag: lowercase letters and digits, at most 16.
@@ -220,6 +225,20 @@ impl Ask {
     /// channel runs (`None`: the login shell as usual).
     pub async fn resolve(&self, handle: &russh::client::Handle<super::client::SshClientHandler>) -> Result<Option<String>, super::client::SshError> {
         use super::client::SshError;
+        if !self.start.ask {
+            // Not asking, only a name to settle: the old one, if only it is there.
+            let name = match self.start.legacy.as_deref().filter(|l| valid_name(l)) {
+                Some(old) => {
+                    let out = run_on(handle, &legacy_command(&self.start.name, old)).await.unwrap_or_default();
+                    pick_legacy(&out, &self.start.name, old).to_string()
+                }
+                None => self.start.name.clone(),
+            };
+            let start = TmuxStart { name: name.clone(), legacy: None, ..self.start.clone() };
+            let cmd = start_command(&start, self.shell.as_deref()).map_err(SshError::ConnectionFailed)?;
+            chosen().lock().unwrap().insert(self.id.clone(), Some(name));
+            return Ok(Some(cmd));
+        }
         let listed = parse_list(&list_on(handle).await.unwrap_or_default());
         let fields = listed
             .iter()
@@ -243,7 +262,7 @@ impl Ask {
         let (record, command) = match choice {
             Choice::NoTmux => (None, None),
             Choice::Session(name) => {
-                let start = TmuxStart { name: name.clone(), ask: false, ..self.start.clone() };
+                let start = TmuxStart { name: name.clone(), ask: false, legacy: None, ..self.start.clone() };
                 let cmd = start_command(&start, self.shell.as_deref()).map_err(SshError::ConnectionFailed)?;
                 (Some(name), Some(cmd))
             }
@@ -253,10 +272,26 @@ impl Ask {
     }
 }
 
+/// Says `old` when the server has a session `old` and none `name`. In
+/// `sh -c`, whatever the account's shell is (fish has no `{ }`).
+fn legacy_command(name: &str, old: &str) -> String {
+    format!("sh -c 'tmux has-session -t ={name} 2>/dev/null || {{ tmux has-session -t ={old} 2>/dev/null && echo old; }}'")
+}
+
+/// The name to use, from `legacy_command`'s output.
+fn pick_legacy<'a>(out: &str, name: &'a str, old: &'a str) -> &'a str {
+    if out.trim() == "old" { old } else { name }
+}
+
 /// Runs `LIST_COMMAND` on a fresh channel of `handle`.
 async fn list_on(handle: &russh::client::Handle<super::client::SshClientHandler>) -> Option<String> {
+    run_on(handle, LIST_COMMAND).await
+}
+
+/// Runs `command` on a fresh channel of `handle`, giving what it printed.
+async fn run_on(handle: &russh::client::Handle<super::client::SshClientHandler>, command: &str) -> Option<String> {
     let mut channel = handle.channel_open_session().await.ok()?;
-    channel.exec(true, LIST_COMMAND).await.ok()?;
+    channel.exec(true, command).await.ok()?;
     let mut out = Vec::new();
     loop {
         match tokio::time::timeout(std::time::Duration::from_secs(10), channel.wait()).await {
@@ -347,20 +382,28 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
         );
         return Ok(script);
     }
+    // The old name, while only a session by it is there (a WSL tab; an SSH
+    // one settles the name before it starts, see `Ask::resolve`).
+    let legacy = match start.legacy.as_deref().filter(|l| valid_name(l) && *l != n) {
+        Some(old) => format!("tmux has-session -t ={n} 2>/dev/null || {{ tmux has-session -t ={old} 2>/dev/null && N={old}; }}; "),
+        None => String::new(),
+    };
     let script = format!(
         concat!(
             "if command -v tmux >/dev/null 2>&1; then ",
             // Truecolor, on tmux 3.2 and later; older ones do not know -T.
             "F=; tmux -TRGB -V >/dev/null 2>&1 && F=-TRGB; ",
-            "if [ -n \"$(tmux list-clients -t ={n} 2>/dev/null)\" ]; then ",
-            "exec tmux $F new-session -t ={n} \\; set-option destroy-unattached on{mouse}; ",
+            "N={n}; {legacy}",
+            "if [ -n \"$(tmux list-clients -t =$N 2>/dev/null)\" ]; then ",
+            "exec tmux $F new-session -t =$N \\; set-option destroy-unattached on{mouse}; ",
             "fi; ",
-            "exec tmux $F new-session -A -s {n}{window}{mouse}; ",
+            "exec tmux $F new-session -A -s $N{window}{mouse}; ",
             "fi; ",
             "printf \"\\033[33m%s\\033[0m\\r\\n\" \"{msg}\"; ",
             "{fallback}"
         ),
         n = n,
+        legacy = legacy,
         window = window_arg,
         msg = NO_TMUX,
         fallback = fallback,
@@ -524,7 +567,7 @@ mod tests {
     #[test]
     fn mouse_mode_is_set_on_the_session_only() {
         let c = start_command(&TmuxStart { name: "w".into(), mouse: true, ..Default::default() }, None).unwrap();
-        assert!(c.contains("new-session -A -s w \\; set-option mouse on;"), "{c}");
+        assert!(c.contains("new-session -A -s $N \\; set-option mouse on;"), "{c}");
         assert!(c.contains("destroy-unattached on \\; set-option mouse on;"), "{c}");
         assert!(!c.contains("-g"), "{c}");
     }
@@ -554,15 +597,15 @@ mod tests {
 
     #[test]
     fn a_choice_is_a_name_the_default_or_no_tmux() {
-        assert_eq!(read_choice("main", "reacher-w"), Ok(Choice::Session("main".into())));
-        assert_eq!(read_choice("", "reacher-w"), Ok(Choice::Session("reacher-w".into())));
-        assert_eq!(read_choice(NO_TMUX_ANSWER, "reacher-w"), Ok(Choice::NoTmux));
-        assert!(read_choice("my session", "reacher-w").is_err());
+        assert_eq!(read_choice("main", "reachercm-w"), Ok(Choice::Session("main".into())));
+        assert_eq!(read_choice("", "reachercm-w"), Ok(Choice::Session("reachercm-w".into())));
+        assert_eq!(read_choice(NO_TMUX_ANSWER, "reachercm-w"), Ok(Choice::NoTmux));
+        assert!(read_choice("my session", "reachercm-w").is_err());
     }
 
     #[test]
     fn names_are_plain_words() {
-        assert!(valid_name("reacher-web-01"));
+        assert!(valid_name("reachercm-web-01"));
         assert!(valid_name("main_2"));
         for bad in ["", "-x", "a b", "a;b", "a'b", "a$b", "a:b", "a.b", "ä", &"x".repeat(65)] {
             assert!(!valid_name(bad), "{bad:?}");
@@ -577,28 +620,29 @@ mod tests {
 
     #[test]
     fn the_command_is_one_quoted_script() {
-        let c = start_command(&start("reacher-web"), None).unwrap();
+        let c = start_command(&start("reachercm-web"), None).unwrap();
         assert!(c.starts_with("sh -c '"), "{c}");
         assert!(c.ends_with('\''));
         assert_eq!(c.matches('\'').count(), 2, "{c}");
-        assert!(c.contains("new-session -A -s reacher-web;"), "{c}");
-        assert!(c.contains("new-session -t =reacher-web \\; set-option destroy-unattached on"), "{c}");
+        assert!(c.contains("N=reachercm-web; "), "{c}");
+        assert!(c.contains("new-session -A -s $N;"), "{c}");
+        assert!(c.contains("new-session -t =$N \\; set-option destroy-unattached on"), "{c}");
         assert!(c.contains("exec \"${SHELL:-/bin/sh}\" -l"), "{c}");
     }
 
     #[test]
     fn the_login_shell_runs_in_the_window_and_as_the_fallback() {
         let c = start_command(&start("w"), Some("fish")).unwrap();
-        assert!(c.contains("new-session -A -s w fish -l;"), "{c}");
+        assert!(c.contains("new-session -A -s $N fish -l;"), "{c}");
         assert!(c.ends_with("exec fish -l'"), "{c}");
         let c = start_command(&start("w"), Some("zsh -i")).unwrap();
-        assert!(c.contains("new-session -A -s w zsh -i;"), "{c}");
+        assert!(c.contains("new-session -A -s $N zsh -i;"), "{c}");
     }
 
     #[test]
     fn a_login_shell_with_quotes_is_left_out() {
         let c = start_command(&start("w"), Some("bash -c 'echo hi'")).unwrap();
-        assert!(c.contains("new-session -A -s w;"), "{c}");
+        assert!(c.contains("new-session -A -s $N;"), "{c}");
         assert_eq!(c.matches('\'').count(), 2, "{c}");
     }
 
@@ -606,8 +650,15 @@ mod tests {
     /// Not on Android, whose shell is not at /bin/sh.
     #[cfg(all(unix, not(target_os = "android")))]
     fn run_with_fake_tmux(attached: bool, have_tmux: bool) -> String {
+        run_with_fake_tmux_as(&start("w"), attached, have_tmux, "")
+    }
+
+    /// The same for `start`, on a server whose tmux has the sessions `has`
+    /// (space separated) for `has-session`.
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn run_with_fake_tmux_as(start: &TmuxStart, attached: bool, have_tmux: bool, has: &str) -> String {
         use std::process::Command;
-        let dir = std::env::temp_dir().join(format!("reacher-tmux-test-{}-{attached}-{have_tmux}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("reachercm-tmux-test-{}-{attached}-{have_tmux}-{}", std::process::id(), has.len()));
         std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("log");
         if have_tmux {
@@ -616,7 +667,7 @@ mod tests {
             std::fs::write(
                 &fake,
                 format!(
-                    "#!/bin/sh\ncase \"$*\" in '-TRGB -V') exit 0;; list-clients*) {clients}; exit 0;; esac\necho \"$@\" >> {}\n",
+                    "#!/bin/sh\ncase \"$*\" in '-TRGB -V') exit 0;; list-clients*) {clients}; exit 0;; has-session*) for s in {has}; do [ \"$3\" = \"=$s\" ] && exit 0; done; exit 1;; esac\necho \"$@\" >> {}\n",
                     log.display()
                 ),
             )
@@ -632,7 +683,7 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let cmd = start_command(&start("w"), Some("say")).unwrap();
+        let cmd = start_command(start, Some("say")).unwrap();
         // As the channel sends it: every login shell setting gets an `exec`.
         let out = Command::new("sh")
             .arg("-c")
@@ -655,6 +706,22 @@ mod tests {
     #[test]
     fn the_script_joins_as_a_group_when_someone_is_attached() {
         assert_eq!(run_with_fake_tmux(true, true).trim(), "-TRGB new-session -t =w ; set-option destroy-unattached on");
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    #[test]
+    fn the_script_keeps_an_old_name_only_while_it_alone_is_there() {
+        let s = TmuxStart { legacy: Some("old".into()), ..start("w") };
+        assert_eq!(run_with_fake_tmux_as(&s, false, true, "old").trim(), "-TRGB new-session -A -s old say -l");
+        assert_eq!(run_with_fake_tmux_as(&s, false, true, "old w").trim(), "-TRGB new-session -A -s w say -l");
+        assert_eq!(run_with_fake_tmux_as(&s, false, true, "").trim(), "-TRGB new-session -A -s w say -l");
+    }
+
+    #[test]
+    fn an_old_name_is_picked_only_when_the_server_says_so() {
+        assert_eq!(legacy_command("reachercm-w", "reacher-w"), "sh -c 'tmux has-session -t =reachercm-w 2>/dev/null || { tmux has-session -t =reacher-w 2>/dev/null && echo old; }'");
+        assert_eq!(pick_legacy("old\n", "new", "old"), "old");
+        assert_eq!(pick_legacy("", "new", "old"), "new");
     }
 
     #[cfg(all(unix, not(target_os = "android")))]

@@ -18,12 +18,12 @@ function errorText(err: unknown): string {
 
 /** Fetch a server folder into `localParent`, merging into a folder of the
  *  same name already there. False when the person cancelled a file. */
-async function downloadTree(conn: string, remoteDir: string, localParent: string, name: string): Promise<boolean> {
+async function downloadTree(conn: string, remoteDir: string, localParent: string, name: string, onId?: (id: string) => void): Promise<boolean> {
 	const localDir = await localMkdir(localParent, name, true);
 	const children = await sftpListDir(conn, remoteDir);
 	for (const child of children) {
 		if (child.isDirectory) {
-			if (!(await downloadTree(conn, child.path, localDir, child.name))) return false;
+			if (!(await downloadTree(conn, child.path, localDir, child.name, onId))) return false;
 			continue;
 		}
 		const target = await localJoin(localDir, child.name);
@@ -32,15 +32,17 @@ async function downloadTree(conn: string, remoteDir: string, localParent: string
 			connectionId: conn,
 			filename: child.name,
 			totalBytes: child.size,
-			start: (id) => sftpDownload(conn, child.path, target, id)
+			start: (id) => sftpDownload(conn, child.path, target, id),
+			onId
 		});
 		if (!done) return false;
 	}
 	return true;
 }
 
-/** Copy one entry of the `from` side into `toDir` on the other side. */
-export async function copyEntry(conn: string, entry: FileEntry, from: PaneKind, toDir: string): Promise<CopyOutcome> {
+/** Copy one entry of the `from` side into `toDir` on the other side.
+ *  `onId` hears the id of each transfer as it starts. */
+export async function copyEntry(conn: string, entry: FileEntry, from: PaneKind, toDir: string, onId?: (id: string) => void): Promise<CopyOutcome> {
 	try {
 		if (from === 'local') {
 			const done = await runTransfer({
@@ -48,12 +50,13 @@ export async function copyEntry(conn: string, entry: FileEntry, from: PaneKind, 
 				connectionId: conn,
 				filename: entry.name,
 				totalBytes: entry.isDirectory ? 0 : entry.size,
-				start: (id) => sftpUpload(conn, entry.path, remoteJoin(toDir, entry.name), id)
+				start: (id) => sftpUpload(conn, entry.path, remoteJoin(toDir, entry.name), id),
+				onId
 			});
 			return done ? 'done' : 'cancelled';
 		}
 		if (entry.isDirectory) {
-			return (await downloadTree(conn, entry.path, toDir, entry.name)) ? 'done' : 'cancelled';
+			return (await downloadTree(conn, entry.path, toDir, entry.name, onId)) ? 'done' : 'cancelled';
 		}
 		const target = await localJoin(toDir, entry.name);
 		const done = await runTransfer({
@@ -61,7 +64,8 @@ export async function copyEntry(conn: string, entry: FileEntry, from: PaneKind, 
 			connectionId: conn,
 			filename: entry.name,
 			totalBytes: entry.size,
-			start: (id) => sftpDownload(conn, entry.path, target, id)
+			start: (id) => sftpDownload(conn, entry.path, target, id),
+			onId
 		});
 		return done ? 'done' : 'cancelled';
 	} catch (err) {

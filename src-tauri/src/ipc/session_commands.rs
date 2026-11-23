@@ -1730,7 +1730,7 @@ const FOLDER_ICON_MAX: usize = 64;
 /// An icon or colour name as stored: trimmed, `None` when empty, refused
 /// when it is too long or holds anything but letters, digits, `-`, `_`
 /// and one `:`.
-fn folder_icon_value(value: Option<String>, what: &str) -> Result<Option<String>, String> {
+pub(crate) fn folder_icon_value(value: Option<String>, what: &str) -> Result<Option<String>, String> {
     let Some(value) = value.map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) else {
         return Ok(None);
     };
@@ -2571,6 +2571,7 @@ mod approval_tests {
             auth_method: AuthMethod::Password { password: None, password_ref: Some(entry(id)) },
             vault_id: None,
             password_history: None,
+            folder_id: None,
         }
     }
 
