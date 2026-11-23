@@ -387,6 +387,7 @@
   "session.category_terminal": "终端",
   "session.category_desktop": "远程桌面",
   "session.category_transfer": "传输",
+  "session.category_other": "其他",
   "session.column_connection": "连接",
   "session.column_terminal": "终端与整理",
   "session.column_organising": "整理",
