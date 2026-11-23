@@ -19,6 +19,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
 	import { tick } from 'svelte';
+	import TmuxMenu from './TmuxMenu.svelte';
 	import { formatHops, formatProxyAddress, ROUTE_ICON } from '#lib/utils/route.js';
 
 	interface Props {
@@ -192,7 +193,7 @@
 	{#if remote || tab.wslDistro}<span class="badge">{protocol}</span>{/if}
 	{#if jumpTip}<span class="route" role="img" aria-label={jumpTip} title={jumpTip}>{@render icon(ROUTE_ICON.jump, 13)}</span>{/if}
 	{#if proxyTip}<span class="route" role="img" aria-label={proxyTip} title={proxyTip}>{@render icon(ROUTE_ICON.proxy, 13)}</span>{/if}
-	{#if tmuxName}<span class="badge" title={tmuxName}>tmux</span>{/if}
+	{#if tmuxName}<TmuxMenu {tab} name={tmuxName} />{/if}
 	{#if log}<span class="rec" class:paused={log.paused} title={log.paused ? t('history.log_paused_hint') : t('termbar.logging')}>{t('termbar.log')}</span>{/if}
 
 	<span class="grow"></span>
