@@ -1,3 +1,4 @@
+import { toggleMute } from '#lib/state/mute.svelte.js';
 import { newTab } from '#lib/terminal/tmux-tabs.js';
 import { createTab, closeTab, getActiveTab, getTabs, activateTab, canShowFilesView, toggleFilesView } from './tabs.svelte';
 import { toggleAIPanel } from './ai-chat.svelte';
@@ -117,6 +118,7 @@ const handlers: Partial<Record<ActionId, () => void>> = {
 	'app.settings': () => openSettings(),
 	'app.palette': openCommandPalette,
 	'app.aiPanel': toggleAIPanel,
+	'app.mute': toggleMute,
 	'files.toggle': () => {
 		const active = getActiveTab();
 		if (active && canShowFilesView(active)) toggleFilesView(active.id);

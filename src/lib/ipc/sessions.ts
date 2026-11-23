@@ -128,11 +128,24 @@ export interface SessionConfig {
   address_check?: boolean | null;
   /** Web only: address, storage, sign-in, trusted certificates. */
   web?: WebOptions | null;
+  /** Wake-on-LAN for the machine (Wake in its menu, Network tools). */
+  wol?: WakeOnLan | null;
   /** SSH only: open in the full-pane file manager over SFTP or SCP
    *  instead of a terminal; unset: a terminal. */
   files?: FilesProtocol | null;
   /** FTP only: encryption, and the certificates it trusts. */
   ftp?: FtpOptions | null;
+}
+
+/** How to wake a session's machine over the network. */
+export interface WakeOnLan {
+  /** Its network card's MAC address, as typed. */
+  mac: string;
+  /** A broadcast address (10.0.0.255 for another subnet) or name; unset:
+   *  255.255.255.255. */
+  broadcast?: string | null;
+  /** UDP port; unset: 9. */
+  port?: number | null;
 }
 
 /** How an SSH session that opens as files reaches them. */
@@ -424,6 +437,7 @@ export async function sessionCreate(params: {
   connectMode?: ConnectMode | null;
   addressCheck?: boolean | null;
   web?: WebOptions | null;
+  wol?: WakeOnLan | null;
   files?: FilesProtocol | null;
   ftp?: FtpOptions | null;
 }): Promise<SessionConfig> {
@@ -470,6 +484,7 @@ export async function sessionCreate(params: {
     connectMode: params.altAddresses?.length ? (params.connectMode ?? null) : null,
     addressCheck: params.altAddresses?.length ? (params.addressCheck ?? null) : null,
     web: params.kind === 'web' ? (params.web ?? {}) : null,
+    wol: params.wol?.mac.trim() ? params.wol : null,
     files: (params.kind ?? 'ssh') === 'ssh' ? (params.files ?? null) : null,
     ftp: params.kind === 'ftp' ? (params.ftp ?? {}) : null,
   });

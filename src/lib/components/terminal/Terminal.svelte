@@ -1772,7 +1772,7 @@
 		const now = Date.now();
 		const act = bellActions(
 			{ sound: s.terminalBellSound, flash: s.terminalBellFlash, notify: s.terminalBellNotify },
-			{ seen: !!active && shown && windowSeen(), lastNotified, lastSound: lastBellSound(), now, soundsOn: s.playSounds }
+			{ seen: !!active && shown && windowSeen(), lastNotified, lastSound: lastBellSound(), now, soundsOn: s.playSounds && !s.muted }
 		);
 		if (act.sound) playBell(now);
 		if (act.flash && !flashing) {

@@ -118,7 +118,7 @@ vte = "0.15"
 semver = "1"
 # Redis: keys, not tables, so it has its own module rather than going through sqlx.
 redis = { version = "1.7", default-features = false, features = ["aio", "tokio-comp", "tokio-rustls-comp", "tls-rustls-webpki-roots", "streams"] }
-tokio-util = { version = "0.7", features = ["compat"] }
+tokio-util = { version = "0.7", features = ["compat", "io"] }
 futures-util = "0.3"
 
 # Toolchain detection & installation
@@ -306,6 +306,7 @@ windows = { version = "0.62", features = [
     "Win32_System_JobObjects",
     "Win32_NetworkManagement_IpHelper",
     "Win32_System_Diagnostics_Debug",
+    "Win32_System_IO",
     "Win32_System_RemoteDesktop",
     "Win32_System_Power",
     "Win32_System_LibraryLoader",

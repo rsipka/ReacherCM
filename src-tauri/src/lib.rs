@@ -4,8 +4,11 @@ pub mod pwmanager;
 pub mod ipc;
 pub mod mcp;
 pub mod monitoring;
+pub mod net;
 #[cfg(desktop)]
 pub mod pty;
+#[cfg(desktop)]
+pub mod localserver;
 pub mod rdp;
 pub mod vnc;
 pub mod spice;
@@ -75,6 +78,8 @@ use ipc::serial_commands::*;
 use ipc::winbox_commands::*;
 #[cfg(desktop)]
 use ipc::screenshot_commands::*;
+#[cfg(desktop)]
+use ipc::local_server_commands::*;
 use ipc::telnet_commands::*;
 use ipc::zmodem_commands::*;
 use ipc::saved_credential_commands::*;
@@ -505,6 +510,11 @@ pub fn run() {
             // SSH commands
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
+            crate::ipc::net_commands::net_resolve,
+            crate::ipc::net_commands::net_ping,
+            crate::ipc::net_commands::net_scan_ports,
+            crate::ipc::net_commands::net_scan_cancel,
+            crate::ipc::net_commands::net_wake,
             ssh_disconnect,
             ssh_files_scp,
             ssh_send,
@@ -641,6 +651,7 @@ pub fn run() {
             report::report_reveal,
             sound::play_notification_sound,
             sound::play_bell_sound,
+            sound::set_audio_muted,
             // Session commands
             session_list,
             session_get,
@@ -692,6 +703,13 @@ pub fn run() {
             tunnel_stop,
             tunnel_remove,
             tunnel_list,
+            // Local TFTP, FTP, SFTP and HTTP servers
+            local_server_interfaces,
+            local_server_check_port,
+            local_server_start,
+            local_server_stop,
+            local_server_status,
+            local_server_clear_log,
             // PTY commands
             pty_spawn,
             pty_write,
@@ -1050,6 +1068,11 @@ pub fn run() {
             // SSH commands
             ssh_connect,
             crate::ipc::ssh_commands::ssh_probe_addresses,
+            crate::ipc::net_commands::net_resolve,
+            crate::ipc::net_commands::net_ping,
+            crate::ipc::net_commands::net_scan_ports,
+            crate::ipc::net_commands::net_scan_cancel,
+            crate::ipc::net_commands::net_wake,
             ssh_disconnect,
             ssh_files_scp,
             ssh_send,
@@ -1171,6 +1194,7 @@ pub fn run() {
             report::report_reveal,
             sound::play_notification_sound,
             sound::play_bell_sound,
+            sound::set_audio_muted,
             // Session commands
             session_list,
             session_get,
@@ -1545,6 +1569,8 @@ pub fn run() {
             let _ = std::fs::remove_dir_all(data_dir.join("tmp"));
             tracing::info!("App data dir: {:?}", data_dir);
             app.manage(AppState::new());
+            #[cfg(desktop)]
+            app.manage(LocalServers::default());
 
             // Build application menu (macOS menu bar).
             //
@@ -1883,6 +1909,11 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 if window.label() == "main" {
                     ipc::window_commands::close_floating(tauri::Manager::app_handle(window));
+                    if let Some(servers) = tauri::Manager::try_state::<LocalServers>(window) {
+                        if let Ok(mut servers) = servers.0.try_lock() {
+                            servers.stop_all();
+                        }
+                    }
                     web::window::close_all(tauri::Manager::app_handle(window));
                 }
                 if web::is_web_label(window.label()) {

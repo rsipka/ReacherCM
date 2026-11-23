@@ -49,6 +49,7 @@ const CHANGED = {
 	terminalBellSound: false,
 	terminalBellFlash: true,
 	terminalBellNotify: true,
+	muted: true,
 	fontFamily: 'JetBrains Mono',
 	defaultShell: '/bin/zsh',
 	openLastSession: true,
