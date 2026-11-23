@@ -361,10 +361,12 @@
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
-	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer'; kinds: SessionKind[] }[] = [
+	const KIND_GROUPS: { id: 'terminal' | 'desktop' | 'transfer' | 'other'; kinds: SessionKind[] }[] = [
 		{ id: 'terminal', kinds: ['ssh', 'telnet', 'serial', 'wsl'] },
-		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice', 'winbox', 'web'] },
-		{ id: 'transfer', kinds: [] }
+		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice'] },
+		{ id: 'transfer', kinds: [] },
+		// Neither a terminal nor a remote desktop: a device's web page, MikroTik's own app.
+		{ id: 'other', kinds: ['web', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -1740,7 +1742,7 @@
 			</div>
 		{/if}
 
-		{#if kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox'}
+		{#if opensTerminal}
 			<Disclosure title={t('termtheme.session_title')} summary={colorsSummary} bind:open={colorsOpen}>
 				<TerminalThemeList
 					selected={terminalTheme}
