@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "已取消",
   "files.job_failed": "失败",
   "files.retry": "重试",
-  "session.open_file_manager": "打开文件管理器"
+  "session.open_file_manager": "打开文件管理器",
+  "shortcuts.capture_copy": "截图到剪贴板",
+  "shortcuts.capture_save": "将截图保存为 PNG",
+  "capture.button": "截图",
+  "capture.copy": "复制截图",
+  "capture.save": "将截图保存为 PNG…",
+  "capture.copied": "截图已复制到剪贴板",
+  "capture.saved": "截图已保存：{{path}}",
+  "capture.failed": "无法截图：{{error}}",
+  "capture.failed_empty": "图片为空。",
+  "capture.unavailable": "暂时没有可截取的内容。"
 }

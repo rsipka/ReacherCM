@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Cancelled",
   "files.job_failed": "Failed",
   "files.retry": "Try again",
-  "session.open_file_manager": "Open file manager"
+  "session.open_file_manager": "Open file manager",
+  "shortcuts.capture_copy": "Screenshot to clipboard",
+  "shortcuts.capture_save": "Save screenshot as PNG",
+  "capture.button": "Screenshot",
+  "capture.copy": "Copy screenshot",
+  "capture.save": "Save screenshot as PNG…",
+  "capture.copied": "Screenshot copied to the clipboard",
+  "capture.saved": "Screenshot saved: {{path}}",
+  "capture.failed": "Could not take the screenshot: {{error}}",
+  "capture.failed_empty": "The picture is empty.",
+  "capture.unavailable": "Nothing to take a picture of yet."
 }

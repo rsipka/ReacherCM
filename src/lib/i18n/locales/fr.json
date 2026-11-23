@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Annulé",
   "files.job_failed": "Échec",
   "files.retry": "Réessayer",
-  "session.open_file_manager": "Ouvrir le gestionnaire de fichiers"
+  "session.open_file_manager": "Ouvrir le gestionnaire de fichiers",
+  "shortcuts.capture_copy": "Capture vers le presse-papiers",
+  "shortcuts.capture_save": "Enregistrer la capture en PNG",
+  "capture.button": "Capture d'écran",
+  "capture.copy": "Copier la capture",
+  "capture.save": "Enregistrer la capture en PNG…",
+  "capture.copied": "Capture copiée dans le presse-papiers",
+  "capture.saved": "Capture enregistrée : {{path}}",
+  "capture.failed": "Impossible de faire la capture : {{error}}",
+  "capture.failed_empty": "L'image est vide.",
+  "capture.unavailable": "Rien à capturer pour l'instant."
 }

@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Ακυρώθηκε",
   "files.job_failed": "Απέτυχε",
   "files.retry": "Νέα προσπάθεια",
-  "session.open_file_manager": "Άνοιγμα διαχείρισης αρχείων"
+  "session.open_file_manager": "Άνοιγμα διαχείρισης αρχείων",
+  "shortcuts.capture_copy": "Στιγμιότυπο στο πρόχειρο",
+  "shortcuts.capture_save": "Αποθήκευση στιγμιότυπου ως PNG",
+  "capture.button": "Στιγμιότυπο",
+  "capture.copy": "Αντιγραφή στιγμιότυπου",
+  "capture.save": "Αποθήκευση στιγμιότυπου ως PNG…",
+  "capture.copied": "Το στιγμιότυπο αντιγράφηκε στο πρόχειρο",
+  "capture.saved": "Το στιγμιότυπο αποθηκεύτηκε: {{path}}",
+  "capture.failed": "Αποτυχία λήψης στιγμιότυπου: {{error}}",
+  "capture.failed_empty": "Η εικόνα είναι κενή.",
+  "capture.unavailable": "Δεν υπάρχει ακόμα κάτι για λήψη."
 }

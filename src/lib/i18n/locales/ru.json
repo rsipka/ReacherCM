@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Отменено",
   "files.job_failed": "Ошибка",
   "files.retry": "Повторить",
-  "session.open_file_manager": "Открыть файловый менеджер"
+  "session.open_file_manager": "Открыть файловый менеджер",
+  "shortcuts.capture_copy": "Снимок в буфер обмена",
+  "shortcuts.capture_save": "Сохранить снимок как PNG",
+  "capture.button": "Снимок экрана",
+  "capture.copy": "Копировать снимок",
+  "capture.save": "Сохранить снимок как PNG…",
+  "capture.copied": "Снимок скопирован в буфер обмена",
+  "capture.saved": "Снимок сохранён: {{path}}",
+  "capture.failed": "Не удалось сделать снимок: {{error}}",
+  "capture.failed_empty": "Изображение пустое.",
+  "capture.unavailable": "Пока нечего снимать."
 }

@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Cancelado",
   "files.job_failed": "Error",
   "files.retry": "Reintentar",
-  "session.open_file_manager": "Abrir gestor de archivos"
+  "session.open_file_manager": "Abrir gestor de archivos",
+  "shortcuts.capture_copy": "Captura al portapapeles",
+  "shortcuts.capture_save": "Guardar captura como PNG",
+  "capture.button": "Captura de pantalla",
+  "capture.copy": "Copiar captura",
+  "capture.save": "Guardar captura como PNG…",
+  "capture.copied": "Captura copiada al portapapeles",
+  "capture.saved": "Captura guardada: {{path}}",
+  "capture.failed": "No se pudo hacer la captura: {{error}}",
+  "capture.failed_empty": "La imagen está vacía.",
+  "capture.unavailable": "Todavía no hay nada que capturar."
 }

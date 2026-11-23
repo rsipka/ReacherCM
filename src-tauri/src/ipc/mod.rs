@@ -31,6 +31,8 @@ pub mod local_fs_commands;
 pub mod editor_detect;
 #[cfg(desktop)]
 pub mod winbox_commands;
+#[cfg(desktop)]
+pub mod screenshot_commands;
 pub mod ssh_commands;
 pub mod sshconfig_commands;
 pub mod import_commands;

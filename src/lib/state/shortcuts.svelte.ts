@@ -5,6 +5,7 @@ import { togglePalette, requestSessionAction } from './palette.svelte';
 import { stepUiZoom } from './ui-zoom';
 import { isMac, isMobile } from '#lib/platform.js';
 import { getSettings } from './settings.svelte';
+import { captureTab } from './capture';
 import { canonical, chordFromEvent, displayChord, keyMap, keysFor, type ActionId } from './keybindings';
 
 let settingsOpener: ((target?: string) => void) | null = null;
@@ -93,6 +94,12 @@ export function openSettings(target?: string): void {
 	settingsOpener?.(target);
 }
 
+/** A screenshot of the pane in front. */
+function captureActive(mode: 'copy' | 'save'): void {
+	const active = getActiveTab();
+	if (active) void captureTab(active.id, mode, active.sessionName || active.title);
+}
+
 function openCommandPalette(): void {
 	togglePalette();
 }
@@ -114,6 +121,8 @@ const handlers: Partial<Record<ActionId, () => void>> = {
 		const active = getActiveTab();
 		if (active && canShowFilesView(active)) toggleFilesView(active.id);
 	},
+	'capture.copy': () => captureActive('copy'),
+	'capture.save': () => captureActive('save'),
 	// The interface's size, as in a browser. Not on a phone: it follows the system.
 	...(isMobile()
 		? {}

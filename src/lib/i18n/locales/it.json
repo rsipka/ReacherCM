@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Annullato",
   "files.job_failed": "Non riuscito",
   "files.retry": "Riprova",
-  "session.open_file_manager": "Apri gestore file"
+  "session.open_file_manager": "Apri gestore file",
+  "shortcuts.capture_copy": "Screenshot negli appunti",
+  "shortcuts.capture_save": "Salva screenshot come PNG",
+  "capture.button": "Screenshot",
+  "capture.copy": "Copia screenshot",
+  "capture.save": "Salva screenshot come PNG…",
+  "capture.copied": "Screenshot copiato negli appunti",
+  "capture.saved": "Screenshot salvato: {{path}}",
+  "capture.failed": "Impossibile fare lo screenshot: {{error}}",
+  "capture.failed_empty": "L'immagine è vuota.",
+  "capture.unavailable": "Ancora niente da catturare."
 }

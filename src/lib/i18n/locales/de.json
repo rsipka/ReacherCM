@@ -3886,5 +3886,15 @@
   "files.job_cancelled": "Abgebrochen",
   "files.job_failed": "Fehlgeschlagen",
   "files.retry": "Erneut versuchen",
-  "session.open_file_manager": "Dateimanager öffnen"
+  "session.open_file_manager": "Dateimanager öffnen",
+  "shortcuts.capture_copy": "Screenshot in die Zwischenablage",
+  "shortcuts.capture_save": "Screenshot als PNG speichern",
+  "capture.button": "Screenshot",
+  "capture.copy": "Screenshot kopieren",
+  "capture.save": "Screenshot als PNG speichern…",
+  "capture.copied": "Screenshot in die Zwischenablage kopiert",
+  "capture.saved": "Screenshot gespeichert: {{path}}",
+  "capture.failed": "Screenshot fehlgeschlagen: {{error}}",
+  "capture.failed_empty": "Das Bild ist leer.",
+  "capture.unavailable": "Noch nichts zum Aufnehmen da."
 }
