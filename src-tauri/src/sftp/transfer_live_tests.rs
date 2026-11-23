@@ -193,3 +193,36 @@ async fn live_explorer_operations() {
         let _ = std::fs::remove_file(local);
     }
 }
+
+/// An SCP session's copies: a file up and back down whole, a refusal said
+/// as the server says it, a folder refused by name.
+#[tokio::test]
+#[ignore = "needs an SSH server"]
+async fn live_scp_round_trip() {
+    let handle = connect().await;
+    let dir = tempfile::tempdir().unwrap();
+    let data: Vec<u8> = (0..5_000_000u32).map(|i| (i % 253) as u8).collect();
+    let local = dir.path().join("up.bin");
+    std::fs::write(&local, &data).unwrap();
+    let remote = format!("/tmp/reach scp {}.bin", std::process::id());
+    let never = CancellationToken::new();
+    let sent = super::super::scp::send_file(&handle, &local, &remote, &never, |_| {}).await.unwrap();
+    assert_eq!(sent, data.len() as u64);
+    let back = dir.path().join("down.bin");
+    let mut last = (0, 0);
+    let got = super::super::scp::receive_file(&handle, &remote, back.to_str().unwrap(), &never, |d, t| last = (d, t)).await.unwrap();
+    assert_eq!(got, data.len() as u64);
+    assert_eq!(last, (got, got));
+    assert_eq!(std::fs::read(&back).unwrap(), data);
+
+    let denied = super::super::scp::send_file(&handle, &local, "/opt/reach-scp-denied", &never, |_| {}).await.unwrap_err();
+    println!("denied: {denied}");
+    assert!(denied.to_string().contains("Permission denied"), "{denied}");
+    let folder = super::super::scp::receive_file(&handle, "/tmp", dir.path().join("x").to_str().unwrap(), &never, |_, _| {}).await.unwrap_err();
+    println!("folder: {folder}");
+    assert!(!dir.path().join("x").exists());
+    let missing = super::super::scp::receive_file(&handle, "/tmp/reach-no-such-file", dir.path().join("y").to_str().unwrap(), &never, |_, _| {}).await.unwrap_err();
+    println!("missing: {missing}");
+    assert!(missing.to_string().contains("No such file"), "{missing}");
+    let _ = exec_on_connection_with_exit_code(&handle, &format!("rm -f {}", shell_escape(&remote))).await;
+}

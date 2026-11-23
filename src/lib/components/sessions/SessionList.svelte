@@ -1378,6 +1378,20 @@
 	}
 
 	/**
+	 * Open a saved FTP session in the full-pane file manager. Its panel
+	 * connects it, asking for a password or about a certificate there.
+	 */
+	function openFtp(session: SessionConfig): void {
+		if (isMobile()) {
+			addToast(t('files.desktop_only'), 'error');
+			return;
+		}
+		setActivePage('terminal');
+		const tab = createTab('ftp', session.host, undefined, session.name, null);
+		tab.ftpConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
+	}
+
+	/**
 	 * Open a saved serial session in a terminal tab, which opens the port by
 	 * itself once it is listening. The port is the session's `host`.
 	 */
@@ -1677,6 +1691,14 @@
 			void openWeb(session);
 			return;
 		}
+		if (sessionKind(session) === 'ftp') {
+			openFtp(session);
+			return;
+		}
+		if (session.files && isMobile()) {
+			addToast(t('files.desktop_only'), 'error');
+			return;
+		}
 		// Check if credentials are stored in the session (from vault)
 		const storedPassword = session.auth_method.type === 'Password' ? session.auth_method.password : undefined;
 		// A password manager entry stands in for a saved secret: the backend
@@ -1860,12 +1882,13 @@
 				cols: 80,
 				rows: 24,
 				shell: session.shell ?? undefined,
-				// An X11 desktop starts the desktop, never tmux.
-				tmux: session.x11_desktop ? null : tmuxView(tmuxFor(session, folders)),
-				x11Desktop: session.x11_desktop ?? null,
+				// An X11 desktop starts the desktop, never tmux; a files
+				// session (SFTP, SCP) only keeps a plain shell behind.
+				tmux: session.x11_desktop || session.files ? null : tmuxView(tmuxFor(session, folders)),
+				x11Desktop: session.files ? null : (session.x11_desktop ?? null),
 				terminal: session.terminal ?? null,
-				injectColors: getSettings().typeShellSetup,
-				sessionLog: sessionLogConfig(session.name),
+				injectColors: session.files ? false : getSettings().typeShellSetup,
+				sessionLog: session.files ? null : sessionLogConfig(session.name),
 				showLoginMessage: getSettings().showLoginMessage,
 				tryAgentKeys: authType === 'Key' && session.try_agent_keys === true,
 				sshOptions: session.ssh_options ?? null,
@@ -1931,7 +1954,13 @@
 			tab.cursorBlink = session.cursor_blink ?? null;
 			tab.monitoring = session.monitoring ?? null;
 			tab.historyMode = session.history ?? null;
-			if (filesOnConnect === session.id) {
+			if (session.files) {
+				// An SFTP or SCP session: straight into the file manager.
+				tab.filesProtocol = session.files;
+				tab.filesView = true;
+				tab.monitoring = false;
+				tab.historyMode = 'off';
+			} else if (filesOnConnect === session.id) {
 				filesOnConnect = undefined;
 				toggleFilesView(tab.id, true);
 			}

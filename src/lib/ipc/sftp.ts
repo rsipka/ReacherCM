@@ -57,3 +57,8 @@ export async function sftpWriteFile(connectionId: string, path: string, content:
 export async function sftpTerminalCwd(connectionId: string): Promise<string | null> {
   return invoke<string | null>('sftp_terminal_cwd', { connectionId });
 }
+
+/** The folder a connection's files start in (the login folder), or null. */
+export async function sftpHome(connectionId: string): Promise<string | null> {
+  return invoke<string | null>('sftp_home', { connectionId });
+}
