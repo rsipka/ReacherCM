@@ -178,6 +178,10 @@ export interface RdpRailWindow {
 	listed: boolean;
 	/** The window that owns it, 0 for none. */
 	owner: number;
+	/** The server's front window. */
+	active: boolean;
+	/** Its place in the server's stacking order, 0 at the top. */
+	z: number;
 }
 
 export type RdpRailCommand = 'activate' | 'close' | 'minimize' | 'maximize' | 'restore';
@@ -227,6 +231,8 @@ export interface RailPlace {
 	height: number;
 	/** A menu, tooltip or other window part of another. */
 	popup: boolean;
+	/** The server's front window: brought forward here too. */
+	active: boolean;
 }
 
 /** Open, move and close a tab's RemoteApp windows to match `windows`; none closes them all. */
