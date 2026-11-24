@@ -27,9 +27,16 @@ export interface ResolvedAddress {
 	/** Goes through this saved SSH session rather than the session's own
 	 *  route. */
 	viaSessionId?: string;
+	/** Goes through this WireGuard profile's tunnel: the main address
+	 *  with the session's own jump hosts (the tunnel carries the first),
+	 *  another address straight inside the tunnel. */
+	wireguardId?: string;
+	/** Another address that goes only through its WireGuard tunnel, not
+	 *  the session's jump hosts or proxy. */
+	tunnelOnly?: boolean;
 }
 
-type AddressSession = Pick<SessionConfig, 'host' | 'port' | 'host_label' | 'alt_addresses' | 'connect_mode' | 'jump_chain' | 'proxy' | 'kind'>;
+type AddressSession = Pick<SessionConfig, 'host' | 'port' | 'host_label' | 'alt_addresses' | 'connect_mode' | 'jump_chain' | 'proxy' | 'kind'> & Partial<Pick<SessionConfig, 'wireguard_id'>>;
 
 /** The session goes through jump hosts or a proxy. */
 export function hasRoute(s: Pick<SessionConfig, 'jump_chain' | 'proxy'>): boolean {
@@ -64,11 +71,18 @@ export function connectMode(s: AddressSession): ConnectMode {
 /** Every address, main first. */
 export function sessionAddresses(s: AddressSession): ResolvedAddress[] {
 	const routed = hasRoute(s);
-	const out: ResolvedAddress[] = [{ index: 0, label: s.host_label?.trim() ?? '', host: s.host, port: s.port, routed }];
+	const wg = s.wireguard_id?.trim() || undefined;
+	// Inside a tunnel nothing can be checked from here.
+	const out: ResolvedAddress[] = [{ index: 0, label: s.host_label?.trim() ?? '', host: s.host, port: s.port, routed: routed || !!wg, ...(wg ? { wireguardId: wg } : {}) }];
 	if (!hasAltAddresses(s)) return out;
 	(s.alt_addresses ?? []).forEach((a: SessionAddress, i) => {
 		const host = a.host.trim();
 		if (!host) return;
+		const tunnel = a.via_wireguard?.trim() || undefined;
+		if (tunnel) {
+			out.push({ index: i + 1, label: a.label?.trim() ?? '', host, port: a.port || s.port, routed: true, wireguardId: tunnel, tunnelOnly: true });
+			return;
+		}
 		const via = a.via_session_id?.trim() || undefined;
 		out.push({ index: i + 1, label: a.label?.trim() ?? '', host, port: a.port || s.port, routed: via ? true : routed && !a.direct, viaSessionId: via });
 	});

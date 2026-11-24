@@ -1022,6 +1022,9 @@ pub struct HopOptions {
     /// What the target's key exchange settled on (target only), for the
     /// tab's tooltip.
     pub negotiated: Negotiated,
+    /// A WireGuard profile whose tunnel (already up) carries this hop's
+    /// TCP connection instead of the network (see `crate::wireguard`).
+    pub wireguard: Option<String>,
 }
 
 /// The algorithms a connection's last key exchange settled on, as the
@@ -1068,13 +1071,13 @@ impl NegotiatedAlgorithms {
 
 impl Default for HopOptions {
     fn default() -> Self {
-        Self { config: Arc::new(russh::client::Config::default()), socket: Default::default(), auth: None, hostkeys: None, session: None, refused: None, proxy_command: None, forwards: None, log: None, connlog: None, control: None, trust: None, negotiated: Default::default() }
+        Self { config: Arc::new(russh::client::Config::default()), socket: Default::default(), auth: None, hostkeys: None, session: None, refused: None, proxy_command: None, forwards: None, log: None, connlog: None, control: None, trust: None, negotiated: Default::default(), wireguard: None }
     }
 }
 
 impl From<crate::ssh::sshconf::apply::Plan> for HopOptions {
     fn from(p: crate::ssh::sshconf::apply::Plan) -> Self {
-        Self { config: Arc::new(p.config), socket: p.socket, auth: p.auth, hostkeys: p.hostkeys.map(Arc::new), session: p.session.map(Arc::new), refused: p.refused, proxy_command: p.proxy_command, forwards: p.forwards.map(crate::ssh::forwarding::ForwardTable::new), log: p.log, connlog: None, control: p.control, trust: None, negotiated: Default::default() }
+        Self { config: Arc::new(p.config), socket: p.socket, auth: p.auth, hostkeys: p.hostkeys.map(Arc::new), session: p.session.map(Arc::new), refused: p.refused, proxy_command: p.proxy_command, forwards: p.forwards.map(crate::ssh::forwarding::ForwardTable::new), log: p.log, connlog: None, control: p.control, trust: None, negotiated: Default::default(), wireguard: None }
     }
 }
 
@@ -1241,7 +1244,12 @@ impl SshManager {
         };
 
         begin("connect");
-        let mut handle = if let Some(proxy) = proxy {
+        let mut handle = if let Some(wg) = &opts.wireguard {
+            let failed = |e: String| SshError::ConnectionFailed(format!("Connection failed through WireGuard: {e}"));
+            let stream = crate::wireguard::dial(wg, host, port).await.map_err(|e| failed(e.to_string()))?;
+            begin("kex");
+            russh::client::connect_stream(config, stream, handler).await.map_err(|e| failed(e.to_string()))?
+        } else if let Some(proxy) = proxy {
             tracing::info!("SSH connecting via {} proxy {}:{}", proxy.proxy_type, proxy.host, proxy.port);
             let stream = Self::connect_via_proxy(proxy, host, port).await?;
             begin("kex");
@@ -1464,12 +1472,16 @@ impl SshManager {
         let handler = SshClientHandler::new(first_jump.host.as_str(), first_jump.port, Some(app_handle.clone())).with_hostkeys(first_jump.opts.hostkeys.clone()).with_trust(first_jump.opts.trust.clone());
 
         let failed = |e: String| SshError::ConnectionFailed(format!("Jump host {} connection failed: {}", first_jump.host, e));
-        let stream = crate::ssh::sshconf::net::connect(&first_jump.host, first_jump.port, &first_jump.opts.socket, false)
-            .await
-            .map_err(|e| failed(e.to_string()))?;
-        let mut current_handle = russh::client::connect_stream(config, stream, handler)
-            .await
-            .map_err(|e| failed(e.to_string()))?;
+        let mut current_handle = if let Some(wg) = &first_jump.opts.wireguard {
+            let stream = crate::wireguard::dial(wg, &first_jump.host, first_jump.port).await.map_err(|e| failed(format!("through WireGuard: {e}")))?;
+            russh::client::connect_stream(config, stream, handler).await
+        } else {
+            let stream = crate::ssh::sshconf::net::connect(&first_jump.host, first_jump.port, &first_jump.opts.socket, false)
+                .await
+                .map_err(|e| failed(e.to_string()))?;
+            russh::client::connect_stream(config, stream, handler).await
+        }
+        .map_err(|e| failed(e.to_string()))?;
 
         // Authenticate on first jump host
         Self::authenticate_handle(&mut current_handle, &first_jump.username, &first_jump.auth, &first_jump.opts, &app_handle, &first_jump.host, first_jump.port)

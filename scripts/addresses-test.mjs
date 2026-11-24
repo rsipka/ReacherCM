@@ -41,6 +41,15 @@ const viaS = { host: '10.0.0.5', port: 22, alt_addresses: [{ label: 'Branch', ho
 const viaAll = sessionAddresses(viaS);
 check('an address through a saved session is routed, not direct', viaAll[1].routed && viaAll[1].viaSessionId === 'gw');
 check('a session without a route keeps its main address direct', !viaAll[0].routed && !viaAll[0].viaSessionId);
+// WireGuard: the main address carries the session's tunnel (and keeps
+// its jump hosts, the tunnel carrying the first); another address can go
+// through its own tunnel alone. Neither can be checked from here.
+const wgS = { host: '10.8.0.5', port: 22, wireguard_id: 'office-wg', alt_addresses: [{ label: 'Lab', host: '10.9.0.5', via_wireguard: 'lab-wg', via_session_id: 'gw' }, { host: '192.168.1.5', direct: true }] };
+const wgAll = sessionAddresses(wgS);
+check('main address goes through the session tunnel', wgAll[0].wireguardId === 'office-wg' && wgAll[0].routed && !wgAll[0].tunnelOnly);
+check('an address through its own tunnel, alone', wgAll[1].wireguardId === 'lab-wg' && wgAll[1].tunnelOnly && wgAll[1].routed && !wgAll[1].viaSessionId);
+check('a direct address has no tunnel', !wgAll[2].wireguardId && !wgAll[2].routed);
+check('tunnelled addresses are not checked first', autoOrder(wgAll, [5, 5, null]).map((a) => a.index).join() === '0,1,2');
 check('mode defaults to auto', connectMode(s) === 'auto');
 check('ask is kept', connectMode({ ...s, connect_mode: 'ask' }) === 'ask');
 check('other kinds ignore other addresses', !hasAltAddresses({ ...s, kind: 'rdp' }));

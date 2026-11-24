@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from './pwmanager';
+import { ensureWireguard } from '#lib/state/wireguard.svelte.js';
 
 /** How a Telnet session talks to the device (see src-tauri/src/telnet/protocol.rs). */
 export interface TelnetOptions {
@@ -26,10 +27,13 @@ export interface TelnetConnectParams {
 	passwordRef?: SecretRef | null;
 	/** The saved session, which a password manager entry must come from. */
 	sessionId?: string | null;
+	/** A WireGuard profile whose tunnel carries the connection. */
+	wireguard?: string | null;
 }
 
 /** Connect; output then arrives as `telnet-data-{id}` until `telnet-exit-{id}`. */
 export async function telnetConnect(id: string, params: TelnetConnectParams, cols: number, rows: number): Promise<void> {
+	if (params.wireguard) await ensureWireguard(params.wireguard);
 	return invoke('telnet_connect', {
 		params: {
 			id,
@@ -41,6 +45,7 @@ export async function telnetConnect(id: string, params: TelnetConnectParams, col
 			username: params.username || null,
 			password: params.password || null,
 			passwordRef: params.passwordRef ?? null,
+			wireguard: params.wireguard ?? null,
 		},
 		sessionId: params.sessionId ?? null,
 	});

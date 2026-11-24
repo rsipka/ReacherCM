@@ -45,6 +45,7 @@ pub mod toolchain;
 pub mod tunnel;
 pub mod vault;
 pub mod web;
+pub mod wireguard;
 pub mod wsl;
 pub mod zmodem;
 
@@ -109,6 +110,7 @@ use ipc::editor_commands::*;
 #[cfg(desktop)]
 use ipc::window_commands::*;
 use ipc::snippet_commands::*;
+use ipc::wireguard_commands::*;
 use ipc::recipe_commands::*;
 use ipc::share_commands::*;
 use ipc::pwmanager_commands::*;
@@ -929,6 +931,16 @@ pub fn run() {
             web_session_cert_add,
             web_session_cert_remove,
             web_session_clear_data,
+            // WireGuard profiles and tunnels (see `wireguard`)
+            wireguard_list,
+            wireguard_get,
+            wireguard_check,
+            wireguard_save,
+            wireguard_delete,
+            wireguard_up,
+            wireguard_down,
+            wireguard_running,
+            wireguard_generate_key,
             // Snippet commands
             snippet_list,
             snippet_create,
@@ -1440,6 +1452,16 @@ pub fn run() {
             editor_open_file,
             editor_get_pending_file,
             editor_hide_window,
+            // WireGuard profiles and tunnels (see `wireguard`)
+            wireguard_list,
+            wireguard_get,
+            wireguard_check,
+            wireguard_save,
+            wireguard_delete,
+            wireguard_up,
+            wireguard_down,
+            wireguard_running,
+            wireguard_generate_key,
             // Snippet commands
             snippet_list,
             snippet_create,
