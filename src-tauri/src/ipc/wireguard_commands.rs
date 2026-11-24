@@ -165,10 +165,12 @@ pub async fn wireguard_delete(state: State<'_, AppState>, id: String) -> Result<
 
 /// Brings the tunnel up (if it is not already) and waits for the server.
 #[tauri::command]
-pub async fn wireguard_up(state: State<'_, AppState>, id: String) -> Result<WgProfileInfo, String> {
+/// `auto`: turned on for a connection, so it goes off again once no
+/// connection uses it; by hand (the list's button) it stays on.
+pub async fn wireguard_up(state: State<'_, AppState>, id: String, auto: Option<bool>) -> Result<WgProfileInfo, String> {
     let p = profile(&state, &id).await?;
     let config = WgConfig::parse(&p.conf)?;
-    manager::up(&id, &config).await.map_err(|e| format!("WireGuard '{}': {e}", p.name))?;
+    manager::up(&id, &config, auto.unwrap_or(false)).await.map_err(|e| format!("WireGuard '{}': {e}", p.name))?;
     Ok(info(&p).await)
 }
 
@@ -220,9 +222,11 @@ pub(crate) async fn session_forward_to(state: &AppState, session_id: Option<&str
 
 /// For a web session: the port of a SOCKS5 proxy on 127.0.0.1 into the
 /// saved session's WireGuard tunnel, or None when it is not routed through one.
-pub(crate) async fn session_socks(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Result<Option<u16>, String> {
+/// Also returns the tunnel's profile id.
+pub(crate) async fn session_socks(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Result<Option<(u16, String)>, String> {
     let Some(wg) = session_tunnel(state, session_id, host, port).await else { return Ok(None) };
-    crate::wireguard::socks(&wg).await.map(Some).map_err(|e| e.to_string())
+    let port = crate::wireguard::socks(&wg).await.map_err(|e| e.to_string())?;
+    Ok(Some((port, wg)))
 }
 
 /// The WireGuard profile the saved session routes `host:port` through (its

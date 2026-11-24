@@ -12,6 +12,8 @@
 	import { isMac, isMobile } from '#lib/platform.js';
 	import { APP_NAME } from '#lib/brand.js';
 	import { isMuted, toggleMute, syncMuteToBackend } from '#lib/state/mute.svelte.js';
+	import { runningWireguard } from '#lib/state/wireguard.svelte.js';
+	import { ROUTE_ICON } from '#lib/utils/route.js';
 
 	/** On a Mac the window keeps the system's own traffic lights, drawn over
 	 *  this bar (tauri.macos.conf.json): they are what a Mac user reaches for,
@@ -39,6 +41,12 @@
 	registerSettingsOpener(openSettings);
 
 	let muted = $derived(isMuted());
+	/** Tunnels that are on, named in the tooltip; a click shows them in the sidebar. */
+	let tunnels = $derived(runningWireguard());
+	let tunnelsTitle = $derived(tunnels.length ? t('titlebar.wireguard_on', { names: tunnels.map((p) => p.name).join(', ') }) : '');
+	function showTunnels(): void {
+		window.dispatchEvent(new CustomEvent('reach:sidebar-section', { detail: 'tunnels' }));
+	}
 	let muteTitle = $derived.by(() => {
 		const label = t(muted ? 'titlebar.unmute' : 'titlebar.mute');
 		const key = actionLabel('app.mute');
@@ -102,6 +110,14 @@
 				{/if}
 			</svg>
 		</button>
+		{#if tunnels.length}
+			<button class="settings-btn wg-btn" onclick={showTunnels} aria-label={tunnelsTitle} title={tunnelsTitle}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d={ROUTE_ICON.wireguard} />
+				</svg>
+				<span class="wg-label">WG{tunnels.length > 1 ? ` ${tunnels.length}` : ''}</span>
+			</button>
+		{/if}
 		{#if aiConfigured}
 			<button class="ai-btn" class:ai-active={aiPanelOpen} onclick={toggleAIPanel} aria-label={t('titlebar.ai_assistant')} title={t('titlebar.ai_assistant') + ' (Ctrl+Shift+A)'}>
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -293,6 +309,19 @@
 	.settings-btn:hover {
 		background-color: var(--color-surface-hover);
 		color: var(--color-text-primary);
+	}
+
+	/* A tunnel on: in the success colour, with a short label, so it is seen. */
+	.wg-btn {
+		width: auto;
+		gap: 3px;
+		padding: 0 6px;
+		color: var(--color-success);
+	}
+
+	.wg-label {
+		font-size: 0.625rem;
+		font-weight: 600;
 	}
 
 	/* Muted stays in view: easy to forget, and the reason nothing rings. */

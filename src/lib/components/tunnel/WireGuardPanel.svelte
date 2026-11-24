@@ -119,7 +119,8 @@
 		if (!p.state.running) return t('wireguard.off');
 		if (p.state.error) return p.state.error;
 		const h = p.state.handshake_secs;
-		return t('wireguard.on_status', { ago: h == null ? '—' : `${h}s`, rx: bytes(p.state.rx_bytes), tx: bytes(p.state.tx_bytes) });
+		const on = t('wireguard.on_status', { ago: h == null ? '—' : `${h}s`, rx: bytes(p.state.rx_bytes), tx: bytes(p.state.tx_bytes) });
+		return p.state.auto ? `${on} · ${t('wireguard.auto_off')}` : on;
 	}
 </script>
 
