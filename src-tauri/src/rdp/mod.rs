@@ -729,10 +729,17 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
     // known-hosts file as an SSH host key. The callback is synchronous and
     // runs on the session thread, so the prompt is run on the app's runtime
     // and waited for here; the session has nothing else to do meanwhile.
-    let (host, port) = (p.host.clone(), p.port);
-    let verify: ironrdp_tls::CertificateValidationCallback = Arc::new(move |der: &[u8], _name: &str, reason: &str| {
+    // A gateway's certificate is asked about, and remembered, as the
+    // gateway's own, not the server's.
+    let gateway = p.options.as_ref().and_then(options::RdpOptions::gateway_endpoint);
+    let (rdp_host, rdp_port) = (p.host.clone(), p.port);
+    let verify: ironrdp_tls::CertificateValidationCallback = Arc::new(move |der: &[u8], name: &str, reason: &str| {
         use base64::Engine as _;
         use sha2::Digest as _;
+        let (host, port) = match &gateway {
+            Some((gw, gw_port)) if name.eq_ignore_ascii_case(gw) && !name.eq_ignore_ascii_case(&rdp_host) => (gw.clone(), *gw_port),
+            _ => (rdp_host.clone(), rdp_port),
+        };
         tracing::info!("RDP {host}:{port}: certificate not trusted by the platform ({reason}); asking");
         let fingerprint = format!(
             "SHA256:{}",
@@ -865,10 +872,39 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
         builder = builder.with_remote_application_mode(true);
     }
 
-    if let Some(port) = p.connect_port {
+    // Through an RD Gateway: the gateway reaches the server, by its name.
+    if let Some(o) = p.options.as_ref().filter(|o| o.gateway.is_some()) {
+        if let Some((gw_host, gw_port)) = o.gateway_endpoint() {
+            let endpoint = format!("{gw_host}:{gw_port}");
+            let prefer_direct = o.gateway_detect == Some(true);
+            tracing::info!("RDP: through the RD Gateway {endpoint}{}", if prefer_direct { " when a direct connection fails" } else { "" });
+            builder = builder.with_transport(if o.gateway_rpc == Some(true) {
+                ironrdp_client::config::TransportKind::GatewayRpch { endpoint, prefer_direct }
+            } else {
+                ironrdp_client::config::TransportKind::Gateway { endpoint, prefer_direct }
+            });
+            let (user, password) = gateway_login(p, o);
+            builder = builder.with_gateway_username(user).with_gateway_password(password);
+        }
+    } else if let Some(port) = p.connect_port {
         builder = builder.with_connect_address(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
     }
     builder.build().map_err(|e| e.to_string())
+}
+
+/// The login the RD Gateway gets: its own, or the session's (as mstsc's
+/// "use my RD Gateway credentials for the remote computer"), with the
+/// session's domain in front of a bare user name.
+fn gateway_login(p: &RdpConnectParams, o: &options::RdpOptions) -> (String, String) {
+    if let Some(user) = o.gateway_user.as_deref() {
+        return (user.to_string(), o.gateway_password.clone().unwrap_or_default());
+    }
+    let user = if !p.domain.is_empty() && !p.username.contains(['\\', '@']) {
+        format!("{}\\{}", p.domain, p.username)
+    } else {
+        p.username.clone()
+    };
+    (user, p.password.clone())
 }
 
 /// The display scaling to ask for, when it is not 100%.
