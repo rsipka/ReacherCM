@@ -4291,5 +4291,12 @@
   "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}",
   "organization.rotation_pending": "Отправка изменений приостановлена до смены ключа владельцем хранилища.",
   "organization.finish_rotation": "Завершить смену ключа",
-  "organization.key_rotated": "Ключ хранилища заменён."
+  "organization.key_rotated": "Ключ хранилища заменён.",
+  "sync_account.pair_help": "В веб-портале синхронизации откройте Устройства → Добавить устройство → Подключить телефон или планшет.",
+  "sync_account.pair_scan": "Сканировать QR-код подключения",
+  "sync_account.pair_code": "Код подключения",
+  "sync_account.pair_start": "Подключить это устройство",
+  "sync_account.pair_match": "Сравните этот код с кодом в веб-портале и подтвердите устройство там.",
+  "sync_account.pair_invalid": "Введите код подключения мобильного устройства Reacher CM.",
+  "sync_account.pair_camera": "Для сканирования нужен доступ к камере. Можно также вставить код подключения."
 }

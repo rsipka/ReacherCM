@@ -4291,5 +4291,12 @@
   "bmc.licence_needed": "控制器需要许可证才能执行此操作。它报告：{{message}}",
   "organization.rotation_pending": "上传已暂停，直到保险库所有者更换密钥。",
   "organization.finish_rotation": "完成密钥轮换",
-  "organization.key_rotated": "保险库密钥已更换。"
+  "organization.key_rotated": "保险库密钥已更换。",
+  "sync_account.pair_help": "在同步网页门户中打开设备 → 添加设备 → 配对手机或平板电脑。",
+  "sync_account.pair_scan": "扫描配对二维码",
+  "sync_account.pair_code": "配对码",
+  "sync_account.pair_start": "配对此设备",
+  "sync_account.pair_match": "在网页门户中核对这个验证码，然后在那里批准设备。",
+  "sync_account.pair_invalid": "请输入 Reacher CM 移动设备配对码。",
+  "sync_account.pair_camera": "扫描需要相机权限。你也可以粘贴配对码。"
 }

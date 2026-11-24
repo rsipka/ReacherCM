@@ -4291,5 +4291,12 @@
   "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}",
   "organization.rotation_pending": "Nahrávání je pozastaveno, dokud vlastník trezoru nevymění klíč.",
   "organization.finish_rotation": "Dokončit výměnu klíče",
-  "organization.key_rotated": "Klíč trezoru byl vyměněn."
+  "organization.key_rotated": "Klíč trezoru byl vyměněn.",
+  "sync_account.pair_help": "Na webovém portálu synchronizace otevřete Zařízení → Přidat zařízení → Spárovat telefon nebo tablet.",
+  "sync_account.pair_scan": "Naskenovat párovací QR kód",
+  "sync_account.pair_code": "Párovací kód",
+  "sync_account.pair_start": "Spárovat toto zařízení",
+  "sync_account.pair_match": "Porovnejte tento kód na webovém portálu a potom tam zařízení schvalte.",
+  "sync_account.pair_invalid": "Zadejte kód pro párování mobilního zařízení Reacher CM.",
+  "sync_account.pair_camera": "Ke skenování je potřeba přístup k fotoaparátu. Párovací kód můžete vložit ručně."
 }

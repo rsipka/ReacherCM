@@ -69,7 +69,7 @@ export const PAGES: SettingsPage[] = [
 	{ id: 'remote', label: 'settings.rdp_section', group: 'connections', icon: ICON.monitor },
 	{ id: 'security', label: 'settings.security', group: 'data', icon: ICON.shield },
 	{ id: 'pwmanagers', label: 'settings.password_managers', group: 'data', icon: ICON.key },
-	{ id: 'account', label: 'sync_account.title', group: 'data', icon: ICON.account, desktopOnly: true },
+	{ id: 'account', label: 'sync_account.title', group: 'data', icon: ICON.account },
 	{ id: 'sync', label: 'settings.page_sync_backup', group: 'data', icon: ICON.sync },
 	{ id: 'ai', label: 'settings.page_ai_mcp', group: 'integrations', icon: ICON.bulb },
 	{ id: 'devops', label: 'settings.page_devops_plugins', group: 'integrations', icon: ICON.server },

@@ -61,5 +61,4 @@ pub mod registry_url_commands;
 pub mod share_commands;
 pub mod pwmanager_commands;
 
-#[cfg(desktop)]
 pub mod sync_account_commands;
