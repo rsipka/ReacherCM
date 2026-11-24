@@ -1,5 +1,6 @@
 pub mod ansible;
 pub mod bmc;
+pub mod proxmox;
 pub mod plugin;
 pub mod pwmanager;
 pub mod ipc;
@@ -674,6 +675,22 @@ pub fn run() {
             bmc_media_insert,
             bmc_media_eject,
             bmc_reset_bmc,
+            proxmox_connect,
+            proxmox_console_ready,
+            proxmox_console_login,
+            proxmox_disconnect,
+            proxmox_session_cert_trust,
+            proxmox_overview,
+            proxmox_resources,
+            proxmox_guest,
+            proxmox_guest_action,
+            proxmox_snapshot_create,
+            proxmox_snapshot_rollback,
+            proxmox_snapshot_delete,
+            proxmox_node_action,
+            proxmox_tasks,
+            proxmox_task_log,
+            proxmox_task_stop,
             // This computer's files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
@@ -1282,6 +1299,22 @@ pub fn run() {
             bmc_media_insert,
             bmc_media_eject,
             bmc_reset_bmc,
+            proxmox_connect,
+            proxmox_console_ready,
+            proxmox_console_login,
+            proxmox_disconnect,
+            proxmox_session_cert_trust,
+            proxmox_overview,
+            proxmox_resources,
+            proxmox_guest,
+            proxmox_guest_action,
+            proxmox_snapshot_create,
+            proxmox_snapshot_rollback,
+            proxmox_snapshot_delete,
+            proxmox_node_action,
+            proxmox_tasks,
+            proxmox_task_log,
+            proxmox_task_stop,
             drag_preview_icon,
             drag_cache_dir,
             dragout_start,

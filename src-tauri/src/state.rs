@@ -62,6 +62,9 @@ pub enum SessionKind {
     /// A server's BMC (iDRAC, iLO...) over Redfish: health, sensors, logs,
     /// power and virtual media; see `crate::bmc`.
     Bmc,
+    /// A Proxmox VE node or cluster over its API: guests, power, snapshots,
+    /// tasks and consoles; see `crate::proxmox`.
+    Proxmox,
 }
 
 impl SessionKind {
@@ -276,6 +279,9 @@ pub struct SessionConfig {
     /// Server management (BMC) only: the certificates it trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bmc: Option<crate::bmc::BmcOptions>,
+    /// Proxmox only: realm, API token and the certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxmox: Option<crate::proxmox::ProxmoxOptions>,
 }
 
 /// How to wake a session's machine over the network.
@@ -683,6 +689,8 @@ pub struct AppState {
     pub ftp_manager: Arc<crate::ftp::FtpManager>,
     /// Open server management (Redfish) sessions.
     pub bmc_manager: Arc<crate::bmc::BmcManager>,
+    /// Open Proxmox sessions.
+    pub proxmox_manager: Arc<crate::proxmox::ProxmoxManager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -733,6 +741,7 @@ impl AppState {
             telnet_manager: Arc::new(tokio::sync::Mutex::new(crate::telnet::TelnetManager::new())),
             ftp_manager: Arc::new(crate::ftp::FtpManager::new()),
             bmc_manager: Arc::new(crate::bmc::BmcManager::new()),
+            proxmox_manager: Arc::new(crate::proxmox::ProxmoxManager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),
