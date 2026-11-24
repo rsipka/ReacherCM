@@ -77,6 +77,8 @@ pub enum Backend {
     Git(GitTarget),
     /// An S3 bucket, on Amazon or any S3-compatible store.
     S3(crate::vault::sync_s3::S3Target),
+    #[cfg(desktop)]
+    Account(crate::vault::sync_account_store::AccountTarget),
 }
 
 /// What an SFTP backend's token holds: whatever logs in.
@@ -106,6 +108,12 @@ impl Backend {
     /// - anything else is a Turso URL.
     pub fn parse(url: &str, token: &str, app_dir: &Path) -> Result<Backend, VaultError> {
         let url = url.trim();
+        if url.starts_with("reachercm-sync:") {
+            #[cfg(desktop)]
+            return crate::vault::sync_account_store::AccountTarget::parse(url, token).map(Backend::Account);
+            #[cfg(not(desktop))]
+            return Err(VaultError::SyncError("Reacher CM Sync vaults require the desktop app".into()));
+        }
         if let Some(path) = url.strip_prefix("folder:") {
             let path = PathBuf::from(path.trim());
             if !path.is_absolute() {
@@ -218,6 +226,8 @@ impl Backend {
             Backend::Smb(_) => "smb",
             Backend::Git(_) => "git",
             Backend::S3(_) => "s3",
+            #[cfg(desktop)]
+            Backend::Account(_) => "account",
         }
     }
 
@@ -239,6 +249,8 @@ impl Backend {
             Backend::Smb(t) => format!("smb:{}@{}:{}/{}/{}", t.user.to_ascii_lowercase(), t.server.to_ascii_lowercase(), t.port, t.share.to_ascii_lowercase(), t.path.to_ascii_lowercase()),
             Backend::Git(t) => format!("git:{}#{}", t.remote, t.branch),
             Backend::S3(t) => t.identity(),
+            #[cfg(desktop)]
+            Backend::Account(t) => t.identity(),
         }
     }
 
@@ -251,6 +263,8 @@ impl Backend {
             Backend::Smb(t) => Store::smb(t).await?,
             Backend::Git(t) => Store::git(t).await?,
             Backend::S3(t) => Store::S3(crate::vault::sync_s3::S3Store::open(t)?),
+            #[cfg(desktop)]
+            Backend::Account(t) => Store::Account(t.clone()),
         }))
     }
 

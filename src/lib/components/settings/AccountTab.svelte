@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { t } from '#lib/state/i18n.svelte.js';
+	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
 	import {
 		bindPreferenceAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
@@ -10,7 +11,9 @@
 	let account = $state<SyncAccount | null>(null);
 	let server = $state('');
 	let label = $state('');
-	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | null>('load');
+	let vaultSync = $state(false);
+	let confirmVaultSync = $state(false);
+	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | 'vault' | null>('load');
 	let error = $state('');
 	let message = $state('');
 
@@ -27,7 +30,10 @@
 	async function load(): Promise<void> {
 		try {
 			account = await invoke<SyncAccount | null>('sync_account_status');
-			if (account) server = account.server;
+			if (account) {
+				server = account.server;
+				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
+			}
 			bindPreferenceAccount(account);
 		} catch (cause) {
 			error = errorKey(cause);
@@ -51,6 +57,7 @@
 			account = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
 			server = account.server;
 			bindPreferenceAccount(account);
+			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			message = '';
 		} catch (cause) {
 			error = errorKey(cause);
@@ -94,6 +101,23 @@
 		}
 	}
 
+	async function enableVaultSync(): Promise<void> {
+		action = 'vault';
+		confirmVaultSync = false;
+		error = '';
+		message = '';
+		try {
+			await invoke('vault_enable_account_sync');
+			vaultSync = true;
+			await refreshVaults();
+			window.dispatchEvent(new CustomEvent('reach:sessions-changed'));
+		} catch (cause) {
+			error = cause instanceof Error ? cause.message : String(cause);
+		} finally {
+			action = null;
+		}
+	}
+
 	async function manage(): Promise<void> {
 		try {
 			await invoke('sync_account_manage');
@@ -128,6 +152,21 @@
 			{/if}
 			{#if preferenceSync.syncing}<p role="status">{t('sync_account.syncing')}</p>{/if}
 			{#if preferenceSync.error}<p class="error" role="alert">{t(preferenceSync.error)}</p>{/if}
+		</div>
+		<div class="preferences">
+			{#if vaultSync}
+				<p role="status">{t('sync_account.vault_enabled')}</p>
+			{:else if action === 'vault'}
+				<p role="status">{t('sync_account.vault_moving')}</p>
+			{:else if confirmVaultSync}
+				<p>{t('sync_account.vault_confirm')}</p>
+				<div class="actions">
+					<button type="button" onclick={enableVaultSync}>{t('common.confirm')}</button>
+					<button type="button" onclick={() => confirmVaultSync = false}>{t('common.cancel')}</button>
+				</div>
+			{:else}
+				<button type="button" disabled={action !== null} onclick={() => confirmVaultSync = true}>{t('sync_account.vault_enable')}</button>
+			{/if}
 		</div>
 	{:else if action === 'load'}
 		<p role="status">{t('sync_account.loading')}</p>

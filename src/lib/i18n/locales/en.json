@@ -4133,5 +4133,9 @@
   "sync_account.sync_preferences": "Sync preferences",
   "sync_account.sync_preferences_desc": "Sync language, base theme mode, and terminal cursor style across signed-in devices.",
   "sync_account.sync_now": "Sync now",
-  "sync_account.syncing": "Syncing preferences…"
+  "sync_account.syncing": "Syncing preferences…",
+  "sync_account.vault_enable": "Use this server for vault sync",
+  "sync_account.vault_enabled": "Encrypted personal vault sync is enabled.",
+  "sync_account.vault_moving": "Uploading and verifying the vault…",
+  "sync_account.vault_confirm": "Move personal vault sync to this server? The existing local files and previous sync location are kept."
 }
