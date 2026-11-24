@@ -134,15 +134,15 @@ pub struct VaultConnection {
 pub(crate) static SYNC_OPERATIONS: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 
 /// Sync every synced vault, or only `only`, with its backend. The manager is
-/// held only to gather what each sync needs and to read the results, never
-/// while a backend answers. Returns the vaults whose contents changed, and
-/// the error of each vault that could not sync.
+/// held to gather each target and install organization key changes. Bundle
+/// sync runs without holding the manager. Returns the changed vaults and the
+/// error of each vault that could not sync.
 pub async fn sync_vaults(
     manager: &tokio::sync::Mutex<VaultManager>,
     only: Option<&str>,
     timed: bool,
 ) -> (Vec<String>, Vec<(String, VaultError)>) {
-    let _operation = SYNC_OPERATIONS.read().await;
+    let _operation = SYNC_OPERATIONS.write().await;
     let targets = match manager.lock().await.sync_targets(only) {
         Ok(t) => t,
         Err(e) => return (Vec::new(), vec![(only.unwrap_or_default().to_string(), e)]),
@@ -153,6 +153,33 @@ pub async fn sync_vaults(
         if timed && !sync_engine::due(&target).await {
             continue;
         }
+        #[cfg(desktop)]
+        let target = if let sync_engine::Backend::Account(account) = &target.backend {
+            if account.organization.is_some() {
+                let updated = async {
+                    let access = VaultManager::organization_access_for(account).await?;
+                    let mut manager = manager.lock().await;
+                    manager.apply_organization_access(&target.vault_id, account, access).await?;
+                    manager.sync_targets(Some(&target.vault_id))?.pop().ok_or(VaultError::Locked)
+                }.await;
+                match updated {
+                    Ok(updated) => updated,
+                    Err(err) => {
+                        if let Some(vault) = manager.lock().await.vaults.get(&target.vault_id) {
+                            if let Ok(conn) = vault.conn() {
+                                let _ = sync_local::set_state(&conn, sync_engine::STATE_LAST_ERROR, &err.to_string()).await;
+                            }
+                        }
+                        failed.push((target.vault_id.clone(), err));
+                        continue;
+                    }
+                }
+            } else {
+                target
+            }
+        } else {
+            target
+        };
         match sync_engine::sync(&target).await {
             Ok(report) => {
                 tracing::debug!(vault = %target.vault_id, ?report, "Vault synced");
@@ -2226,6 +2253,12 @@ impl VaultManager {
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
         let owner_uuid: String = header_row.get(0)?;
         let owner_wrapped_dek_json: String = header_row.get(1)?;
+
+        #[cfg(desktop)]
+        if vault.is_organization_vault() && vault.organization_key_epoch().await? > 0 {
+            vault.master_dek = Some(vault.organization_master(identity).await?);
+            return Ok(());
+        }
 
         if owner_uuid == my_uuid {
             // We're the owner - unwrap with KEK

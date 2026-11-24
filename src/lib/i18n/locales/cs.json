@@ -4277,5 +4277,8 @@
   "bmc.jobs_none": "Žádné úlohy.",
   "bmc.col_job": "Úloha",
   "bmc.col_state": "Stav",
-  "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}"
+  "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}",
+  "organization.rotation_pending": "Nahrávání je pozastaveno, dokud vlastník trezoru nevymění klíč.",
+  "organization.finish_rotation": "Dokončit výměnu klíče",
+  "organization.key_rotated": "Klíč trezoru byl vyměněn."
 }

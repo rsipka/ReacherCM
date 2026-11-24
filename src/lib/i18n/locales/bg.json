@@ -4277,5 +4277,8 @@
   "bmc.jobs_none": "Няма задания.",
   "bmc.col_job": "Задание",
   "bmc.col_state": "Състояние",
-  "bmc.licence_needed": "Контролерът се нуждае от лиценз за това. Съобщава: {{message}}"
+  "bmc.licence_needed": "Контролерът се нуждае от лиценз за това. Съобщава: {{message}}",
+  "organization.rotation_pending": "Качванията са спрени, докато собственикът на хранилището смени ключа.",
+  "organization.finish_rotation": "Завършване на смяната на ключа",
+  "organization.key_rotated": "Ключът на хранилището е сменен."
 }

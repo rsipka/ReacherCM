@@ -187,6 +187,61 @@ fn open(key: &RecordKey, data: &[u8]) -> Result<(HeaderRows, Body), VaultError> 
 }
 
 #[cfg(desktop)]
+pub(super) fn reencrypt_row(
+    row: &mut sync_local::Row,
+    previous: &super::types::Dek,
+    next: &super::types::Dek,
+) -> Result<(), VaultError> {
+    use super::{crypto, types::EncryptedPayload};
+    use secrecy::ExposeSecret;
+
+    let nonce = row.nonce.as_slice().try_into()
+        .map_err(|_| VaultError::DecryptionError("Invalid record nonce".into()))?;
+    let previous_payload = EncryptedPayload {
+        nonce,
+        ciphertext: std::mem::take(&mut row.ciphertext),
+        wrapped_dek: serde_json::from_str(&row.wrapped_dek)?,
+    };
+    let plain = crypto::decrypt_secret(previous, &previous_payload)?;
+    let payload = crypto::encrypt_secret(next, plain.expose_secret())?;
+    row.nonce = payload.nonce.to_vec();
+    row.ciphertext = payload.ciphertext;
+    row.wrapped_dek = serde_json::to_string(&payload.wrapped_dek)?;
+    Ok(())
+}
+
+#[cfg(desktop)]
+pub(super) fn rotate(
+    vault: &str,
+    data: &[u8],
+    previous: &super::types::Dek,
+    next: &super::types::Dek,
+) -> Result<Vec<u8>, VaultError> {
+    let previous_key = RecordKey::derive(previous, vault)?;
+    let next_key = RecordKey::derive(next, vault)?;
+    let (mut rows, mut body) = open(&previous_key, data)?;
+    if !rows.1.is_empty() {
+        return Err(VaultError::SyncError("Invalid organization vault member header".into()));
+    }
+    // Rotated keys use an owner envelope on the server, including when the
+    // original creator no longer owns the vault.
+    rows.0[6] = Value::Text("null".into());
+    body.counter = body.counter.checked_add(1)
+        .ok_or_else(|| VaultError::SyncError("Invalid vault bundle counter".into()))?;
+    for (id, sealed) in &mut body.records {
+        let bytes = BASE64.decode(&*sealed)
+            .map_err(|_| VaultError::DecryptionError("Invalid sealed record".into()))?;
+        let mut record = previous_key.open(id, &bytes)?;
+        if let Some(row) = &mut record.row {
+            reencrypt_row(row, previous, next)?;
+        }
+        *id = next_key.remote_id(&record.id);
+        *sealed = BASE64.encode(next_key.seal(&record)?);
+    }
+    seal(&next_key, &rows, &body)
+}
+
+#[cfg(desktop)]
 pub(crate) fn verify(key: &RecordKey, data: &[u8]) -> Result<HeaderRows, VaultError> {
     open(key, data).map(|(rows, _)| rows)
 }
@@ -201,12 +256,18 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
     #[cfg(desktop)]
     let organization = matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some());
     #[cfg(desktop)]
+    if let Store::Account(account) = store {
+        account.key_epoch = sync_local::state(local, sync_local::KEY_EPOCH_STATE)
+            .await?.and_then(|value| value.parse().ok()).unwrap_or(0);
+    }
+    #[cfg(desktop)]
     let read_only = if organization {
         let mut roles = local.query("SELECT role FROM organization_vault_access WHERE singleton = 1", ()).await?;
-        match roles.next().await? {
-            Some(row) => row.get::<String>(0)? == "viewer",
-            None => return Err(VaultError::AccessDenied("Open the organization vault from Settings → Account".into())),
-        }
+        let role = roles.next().await?
+            .ok_or_else(|| VaultError::AccessDenied("Open the organization vault from Settings → Account".into()))?
+            .get::<String>(0)?;
+        let pending = sync_local::state(local, sync_local::ROTATION_PENDING_STATE).await?;
+        role == "viewer" || pending.as_deref() == Some("1")
     } else {
         false
     };

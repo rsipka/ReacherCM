@@ -241,8 +241,16 @@ async fn an_account_vault_migrates_and_links_without_exposing_records() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[derive(Default)]
+struct OrganizationAccessFixture {
+    signed_in: &'static str,
+    grants: std::collections::BTreeMap<String, Value>,
+    owner_key: Option<String>,
+    epoch: u64,
+}
+
 #[tokio::test]
-async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline() {
+async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
     use crate::ipc::sync_account_commands::{clear_vault_test_account, seed_vault_test_account};
     use axum::routing::put;
     use uuid::Uuid;
@@ -254,25 +262,67 @@ async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline(
     }));
     let org = Uuid::new_v4();
     let vaults = format!("/api/v1/organizations/{org}/vaults");
-    let grant = Arc::new(Mutex::new(None::<Value>));
+    let acl = Arc::new(Mutex::new(OrganizationAccessFixture {
+        signed_in: "owner",
+        ..Default::default()
+    }));
     let router = Router::new()
         .route(&vaults, get({
-            let grant = grant.clone();
+            let acl = acl.clone();
             let remote = remote.clone();
             move || async move {
-                let grant = grant.lock().await;
+                let acl = acl.lock().await;
                 let remote = remote.lock().await;
-                let entries: Vec<_> = remote.id.iter().map(|id| match &*grant {
-                    Some(grant) => json!({"id": id, "role": grant["role"], "wrapped_key": grant["wrapped_key"]}),
-                    None => json!({"id": id, "role": "owner"}),
+                let entries: Vec<_> = remote.id.iter().filter_map(|id| {
+                    if acl.signed_in == "owner" {
+                        return Some(json!({"id": id, "role": "owner", "wrapped_key": acl.owner_key, "key_epoch": acl.epoch}));
+                    }
+                    let grant = acl.grants.get(acl.signed_in)?;
+                    Some(json!({"id": id, "role": grant["role"], "wrapped_key": grant["wrapped_key"], "key_epoch": acl.epoch}))
                 }).collect();
                 Json(entries)
             }
         }))
-        .route(&format!("{vaults}/{{id}}/members/recipient"), put({
-            let grant = grant.clone();
-            move |Json(value): Json<Value>| async move {
-                *grant.lock().await = Some(value);
+        .route(&format!("{vaults}/{{id}}/members/{{username}}"), put({
+            let acl = acl.clone();
+            move |Path((_id, username)): Path<(String, String)>, Json(value): Json<Value>| async move {
+                acl.lock().await.grants.insert(username, value);
+                StatusCode::NO_CONTENT
+            }
+        }))
+        .route(&format!("{vaults}/{{id}}/rotation"), get({
+            let acl = acl.clone();
+            let remote = remote.clone();
+            move || async move {
+                let acl = acl.lock().await;
+                let remote = remote.lock().await;
+                let grants: Vec<_> = acl.grants.iter().map(|(username, grant)| json!({
+                    "username": username, "recipient_proof": grant["recipient_proof"]
+                })).collect();
+                Json(json!({
+                    "key_epoch": acl.epoch, "acl_version": 0, "revision": remote.tag(), "grants": grants
+                }))
+            }
+        }).put({
+            let acl = acl.clone();
+            let remote = remote.clone();
+            move |headers: HeaderMap, bytes: Bytes| async move {
+                let size = u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize;
+                let metadata: Value = serde_json::from_slice(&bytes[4..4 + size]).unwrap();
+                let mut acl = acl.lock().await;
+                let mut remote = remote.lock().await;
+                assert_eq!(headers[header::IF_MATCH], remote.tag());
+                assert_eq!(metadata["key_epoch"], acl.epoch);
+                acl.grants.remove(metadata["revoke"].as_str().unwrap()).unwrap();
+                for (username, next) in metadata["grants"].as_object().unwrap() {
+                    let grant = acl.grants.get_mut(username).unwrap();
+                    grant["wrapped_key"] = next["wrapped_key"].clone();
+                    grant["recipient_proof"] = next["recipient_proof"].clone();
+                }
+                acl.owner_key = metadata["owner_key"].as_str().map(str::to_owned);
+                acl.epoch += 1;
+                remote.bytes = bytes[4 + size..].to_vec();
+                remote.revision += 1;
                 StatusCode::NO_CONTENT
             }
         }))
@@ -315,6 +365,20 @@ async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline(
         .await
         .unwrap();
 
+    let removed_secret = x25519_dalek::StaticSecret::from(rand::random::<[u8; 32]>());
+    let removed_key = BASE64.encode(PublicKey::from(&removed_secret).as_bytes());
+    owner
+        .change_organization_grant(&info.id, "removed", Some("viewer"), &removed_key)
+        .await
+        .unwrap();
+    let previous_master = owner.vaults[&info.id]
+        .master_dek
+        .as_ref()
+        .unwrap()
+        .with_key(|key| Dek::from_fn(|copy| copy.copy_from_slice(key)));
+    let previous_key = sync_record::RecordKey::derive(&previous_master, &info.id).unwrap();
+
+    acl.lock().await.signed_in = "recipient";
     let account = seed_vault_test_account(&url, "recipient").await;
     let id = Uuid::parse_str(&info.id).unwrap();
     recipient
@@ -336,7 +400,7 @@ async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline(
         Err(VaultError::AccessDenied(_))
     ));
 
-    grant.lock().await.as_mut().unwrap()["role"] = json!("editor");
+    acl.lock().await.grants.get_mut("recipient").unwrap()["role"] = json!("editor");
     recipient
         .open_organization_vault(&account, org, id)
         .await
@@ -345,9 +409,41 @@ async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline(
         .update_secret(&info.id, &record, value("editor edit"))
         .await
         .unwrap();
-    assert_eq!(flush(&recipient, &info.id).await.pushed, 1);
+    acl.lock().await.signed_in = "owner";
+    seed_vault_test_account(&url, "owner").await;
+    owner
+        .change_organization_grant(&info.id, "removed", None, "")
+        .await
+        .unwrap();
+    assert!(crate::vault::sync_bundle::verify(&previous_key, &remote.lock().await.bytes).is_err());
 
+    acl.lock().await.signed_in = "recipient";
+    seed_vault_test_account(&url, "recipient").await;
+    let recipient = Mutex::new(recipient);
+    let (_, failures) = sync_vaults(&recipient, Some(&info.id), false).await;
+    assert!(failures.is_empty(), "{failures:?}");
+    assert_eq!(
+        recipient.lock().await.vaults[&info.id]
+            .organization_key_epoch()
+            .await
+            .unwrap(),
+        1
+    );
     drop(recipient);
+
+    acl.lock().await.signed_in = "owner";
+    seed_vault_test_account(&url, "owner").await;
+    assert_eq!(flush(&owner, &info.id).await.pulled, 1);
+    assert_eq!(
+        owner
+            .read_secret(&info.id, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"editor edit"
+    );
+    assert!(crate::vault::sync_bundle::verify(&previous_key, &remote.lock().await.bytes).is_err());
+
     clear_vault_test_account().await;
     service.abort();
     let mut restarted = VaultManager::new(dir.path().join("recipient"));
