@@ -218,6 +218,8 @@ ironrdp-rdpdr = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54b
 ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
 # RemoteApp (RAIL) launch and window commands; see src/rdp/remote_app.rs.
 ironrdp-rail = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
+# Kerberos login settings for CredSSP; see src/rdp/kerberos.rs.
+ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false }
 ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false, features = ["rustls"] }
 # H.264 for the graphics pipeline: OpenH264 compiled in (the user's call; see the changelog).
 ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", features = ["openh264-bundled"] }

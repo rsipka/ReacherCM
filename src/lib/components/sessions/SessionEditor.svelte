@@ -123,6 +123,12 @@
 	let rdpKeepalive = $state('');
 	let rdpJiggler = $state('');
 	let rdpAdmin = $state(false);
+	/** More local folders shared as drives (desktops), and every local drive. */
+	let rdpDrives = $state<string[]>([]);
+	let rdpAllDrives = $state(false);
+	/** '' for NTLM, 'kerberos' for Kerberos with NTLM as the fallback. */
+	let rdpAuth = $state<'' | 'kerberos'>('');
+	let rdpKdc = $state('');
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
 	let rdpRemoteApp = $state(false);
@@ -182,6 +188,10 @@
 		rdpKeepalive = o?.keepalive ? String(o.keepalive) : '';
 		rdpJiggler = o?.jiggler ? String(o.jiggler) : '';
 		rdpAdmin = o?.admin === true;
+		rdpDrives = [...(o?.drives ?? [])];
+		rdpAllDrives = o?.all_drives === true;
+		rdpAuth = o?.auth === 'kerberos' ? 'kerberos' : '';
+		rdpKdc = o?.kdc ?? '';
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
 		rdpRemoteApp = o?.remote_app === true;
@@ -210,6 +220,10 @@
 			keepalive: num(rdpKeepalive),
 			jiggler: num(rdpJiggler),
 			admin: rdpAdmin || null,
+			drives: rdpDrives.map((d) => d.trim()).filter(Boolean).length ? rdpDrives.map((d) => d.trim()).filter(Boolean) : null,
+			all_drives: rdpAllDrives || null,
+			auth: rdpAuth || null,
+			kdc: rdpAuth && rdpKdc.trim() ? rdpKdc.trim() : null,
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
 			remote_app: rdpProgram.trim() && rdpRemoteApp ? true : null,
@@ -1203,6 +1217,16 @@
 		}
 	}
 
+	/** Another shared folder, picked in the folder dialog. */
+	async function addDrive(): Promise<void> {
+		try {
+			const selected = await openDialog({ multiple: false, directory: true, title: t('session.rdp_share_folder') });
+			if (typeof selected === 'string' && !rdpDrives.includes(selected)) rdpDrives = [...rdpDrives, selected];
+		} catch {
+			// User cancelled the dialog
+		}
+	}
+
 	function addHop(): void {
 		jumpHops = [...jumpHops, { host: '', port: '22', username: 'root', authType: 'Password', password: '', keyPath: '', keyPassphrase: '', passwordRef: null, keyPassphraseRef: null, credentialId: '', read: null }];
 	}
@@ -1401,6 +1425,18 @@
 			</div>
 			<Input label={t('session.rdp_domain')} bind:value={domain} placeholder="CORP" disabled={saving} />
 			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="rdp-auth">{t('session.rdp_auth')}</label>
+				<select id="rdp-auth" class="via-select" bind:value={rdpAuth} disabled={saving}>
+					<option value="">{t('session.rdp_auth_ntlm')}</option>
+					<option value="kerberos">{t('session.rdp_auth_kerberos')}</option>
+				</select>
+				{#if rdpAuth === 'kerberos'}
+					<p class="shell-hint">{t('session.rdp_auth_kerberos_hint')}</p>
+					<Input label={t('session.rdp_kdc')} bind:value={rdpKdc} placeholder="dc01.example.com" disabled={saving} />
+					<p class="shell-hint">{t('session.rdp_kdc_hint')}</p>
+				{/if}
+			</div>
 			<div class="auth-section">
 				<span class="auth-label">{t('session.os')}</span>
 				<div class="auth-toggle">
@@ -1453,6 +1489,30 @@
 					</Button>
 				</div>
 				<p class="shell-hint">{t('session.rdp_share_hint')}</p>
+			</div>
+			{/if}
+			{#if !isMobile()}
+			<div class="shell-field">
+				{#each rdpDrives as _, i (i)}
+					<div class="key-path-row">
+						<div class="key-path-input">
+							<Input label={t('session.rdp_share_more', { n: String(i + 2) })} bind:value={rdpDrives[i]} disabled={saving} />
+						</div>
+						<Button variant="secondary" size="sm" onclick={() => (rdpDrives = rdpDrives.filter((_, j) => j !== i))} disabled={saving}>
+							{t('session.rdp_share_remove')}
+						</Button>
+					</div>
+				{/each}
+				{#if rdpDrives.length < 16}
+					<div>
+						<Button variant="secondary" size="sm" onclick={addDrive} disabled={saving}>{t('session.rdp_share_add')}</Button>
+					</div>
+				{/if}
+				<label class="jump-toggle">
+					<input type="checkbox" bind:checked={rdpAllDrives} disabled={saving} />
+					<span class="jump-toggle-text">{t('session.rdp_share_all_drives')}</span>
+				</label>
+				<p class="shell-hint">{t('session.rdp_share_all_drives_hint')}</p>
 			</div>
 			{/if}
 			{#if !isMobile()}

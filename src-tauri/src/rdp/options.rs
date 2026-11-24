@@ -67,7 +67,27 @@ pub struct RdpOptions {
     /// host (SFTP). Unset: 22.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files_port: Option<u16>,
+    /// More local folders shown inside the desktop as drives, beside the
+    /// session's shared folder. Desktops only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drives: Option<Vec<String>>,
+    /// Every local drive as well: the drive letters on Windows; on macOS
+    /// and Linux the home folder, the root and mounted disks. Desktops only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all_drives: Option<bool>,
+    /// `kerberos` to log in with Kerberos (falling back to NTLM when no KDC
+    /// answers). Unset: NTLM, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<String>,
+    /// Kerberos only: the KDC, `dc.example.com[:88]`, or a KDC proxy URL
+    /// (`https://gw.example.com/KdcProxy`). Unset: looked up in DNS and the
+    /// system's Kerberos settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kdc: Option<String>,
 }
+
+/// The most extra drives a session keeps.
+pub const MAX_DRIVES: usize = 16;
 
 /// The SSH port Open file manager uses when the session names none.
 pub const FILES_PORT: u16 = 22;
@@ -100,6 +120,19 @@ impl RdpOptions {
             program: text(self.program),
             work_dir: text(self.work_dir),
             files_port: self.files_port.filter(|p| *p != 0 && *p != FILES_PORT),
+            drives: self.drives.map(|list| {
+                let mut kept: Vec<String> = Vec::new();
+                for d in list.into_iter().filter_map(|d| text(Some(d))) {
+                    if !kept.contains(&d) && kept.len() < MAX_DRIVES {
+                        kept.push(d);
+                    }
+                }
+                kept
+            })
+            .filter(|l| !l.is_empty()),
+            all_drives: self.all_drives.filter(|a| *a),
+            kdc: if self.auth.as_deref() == Some("kerberos") { text(self.kdc).filter(|k| kdc_url(k).is_some()) } else { None },
+            auth: one_of(self.auth, &["kerberos"]),
         };
         // A RemoteApp, its arguments and the start folder mean nothing without a program.
         let tidy = if tidy.program.is_none() {
@@ -140,6 +173,25 @@ impl RdpOptions {
             _ => None,
         }
     }
+}
+
+/// The KDC a session names, as the URL Kerberos takes: a proxy URL as it
+/// is, a host with or without a port as `tcp://host:port` (88 unless said).
+pub fn kdc_url(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() || text.contains(char::is_whitespace) {
+        return None;
+    }
+    if text.starts_with("https://") || text.starts_with("http://") || text.starts_with("tcp://") || text.starts_with("udp://") {
+        return url::Url::parse(text).ok().filter(|u| u.host_str().is_some()).map(|_| text.to_string());
+    }
+    let (host, port) = match text.rsplit_once(':') {
+        Some((h, p)) if !h.contains(':') => (h, p.parse::<u16>().ok().filter(|p| *p != 0)?),
+        Some(_) => return None,
+        None => (text, 88),
+    };
+    let ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    ok.then(|| format!("tcp://{host}:{port}"))
 }
 
 /// `1920x1080` as a size the server takes (200 to 8192 each way).
@@ -201,6 +253,31 @@ mod tests {
         let o = RdpOptions { program: Some("notepad".into()), remote_app: Some(true), app_args: Some("a.txt".into()), ..Default::default() }.tidy().unwrap();
         assert!(o.is_remote_app());
         assert_eq!(o.app_args.as_deref(), Some("a.txt"));
+    }
+
+    #[test]
+    fn kdc_forms() {
+        assert_eq!(kdc_url("dc.example.com").as_deref(), Some("tcp://dc.example.com:88"));
+        assert_eq!(kdc_url("dc.example.com:8888").as_deref(), Some("tcp://dc.example.com:8888"));
+        assert_eq!(kdc_url("https://gw.example.com/KdcProxy").as_deref(), Some("https://gw.example.com/KdcProxy"));
+        assert_eq!(kdc_url("dc example"), None);
+        assert_eq!(kdc_url("dc.example.com:x"), None);
+    }
+
+    #[test]
+    fn drives_and_kerberos_tidied() {
+        let o = RdpOptions {
+            drives: Some(vec![" /srv/a ".into(), "/srv/a".into(), "".into()]),
+            kdc: Some("dc.example.com".into()),
+            ..Default::default()
+        }
+        .tidy()
+        .unwrap();
+        assert_eq!(o.drives, Some(vec!["/srv/a".to_string()]));
+        // No KDC without Kerberos.
+        assert_eq!(o.kdc, None);
+        let o = RdpOptions { auth: Some("kerberos".into()), kdc: Some(" dc.example.com ".into()), ..Default::default() }.tidy().unwrap();
+        assert_eq!((o.auth.as_deref(), o.kdc.as_deref()), (Some("kerberos"), Some("dc.example.com")));
     }
 
     #[test]

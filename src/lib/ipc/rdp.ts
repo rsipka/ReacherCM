@@ -75,6 +75,14 @@ export interface RdpOptions {
 	/** The SSH port the session menu's Open file manager uses (SFTP on the
 	 *  same host). Absent: 22. */
 	files_port?: number | null;
+	/** More local folders shown as drives (desktops). */
+	drives?: string[] | null;
+	/** Every local drive as well (desktops). */
+	all_drives?: boolean | null;
+	/** `kerberos`: log in with Kerberos, NTLM as the fallback. */
+	auth?: 'kerberos' | null;
+	/** Kerberos only: the KDC host or KDC proxy URL; unset: found in DNS. */
+	kdc?: string | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */
