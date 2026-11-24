@@ -39,7 +39,7 @@ uuid = { version = "1", features = ["v4"] }
 # SSH
 # ring, the crypto the rest of the app installs for rustls (see run() in
 # lib.rs). rsa keeps RSA keys working.
-russh = { version = "0.63", default-features = false, features = ["ring", "rsa", "des", "flate2"] }
+russh = { version = "0.65", default-features = false, features = ["ring", "rsa", "des", "flate2"] }
 # The SFTP subsystem, for vault sync to an SFTP server.
 russh-sftp = "3.0.1"
 url = "2.5.9"

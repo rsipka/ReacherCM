@@ -19,7 +19,6 @@ use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 use delegate::delegate;
-use digest::typenum::{U16, U20, U32, U64};
 use hmac::Hmac;
 use md5_hash::Md5;
 use ripemd::Ripemd160;
@@ -121,42 +120,42 @@ pub const HMAC_RIPEMD160_OPENSSH: Name = Name("hmac-ripemd160@openssh.com");
 pub const HMAC_RIPEMD160_ETM: Name = Name("hmac-ripemd160-etm@openssh.com");
 
 pub(crate) static _NONE: NoMacAlgorithm = NoMacAlgorithm {};
-pub(crate) static _HMAC_SHA1: CryptoMacAlgorithm<Hmac<Sha1>, U20> =
-    CryptoMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_SHA256: CryptoMacAlgorithm<Hmac<Sha256>, U32> =
-    CryptoMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_SHA512: CryptoMacAlgorithm<Hmac<Sha512>, U64> =
-    CryptoMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_SHA1_ETM: CryptoEtmMacAlgorithm<Hmac<Sha1>, U20> =
-    CryptoEtmMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_SHA256_ETM: CryptoEtmMacAlgorithm<Hmac<Sha256>, U32> =
-    CryptoEtmMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_SHA512_ETM: CryptoEtmMacAlgorithm<Hmac<Sha512>, U64> =
-    CryptoEtmMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_MD5: CryptoMacAlgorithm<Hmac<Md5>, U16> =
-    CryptoMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_MD5_96: TruncatedMacAlgorithm<CryptoMacAlgorithm<Hmac<Md5>, U16>> =
+pub(crate) static _HMAC_SHA1: CryptoMacAlgorithm<Hmac<Sha1>, 20> =
+    CryptoMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_SHA256: CryptoMacAlgorithm<Hmac<Sha256>, 32> =
+    CryptoMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_SHA512: CryptoMacAlgorithm<Hmac<Sha512>, 64> =
+    CryptoMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_SHA1_ETM: CryptoEtmMacAlgorithm<Hmac<Sha1>, 20> =
+    CryptoEtmMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_SHA256_ETM: CryptoEtmMacAlgorithm<Hmac<Sha256>, 32> =
+    CryptoEtmMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_SHA512_ETM: CryptoEtmMacAlgorithm<Hmac<Sha512>, 64> =
+    CryptoEtmMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_MD5: CryptoMacAlgorithm<Hmac<Md5>, 16> =
+    CryptoMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_MD5_96: TruncatedMacAlgorithm<CryptoMacAlgorithm<Hmac<Md5>, 16>> =
     TruncatedMacAlgorithm {
-        inner: CryptoMacAlgorithm(PhantomData, PhantomData),
+        inner: CryptoMacAlgorithm(PhantomData),
         len: 12,
     };
-pub(crate) static _HMAC_SHA1_96: TruncatedMacAlgorithm<CryptoMacAlgorithm<Hmac<Sha1>, U20>> =
+pub(crate) static _HMAC_SHA1_96: TruncatedMacAlgorithm<CryptoMacAlgorithm<Hmac<Sha1>, 20>> =
     TruncatedMacAlgorithm {
-        inner: CryptoMacAlgorithm(PhantomData, PhantomData),
+        inner: CryptoMacAlgorithm(PhantomData),
         len: 12,
     };
-pub(crate) static _HMAC_MD5_ETM: CryptoEtmMacAlgorithm<Hmac<Md5>, U16> =
-    CryptoEtmMacAlgorithm(PhantomData, PhantomData);
+pub(crate) static _HMAC_MD5_ETM: CryptoEtmMacAlgorithm<Hmac<Md5>, 16> =
+    CryptoEtmMacAlgorithm(PhantomData);
 pub(crate) static _HMAC_MD5_96_ETM: TruncatedMacAlgorithm<
-    CryptoEtmMacAlgorithm<Hmac<Md5>, U16>,
+    CryptoEtmMacAlgorithm<Hmac<Md5>, 16>,
 > = TruncatedMacAlgorithm {
-    inner: CryptoEtmMacAlgorithm(PhantomData, PhantomData),
+    inner: CryptoEtmMacAlgorithm(PhantomData),
     len: 12,
 };
 pub(crate) static _HMAC_SHA1_96_ETM: TruncatedMacAlgorithm<
-    CryptoEtmMacAlgorithm<Hmac<Sha1>, U20>,
+    CryptoEtmMacAlgorithm<Hmac<Sha1>, 20>,
 > = TruncatedMacAlgorithm {
-    inner: CryptoEtmMacAlgorithm(PhantomData, PhantomData),
+    inner: CryptoEtmMacAlgorithm(PhantomData),
     len: 12,
 };
 pub(crate) static _UMAC_64: UmacAlgorithm = UmacAlgorithm {
@@ -175,10 +174,10 @@ pub(crate) static _UMAC_128_ETM: UmacAlgorithm = UmacAlgorithm {
     taglen: 16,
     etm: true,
 };
-pub(crate) static _HMAC_RIPEMD160: CryptoMacAlgorithm<Hmac<Ripemd160>, U20> =
-    CryptoMacAlgorithm(PhantomData, PhantomData);
-pub(crate) static _HMAC_RIPEMD160_ETM: CryptoEtmMacAlgorithm<Hmac<Ripemd160>, U20> =
-    CryptoEtmMacAlgorithm(PhantomData, PhantomData);
+pub(crate) static _HMAC_RIPEMD160: CryptoMacAlgorithm<Hmac<Ripemd160>, 20> =
+    CryptoMacAlgorithm(PhantomData);
+pub(crate) static _HMAC_RIPEMD160_ETM: CryptoEtmMacAlgorithm<Hmac<Ripemd160>, 20> =
+    CryptoEtmMacAlgorithm(PhantomData);
 
 pub const ALL_MAC_ALGORITHMS: &[&Name] = &[
     &NONE,

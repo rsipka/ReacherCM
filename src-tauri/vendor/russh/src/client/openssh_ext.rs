@@ -130,7 +130,7 @@ impl Session {
             }
         });
         self.open_global_requests
-            .push_back(GlobalRequestResponse::HostKeysProve(keys, reply));
+            .push_back(GlobalRequestResponse::HostKeysProveEach(keys, reply));
         Ok(())
     }
 
