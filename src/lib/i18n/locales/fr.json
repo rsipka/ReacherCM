@@ -4283,5 +4283,14 @@
   "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}",
   "organization.rotation_pending": "Les envois sont suspendus jusqu’à ce que le propriétaire du coffre renouvelle la clé.",
   "organization.finish_rotation": "Terminer le renouvellement de la clé",
-  "organization.key_rotated": "Clé du coffre renouvelée."
+  "organization.key_rotated": "Clé du coffre renouvelée.",
+  "bmc.remote_console": "Console distante",
+  "bmc.text_console": "Console texte",
+  "bmc.text_console_intro": "Ouvre un onglet SSH vers le contrôleur et tape sa commande de console série, pour voir la console texte du serveur (BIOS, démarrage, connexion série Linux). La connexion se fait comme pour cette session.",
+  "bmc.console_port": "Port SSH",
+  "bmc.console_command": "Commande après connexion",
+  "bmc.console_command_none": "Aucune : la connexion ouvre la console",
+  "bmc.console_command_hint": "Rempli pour ce contrôleur : console com2 sur un iDRAC, vsp sur un iLO, console 1 sur un XCC. Laissez vide pour un contrôleur dont le SSH ouvre lui-même la console (OpenBMC sur le port 2200).",
+  "bmc.console_open": "Ouvrir",
+  "bmc.console_bad_port": "Indiquez un port de 1 à 65535."
 }

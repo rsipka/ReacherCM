@@ -1122,6 +1122,7 @@
 
 		const taking = untrack(() => handoff);
 		if (taking) holding = [];
+		const typeLater = afterLoginTyper();
 		unlistenData = await listen<Chunk>(dataEventName, (event) => {
 			const payload = event.payload;
 			if (holding) {
@@ -1129,6 +1130,7 @@
 				return;
 			}
 			writeChunk(term, payload);
+			typeLater?.();
 			recent.push(payload);
 			if (recent.length > TAIL_CHUNKS) recent.shift();
 		});
@@ -1167,6 +1169,30 @@
 		if (termType === 'ssh' && currentConnectionId) {
 			sshReady(currentConnectionId).catch(() => {});
 		}
+	}
+
+	/** The line to type once logged in (`SshConnectParams.afterLogin`):
+	 *  when the server has been quiet for a moment after its output, or
+	 *  after a few seconds if it prints nothing. Returns what to call on
+	 *  each piece of output; none when there is nothing to type. */
+	function afterLoginTyper(): (() => void) | undefined {
+		const line = termType === 'ssh' ? untrack(() => sshConnectParams?.afterLogin?.trim()) : undefined;
+		if (!line) return undefined;
+		let done = false;
+		let quiet: ReturnType<typeof setTimeout> | undefined;
+		const type = () => {
+			if (done || disconnected) return;
+			done = true;
+			clearTimeout(quiet);
+			clearTimeout(latest);
+			sendData(Array.from(new TextEncoder().encode(`${line}\r`)));
+		};
+		const latest = setTimeout(type, 5000);
+		return () => {
+			if (done) return;
+			clearTimeout(quiet);
+			quiet = setTimeout(type, 600);
+		};
 	}
 
 	/** When the current session's listeners went up. */

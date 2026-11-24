@@ -4283,5 +4283,14 @@
   "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}",
   "organization.rotation_pending": "Las subidas están pausadas hasta que el propietario de la bóveda cambie la clave.",
   "organization.finish_rotation": "Completar el cambio de clave",
-  "organization.key_rotated": "Clave de la bóveda cambiada."
+  "organization.key_rotated": "Clave de la bóveda cambiada.",
+  "bmc.remote_console": "Consola remota",
+  "bmc.text_console": "Consola de texto",
+  "bmc.text_console_intro": "Abre una pestaña SSH al controlador y escribe su comando de consola serie, para ver la consola de texto del servidor (BIOS, arranque, inicio de sesión serie de Linux). Inicia sesión como esta sesión.",
+  "bmc.console_port": "Puerto SSH",
+  "bmc.console_command": "Comando tras iniciar sesión",
+  "bmc.console_command_none": "Ninguno: el inicio de sesión abre la consola",
+  "bmc.console_command_hint": "Rellenado para este controlador: console com2 en un iDRAC, vsp en un iLO, console 1 en un XCC. Déjelo vacío si el SSH del controlador abre la consola por sí mismo (OpenBMC en el puerto 2200).",
+  "bmc.console_open": "Abrir",
+  "bmc.console_bad_port": "Indique un puerto de 1 a 65535."
 }

@@ -4283,5 +4283,14 @@
   "bmc.licence_needed": "Контролерът се нуждае от лиценз за това. Съобщава: {{message}}",
   "organization.rotation_pending": "Качванията са спрени, докато собственикът на хранилището смени ключа.",
   "organization.finish_rotation": "Завършване на смяната на ключа",
-  "organization.key_rotated": "Ключът на хранилището е сменен."
+  "organization.key_rotated": "Ключът на хранилището е сменен.",
+  "bmc.remote_console": "Отдалечена конзола",
+  "bmc.text_console": "Текстова конзола",
+  "bmc.text_console_intro": "Отваря SSH раздел към контролера и въвежда командата му за серийна конзола, за да виждате текстовата конзола на сървъра (BIOS, зареждане, сериен вход в Linux). Влиза по същия начин като тази сесия.",
+  "bmc.console_port": "SSH порт",
+  "bmc.console_command": "Команда след вход",
+  "bmc.console_command_none": "Няма: входът отваря конзолата",
+  "bmc.console_command_hint": "Попълнено за този контролер: console com2 за iDRAC, vsp за iLO, console 1 за XCC. Оставете празно за контролер, чийто SSH сам отваря конзолата (OpenBMC на порт 2200).",
+  "bmc.console_open": "Отвори",
+  "bmc.console_bad_port": "Посочете порт от 1 до 65535."
 }

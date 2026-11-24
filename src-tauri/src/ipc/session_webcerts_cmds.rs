@@ -112,6 +112,11 @@ pub async fn web_session_cert_answer(
     trust: bool,
 ) -> Result<(), String> {
     let Some((session_id, cert)) = crate::web::window::answer(&label, &fingerprint, trust)? else { return Ok(()) };
+    // A server management session's console window: kept with the
+    // certificates its Redfish connection trusts.
+    if stored_session(&state, &session_id).await.is_ok_and(|s| s.kind == crate::state::SessionKind::Bmc) {
+        return super::ftp::trust_session_cert(&state, &session_id, &cert.sha256, "bmc").await;
+    }
     let manager = state.vault_manager.lock().await;
     edit_certs(&manager, &session_id, |certs| {
         put(certs, cert);

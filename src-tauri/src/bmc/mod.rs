@@ -59,6 +59,8 @@ pub struct BmcConn {
 pub struct Opened {
     pub vendor: String,
     pub product: Option<String>,
+    /// What to type for the serial console after an SSH login (may be empty).
+    pub console_command: String,
 }
 
 fn first(v: &Value, key: &str) -> Option<String> {
@@ -104,7 +106,11 @@ impl BmcConn {
     }
 
     pub fn opened(&self) -> Opened {
-        Opened { vendor: self.vendor.to_string(), product: s(&self.root, "Product") }
+        Opened {
+            vendor: self.vendor.to_string(),
+            product: s(&self.root, "Product"),
+            console_command: self.text_console_command().to_string(),
+        }
     }
 
     fn remember<'a>(&self, paths: impl IntoIterator<Item = &'a String>) {
@@ -391,6 +397,56 @@ impl BmcConn {
             json!({})
         };
         self.client.post(&target, &body).await.map(|_| ())
+    }
+}
+
+/// How the controller's own console page opens.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConsoleLaunch {
+    /// Path and query on the controller's web server.
+    pub path: String,
+    /// The sign-in preset for its login form (`WebOptions::login`): `off`
+    /// when the address signs in by itself, `None` for any login form.
+    pub login: Option<&'static str>,
+}
+
+impl BmcConn {
+    /// Where the controller's remote console opens. An iDRAC 9 hands out a
+    /// one-time login for its HTML5 console; the others open their web
+    /// interface, signed in, with the console a click away.
+    pub async fn console(&self) -> Result<ConsoleLaunch, BmcError> {
+        match self.vendor {
+            "dell" => match self.dell_kvm().await {
+                Ok(path) => Ok(ConsoleLaunch { path, login: Some("off") }),
+                // No console without the licence: said as it is.
+                Err(e @ BmcError::Licence(_)) => Err(e),
+                Err(e) => {
+                    tracing::info!("iDRAC one-time console login not offered ({e}); opening its web interface");
+                    Ok(ConsoleLaunch { path: "/".into(), login: Some("idrac") })
+                }
+            },
+            "hpe" => Ok(ConsoleLaunch { path: "/".into(), login: Some("ilo") }),
+            _ => Ok(ConsoleLaunch { path: "/".into(), login: None }),
+        }
+    }
+
+    async fn dell_kvm(&self) -> Result<String, BmcError> {
+        let m = self.manager.as_ref().ok_or_else(|| BmcError::Other("No BMC found".into()))?;
+        let service = format!("{m}/Oem/Dell/DelliDRACCardService");
+        let actions = format!("{service}/Actions/DelliDRACCardService");
+        // Dell's own scripts export the certificate first; some firmware
+        // wants it done before a console session is given.
+        let _ = self.client.post_for(&format!("{actions}.ExportSSLCertificate"), &json!({ "SSLCertType": "Server" })).await;
+        let v = self.client.post_for(&format!("{actions}.GetKVMSession"), &json!({ "SessionTypeName": "idrac_cert_file.txt" })).await?;
+        let (Some(user), Some(pass)) = (s(&v, "TempUsername"), s(&v, "TempPassword")) else {
+            return Err(BmcError::Other("The iDRAC gave no console login".into()));
+        };
+        Ok(model::dell_console_path(self.client.username(), &user, &pass))
+    }
+
+    /// What to type for the serial console after an SSH login to it.
+    pub fn text_console_command(&self) -> &'static str {
+        model::text_console_command(self.vendor)
     }
 }
 

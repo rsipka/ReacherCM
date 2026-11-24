@@ -4283,5 +4283,14 @@
   "bmc.licence_needed": "控制器需要许可证才能执行此操作。它报告：{{message}}",
   "organization.rotation_pending": "上传已暂停，直到保险库所有者更换密钥。",
   "organization.finish_rotation": "完成密钥轮换",
-  "organization.key_rotated": "保险库密钥已更换。"
+  "organization.key_rotated": "保险库密钥已更换。",
+  "bmc.remote_console": "远程控制台",
+  "bmc.text_console": "文本控制台",
+  "bmc.text_console_intro": "打开到控制器的 SSH 标签页并输入其串行控制台命令，以查看服务器的文本控制台（BIOS、启动过程、Linux 串口登录）。登录方式与此会话相同。",
+  "bmc.console_port": "SSH 端口",
+  "bmc.console_command": "登录后执行的命令",
+  "bmc.console_command_none": "无：登录即打开控制台",
+  "bmc.console_command_hint": "已按此控制器填写：iDRAC 为 console com2，iLO 为 vsp，XCC 为 console 1。如果控制器的 SSH 本身就打开控制台（OpenBMC 的 2200 端口），请留空。",
+  "bmc.console_open": "打开",
+  "bmc.console_bad_port": "请输入 1 到 65535 之间的端口。"
 }

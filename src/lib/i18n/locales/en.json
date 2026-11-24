@@ -4283,5 +4283,14 @@
   "bmc.licence_needed": "The controller needs a licence for this. It said: {{message}}",
   "organization.rotation_pending": "Uploads are paused until the vault owner rotates the key.",
   "organization.finish_rotation": "Finish key rotation",
-  "organization.key_rotated": "Vault key rotated."
+  "organization.key_rotated": "Vault key rotated.",
+  "bmc.remote_console": "Remote console",
+  "bmc.text_console": "Text console",
+  "bmc.text_console_intro": "Opens an SSH tab to the controller and types its serial console command, so you see the server's text console (BIOS, boot, a Linux serial login). It logs in as this session does.",
+  "bmc.console_port": "SSH port",
+  "bmc.console_command": "Command after login",
+  "bmc.console_command_none": "None: the login opens the console",
+  "bmc.console_command_hint": "Filled in for this controller: console com2 on an iDRAC, vsp on an iLO, console 1 on an XCC. Leave empty for a controller whose SSH opens the console itself (OpenBMC on port 2200).",
+  "bmc.console_open": "Open",
+  "bmc.console_bad_port": "Give a port from 1 to 65535."
 }
