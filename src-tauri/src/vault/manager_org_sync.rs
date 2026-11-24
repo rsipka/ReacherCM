@@ -41,6 +41,14 @@ pub struct OrganizationVaultGrant {
 struct Envelope {
     issuer: String,
     wrapped: WrappedDek,
+    #[serde(default)]
+    scope: Option<EnvelopeScope>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct EnvelopeScope {
+    epoch: u64,
+    role: String,
 }
 
 #[derive(Deserialize)]
@@ -155,6 +163,7 @@ fn wrapping_key(
     identity: &UserIdentity,
     peer: &PublicKey,
     target: &AccountTarget,
+    scope: Option<&EnvelopeScope>,
 ) -> Result<zeroize::Zeroizing<[u8; 32]>, VaultError> {
     let shared = identity.with_secret(|key| key.diffie_hellman(peer));
     if !shared.was_contributory() {
@@ -162,8 +171,17 @@ fn wrapping_key(
     }
     let mut key = zeroize::Zeroizing::new([0; 32]);
     let context = key_context(target)?;
+    let info = match scope {
+        Some(scope) => {
+            let mut info = b"reachercm-organization-vault-envelope-v2\0".to_vec();
+            info.extend_from_slice(&scope.epoch.to_be_bytes());
+            info.extend_from_slice(scope.role.as_bytes());
+            info
+        }
+        None => b"reachercm-organization-vault".to_vec(),
+    };
     hkdf::Hkdf::<Sha256>::new(Some(&context), shared.as_bytes())
-        .expand(b"reachercm-organization-vault", &mut key[..])
+        .expand(&info, &mut key[..])
         .map_err(|_| organization_error("Could not derive the vault member key"))?;
     Ok(key)
 }
@@ -173,27 +191,80 @@ fn wrap_for_member(
     master: &Dek,
     peer: &str,
     target: &AccountTarget,
+    scope: EnvelopeScope,
 ) -> Result<String, VaultError> {
     let recipient = peer_key(peer)?;
-    let key = wrapping_key(identity, &recipient, target)?;
+    let key = wrapping_key(identity, &recipient, target, Some(&scope))?;
     let envelope = Envelope {
         issuer: BASE64.encode(identity.public_key.as_bytes()),
         wrapped: wrap_dek_with_key(&key, master)?,
+        scope: Some(scope),
     };
     Ok(BASE64.encode(serde_json::to_vec(&envelope)?))
 }
 
-fn open_envelope(
-    identity: &UserIdentity,
-    envelope: &str,
-    target: &AccountTarget,
-) -> Result<Dek, VaultError> {
+fn decode_envelope(encoded: &str) -> Result<Envelope, VaultError> {
     let data = BASE64
-        .decode(envelope)
+        .decode(encoded)
         .map_err(|_| organization_error("Invalid shared vault key"))?;
-    let envelope: Envelope = serde_json::from_slice(&data)?;
-    let key = wrapping_key(identity, &peer_key(&envelope.issuer)?, target)?;
-    unwrap_dek_with_key(&key, &envelope.wrapped)
+    Ok(serde_json::from_slice(&data)?)
+}
+
+impl Envelope {
+    fn open(&self, identity: &UserIdentity, target: &AccountTarget) -> Result<Dek, VaultError> {
+        let key = wrapping_key(
+            identity,
+            &peer_key(&self.issuer)?,
+            target,
+            self.scope.as_ref(),
+        )?;
+        unwrap_dek_with_key(&key, &self.wrapped)
+    }
+}
+
+fn envelope_role(role: &str) -> &'static str {
+    if role == "owner" { "owner" } else { "member" }
+}
+
+fn authorize_envelope(
+    identity: &UserIdentity,
+    target: &AccountTarget,
+    access: &SharedAccess,
+    owner: Option<&PublicKey>,
+    advancing: bool,
+) -> Result<Option<Dek>, VaultError> {
+    let Some(encoded) = &access.wrapped_key else {
+        if advancing
+            || access.key_epoch != 0
+            || access.role != "owner"
+            || owner.is_some_and(|owner| owner != &identity.public_key)
+        {
+            return Err(organization_error(
+                "The server did not return the owner-authorized vault key",
+            ));
+        }
+        return Ok(None);
+    };
+    let envelope = decode_envelope(encoded)?;
+    let issuer = peer_key(&envelope.issuer)?;
+    let bootstrap_own_key = owner.is_none() && access.role == "owner" && issuer == identity.public_key;
+    if owner != Some(&issuer) && !bootstrap_own_key {
+        return Err(organization_error(
+            "Verify the vault owner's public key through a trusted channel before opening this vault",
+        ));
+    }
+    if let Some(scope) = &envelope.scope {
+        if scope.epoch != access.key_epoch || scope.role != envelope_role(&access.role) {
+            return Err(organization_error(
+                "The vault key does not authorize this epoch or role",
+            ));
+        }
+    } else if advancing {
+        return Err(organization_error(
+            "The vault key rotation lacks owner authorization",
+        ));
+    }
+    envelope.open(identity, target).map(Some)
 }
 
 async fn write_organization_access(
@@ -336,7 +407,7 @@ impl VaultConnection {
             self.sync_url.as_deref().ok_or(VaultError::Locked)?,
             self.auth_token.as_deref().ok_or(VaultError::Locked)?,
         )?;
-        open_envelope(identity, &key, &target)
+        decode_envelope(&key)?.open(identity, &target)
     }
 
     pub(super) async fn ensure_organization_writable(&self) -> Result<(), VaultError> {
@@ -493,7 +564,9 @@ impl VaultManager {
         account: &AccountView,
         org: Uuid,
         id: Uuid,
+        verified_owner_key: Option<&str>,
     ) -> Result<VaultInfo, VaultError> {
+        let verified_owner = verified_owner_key.map(peer_key).transpose()?;
         let target = AccountTarget::shared(account, org, id)?;
         let config = target.config();
         let id_string = id.to_string();
@@ -520,26 +593,41 @@ impl VaultManager {
                 "Another local vault already uses this ID",
             ));
         }
-        let was_local = path.exists();
-        let (master, header, members) = self.fetch_organization_key(&target, &access).await?;
-        let libsql::Value::Text(owner_wrap) = &header[6] else {
-            return Err(organization_error("Invalid organization vault header"));
-        };
-        private_fs::private_dir(&dir)?;
-        if !was_local {
-            Self::write_bootstrap_header(&path, &header, &members).await?;
-        }
-        let info = self
-            .open_vault(&id_string, Some(&config), Some(&account.username))
-            .await?;
-        if was_local {
+        let info = if path.exists() {
+            let info = self
+                .open_vault(&id_string, Some(&config), Some(&account.username))
+                .await?;
             self.unlock_vault_keys(&id_string).await?;
-        }
-        self.vaults
-            .get_mut(&id_string)
-            .ok_or(VaultError::Locked)?
-            .adopt_organization_key(&access, master, owner_wrap)
+            self.apply_organization_access_with_owner(
+                &id_string,
+                &target,
+                access,
+                verified_owner.as_ref(),
+            )
             .await?;
+            info
+        } else {
+            let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
+            let authorized =
+                authorize_envelope(identity, &target, &access, verified_owner.as_ref(), false)?;
+            let (master, header, members) = self
+                .fetch_organization_key(&target, &access, authorized)
+                .await?;
+            let libsql::Value::Text(owner_wrap) = &header[6] else {
+                return Err(organization_error("Invalid organization vault header"));
+            };
+            private_fs::private_dir(&dir)?;
+            Self::write_bootstrap_header(&path, &header, &members).await?;
+            let info = self
+                .open_vault(&id_string, Some(&config), Some(&account.username))
+                .await?;
+            self.vaults
+                .get_mut(&id_string)
+                .ok_or(VaultError::Locked)?
+                .adopt_organization_key(&access, master, owner_wrap)
+                .await?;
+            info
+        };
         self.save_organization_vault(info.clone(), config, &account.username)
             .await?;
         let target = self
@@ -554,18 +642,25 @@ impl VaultManager {
         &self,
         target: &AccountTarget,
         access: &SharedAccess,
+        authorized: Option<Dek>,
     ) -> Result<(Dek, Vec<libsql::Value>, Vec<Vec<libsql::Value>>), VaultError> {
         if !matches!(access.role.as_str(), "owner" | "editor" | "viewer") {
             return Err(organization_error("Invalid shared vault role"));
         }
-        let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
         let (bytes, _) = target
             .get()
             .await?
             .ok_or_else(|| organization_error("The vault owner has not uploaded a bundle"))?;
         let (header, _) = crate::vault::sync_bundle::read_header(&bytes)?;
-        let [_, libsql::Value::Text(name), _, libsql::Value::Text(owner), _, libsql::Value::Text(kind), libsql::Value::Text(wrapped)] =
-            header.as_slice()
+        let [
+            _,
+            libsql::Value::Text(name),
+            _,
+            libsql::Value::Text(owner),
+            _,
+            libsql::Value::Text(kind),
+            libsql::Value::Text(wrapped),
+        ] = header.as_slice()
         else {
             return Err(organization_error("Invalid organization vault header"));
         };
@@ -574,8 +669,8 @@ impl VaultManager {
         {
             return Err(organization_error("Invalid organization vault type"));
         }
-        let master = match &access.wrapped_key {
-            Some(envelope) => open_envelope(identity, envelope, target)?,
+        let master = match authorized {
+            Some(master) => master,
             None if access.key_epoch == 0 && self.user_uuid.as_ref() == Some(owner) => {
                 let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
                 unwrap_dek(kek, &serde_json::from_str(wrapped)?)?
@@ -583,7 +678,7 @@ impl VaultManager {
             None => {
                 return Err(organization_error(
                     "This device does not have the vault owner's identity",
-                ))
+                ));
             }
         };
         let key = sync_record::RecordKey::derive(&master, &target.vault_id.to_string())?;
@@ -620,6 +715,18 @@ impl VaultManager {
         target: &AccountTarget,
         access: SharedAccess,
     ) -> Result<(), VaultError> {
+        self.apply_organization_access_with_owner(id, target, access, None)
+            .await
+    }
+
+    async fn apply_organization_access_with_owner(
+        &mut self,
+        id: &str,
+        target: &AccountTarget,
+        access: SharedAccess,
+        verified_owner: Option<&PublicKey>,
+    ) -> Result<(), VaultError> {
+        let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
         let vault = self.vaults.get(id).ok_or(VaultError::Locked)?;
         let current = vault.organization_key_epoch().await?;
         if access.key_epoch < current {
@@ -627,23 +734,75 @@ impl VaultManager {
                 "The sync server returned an older vault key",
             ));
         }
-        if access.key_epoch == current {
-            if !matches!(access.role.as_str(), "owner" | "editor" | "viewer") {
-                return Err(organization_error("Invalid shared vault role"));
+        if !matches!(access.role.as_str(), "owner" | "editor" | "viewer") {
+            return Err(organization_error("Invalid shared vault role"));
+        }
+        let (local_role, cached) = vault.organization_access().await?;
+        let cached = cached.as_deref().map(decode_envelope).transpose()?;
+        let cached_owner = match &cached {
+            Some(envelope) => peer_key(&envelope.issuer)?,
+            None if local_role == "owner" => identity.public_key,
+            None => return Err(organization_error("The vault has no trusted owner key")),
+        };
+        let advancing = access.key_epoch > current;
+        let owner = if advancing {
+            // A locally cached transfer grant can authorize our own key as
+            // issuer after another device of the same identity rotates.
+            let transferred = cached
+                .as_ref()
+                .and_then(|envelope| envelope.scope.as_ref())
+                .is_some_and(|scope| scope.epoch == current && scope.role == "owner");
+            let incoming_issuer = access
+                .wrapped_key
+                .as_deref()
+                .map(decode_envelope)
+                .transpose()?
+                .map(|envelope| peer_key(&envelope.issuer))
+                .transpose()?;
+            verified_owner.unwrap_or_else(|| {
+                if transferred
+                    && local_role == "owner"
+                    && incoming_issuer == Some(identity.public_key)
+                {
+                    &identity.public_key
+                } else {
+                    &cached_owner
+                }
+            })
+        } else {
+            if verified_owner.is_some_and(|owner| owner != &cached_owner) {
+                return Err(organization_error(
+                    "The supplied public key does not match the trusted vault owner",
+                ));
             }
-            if let Some(envelope) = &access.wrapped_key {
-                let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
-                let remote = open_envelope(identity, envelope, target)?;
+            &cached_owner
+        };
+        let authorized = authorize_envelope(identity, target, &access, Some(owner), advancing)?;
+        if !advancing {
+            if let Some(master) = authorized {
                 let local = vault.master_dek.as_ref().ok_or(VaultError::Locked)?;
                 use subtle::ConstantTimeEq;
-                if !local.with_key(|old| remote.with_key(|new| bool::from(old.ct_eq(new)))) {
+                if !local.with_key(|old| master.with_key(|new| bool::from(old.ct_eq(new)))) {
                     return Err(organization_error(
                         "The vault key changed without a rotation",
                     ));
                 }
-            } else if current > 0 || access.role != "owner" {
+            } else if cached.is_some() {
                 return Err(organization_error(
-                    "The server did not return the rotated vault key",
+                    "The server did not return the vault's wrapped key",
+                ));
+            }
+            if access.role == "owner"
+                && local_role != "owner"
+                && access
+                    .wrapped_key
+                    .as_deref()
+                    .map(decode_envelope)
+                    .transpose()?
+                    .is_none_or(|envelope| envelope.scope.is_none())
+            {
+                return Err(organization_error(
+                    "The ownership transfer lacks an authenticated owner grant",
                 ));
             }
             let connection = vault.conn()?;
@@ -655,7 +814,9 @@ impl VaultManager {
             tx.commit().await?;
             return Ok(());
         }
-        let (master, header, _) = self.fetch_organization_key(target, &access).await?;
+        let (master, header, _) = self
+            .fetch_organization_key(target, &access, authorized)
+            .await?;
         let libsql::Value::Text(owner_wrap) = &header[6] else {
             return Err(organization_error("Invalid organization vault header"));
         };
@@ -733,9 +894,18 @@ impl VaultManager {
                 }
                 let master = vault.master_dek.as_ref().ok_or(VaultError::Locked)?;
                 let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
-                let key = wrap_for_member(identity, master, public_key, &target)?;
-                let proof = seal_recipient_proof(master, &target, &username, public_key)?;
                 let epoch = vault.organization_key_epoch().await?;
+                let key = wrap_for_member(
+                    identity,
+                    master,
+                    public_key,
+                    &target,
+                    EnvelopeScope {
+                        epoch,
+                        role: envelope_role(role).into(),
+                    },
+                )?;
+                let proof = seal_recipient_proof(master, &target, &username, public_key)?;
                 let body = serde_json::json!({
                     "role": role, "wrapped_key": key, "recipient_proof": proof, "key_epoch": epoch
                 });
@@ -813,6 +983,10 @@ impl VaultManager {
         }
         let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
         let previous = vault.master_dek.as_ref().ok_or(VaultError::Locked)?;
+        let next_epoch = state
+            .key_epoch
+            .checked_add(1)
+            .ok_or_else(|| organization_error("The vault key epoch cannot advance"))?;
         let next = generate_dek();
         let mut grants = std::collections::BTreeMap::new();
         for grant in state
@@ -821,7 +995,16 @@ impl VaultManager {
             .filter(|grant| grant.username != username)
         {
             let public_key = verified_recipient(previous, target, grant)?;
-            let wrapped_key = wrap_for_member(identity, &next, &public_key, target)?;
+            let wrapped_key = wrap_for_member(
+                identity,
+                &next,
+                &public_key,
+                target,
+                EnvelopeScope {
+                    epoch: next_epoch,
+                    role: "member".into(),
+                },
+            )?;
             let recipient_proof =
                 seal_recipient_proof(&next, target, &grant.username, &public_key)?;
             grants.insert(
@@ -833,7 +1016,16 @@ impl VaultManager {
             );
         }
         let self_key = BASE64.encode(identity.public_key.as_bytes());
-        let owner_key = wrap_for_member(identity, &next, &self_key, target)?;
+        let owner_key = wrap_for_member(
+            identity,
+            &next,
+            &self_key,
+            target,
+            EnvelopeScope {
+                epoch: next_epoch,
+                role: "owner".into(),
+            },
+        )?;
         let rotated = crate::vault::sync_bundle::rotate(id, &bytes, previous, &next)?;
         let metadata = serde_json::to_vec(&serde_json::json!({
             "key_epoch": state.key_epoch,
@@ -879,7 +1071,7 @@ impl VaultManager {
             id: target.vault_id,
             role: "owner".into(),
             wrapped_key: Some(owner_key),
-            key_epoch: state.key_epoch + 1,
+            key_epoch: next_epoch,
             rotation_required: false,
         };
         vault.adopt_organization_key(&access, next, "null").await?;
@@ -947,18 +1139,86 @@ mod tests {
         };
         let target = target_for(org, id);
         let master = generate_dek();
-        let envelope = wrap_for_member(
-            &owner,
-            &master,
-            &BASE64.encode(recipient.public_key.as_bytes()),
-            &target,
-        )
-        .unwrap();
-        let unwrapped = open_envelope(&recipient, &envelope, &target).unwrap();
+        let scope = || EnvelopeScope {
+            epoch: 2,
+            role: "member".into(),
+        };
+        let issuer = BASE64.encode(recipient.public_key.as_bytes());
+        let encoded = wrap_for_member(&owner, &master, &issuer, &target, scope()).unwrap();
+        let envelope = decode_envelope(&encoded).unwrap();
+        let unwrapped = envelope.open(&recipient, &target).unwrap();
         master.with_key(|expected| unwrapped.with_key(|key| assert_eq!(key, expected)));
-        assert!(open_envelope(&stranger, &envelope, &target).is_err());
-        assert!(open_envelope(&recipient, &envelope, &target_for(org, Uuid::new_v4())).is_err());
-        assert!(open_envelope(&recipient, &envelope, &target_for(Uuid::new_v4(), id)).is_err());
-        assert!(wrap_for_member(&owner, &master, &BASE64.encode([0; 32]), &target).is_err());
+        assert!(envelope.open(&stranger, &target).is_err());
+        assert!(
+            envelope
+                .open(&recipient, &target_for(org, Uuid::new_v4()))
+                .is_err()
+        );
+        assert!(
+            envelope
+                .open(&recipient, &target_for(Uuid::new_v4(), id))
+                .is_err()
+        );
+        assert!(
+            wrap_for_member(&owner, &master, &BASE64.encode([0; 32]), &target, scope()).is_err()
+        );
+
+        let mut access = SharedAccess {
+            id,
+            role: "editor".into(),
+            wrapped_key: Some(encoded),
+            key_epoch: 2,
+            rotation_required: false,
+        };
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true).is_ok()
+        );
+        assert!(
+            authorize_envelope(
+                &recipient,
+                &target,
+                &access,
+                Some(&stranger.public_key),
+                true
+            )
+            .is_err()
+        );
+        assert!(authorize_envelope(&recipient, &target, &access, None, false).is_err());
+        access.role = "owner".into();
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true)
+                .is_err()
+        );
+        access.role = "editor".into();
+        access.key_epoch = 3;
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true)
+                .is_err()
+        );
+
+        let mut restamped = envelope;
+        restamped.scope.as_mut().unwrap().epoch = access.key_epoch;
+        access.wrapped_key = Some(BASE64.encode(serde_json::to_vec(&restamped).unwrap()));
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true).is_err()
+        );
+
+        // Previously issued envelopes remain readable at the already trusted
+        // epoch, but can't authorize advancing to a new one.
+        let legacy_key = wrapping_key(&owner, &recipient.public_key, &target, None).unwrap();
+        let legacy = Envelope {
+            issuer: BASE64.encode(owner.public_key.as_bytes()),
+            wrapped: wrap_dek_with_key(&legacy_key, &master).unwrap(),
+            scope: None,
+        };
+        access.wrapped_key = Some(BASE64.encode(serde_json::to_vec(&legacy).unwrap()));
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), false)
+                .is_ok()
+        );
+        assert!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true)
+                .is_err()
+        );
     }
 }

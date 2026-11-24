@@ -1356,6 +1356,7 @@ pub async fn vault_organization_create(
 pub async fn vault_organization_open(
     organization: uuid::Uuid,
     vault_id: uuid::Uuid,
+    verified_owner_key: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<VaultInfo, String> {
     let account = organization_account()?;
@@ -1364,7 +1365,7 @@ pub async fn vault_organization_open(
         .vault_manager
         .lock()
         .await
-        .open_organization_vault(&account, organization, vault_id)
+        .open_organization_vault(&account, organization, vault_id, verified_owner_key.as_deref())
         .await
         .map_err(|e| e.to_string())
 }

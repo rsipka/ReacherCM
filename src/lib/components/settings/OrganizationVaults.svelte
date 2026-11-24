@@ -17,6 +17,8 @@
 	let publicKey = $state('');
 	let role = $state<Role>('viewer');
 	let managing = $state('');
+	let verifying = $state('');
+	let verifiedOwnerKey = $state('');
 	let loaded = $state(false);
 	let busy = $state(false);
 	let confirmingTransfer = $state(false);
@@ -40,6 +42,8 @@
 	async function loadVaults(): Promise<void> {
 		vaults = [];
 		managing = '';
+		verifying = '';
+		verifiedOwnerKey = '';
 		confirmingTransfer = false;
 		if (organization) {
 			vaults = await invoke<SharedVault[]>('vault_organization_list', { organization });
@@ -67,10 +71,14 @@
 		window.dispatchEvent(new CustomEvent('reach:sessions-changed'));
 	}
 
-	function open(vaultId: string, manage = false): Promise<void> {
+	function open(vaultId: string, manage = false, ownerKey?: string): Promise<void> {
 		return run(async () => {
-			const vault = await invoke<{ id: string; name: string }>('vault_organization_open', { organization, vaultId });
+			const vault = await invoke<{ id: string; name: string }>('vault_organization_open', {
+				organization, vaultId, verifiedOwnerKey: ownerKey
+			});
 			vaults = vaults.map((row) => row.id === vault.id ? { ...row, name: vault.name } : row);
+			verifying = '';
+			verifiedOwnerKey = '';
 			if (manage) {
 				await loadGrants(vault.id);
 				managing = vault.id;
@@ -162,11 +170,30 @@
 						<div class="actions">
 							<span class="vault-name">{vault.name ?? vault.id}</span>
 							<span class="role">{t('organization.role_' + vault.role)}</span>
-							<button type="button" disabled={busy} onclick={() => open(vault.id)}>{t('organization.open')}</button>
+							{#if vault.name || vault.role === 'owner'}
+								<button type="button" disabled={busy} onclick={() => open(vault.id)}>{t('organization.open')}</button>
+							{/if}
+							<button type="button" disabled={busy} aria-expanded={verifying === vault.id}
+								onclick={() => { verifying = verifying === vault.id ? '' : vault.id; verifiedOwnerKey = ''; }}>
+								{t('organization.verify_owner')}
+							</button>
 							{#if vault.role === 'owner'}
 								<button type="button" disabled={busy} onclick={() => open(vault.id, true)}>{t('organization.access')}</button>
 							{/if}
 						</div>
+						{#if verifying === vault.id}
+							<form class="grant" onsubmit={(event) => {
+								event.preventDefault();
+								void open(vault.id, false, verifiedOwnerKey.trim());
+							}}>
+								<label>
+									{t('organization.owner_public_key')}
+									<input bind:value={verifiedOwnerKey} maxlength="128" required disabled={busy} />
+								</label>
+								<p>{t('organization.verify_owner_help')}</p>
+								<button type="submit" disabled={busy || !verifiedOwnerKey.trim()}>{t('organization.open')}</button>
+							</form>
+						{/if}
 						{#if vault.rotation_required}
 							<p>{t('organization.rotation_pending')}</p>
 							{#if vault.role === 'owner'}
