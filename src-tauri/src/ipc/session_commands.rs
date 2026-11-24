@@ -897,6 +897,8 @@ pub async fn session_create(
                 f
             })
             .filter(|f| !f.is_empty()),
+        // No certificates from the window: only the prompt trusts one.
+        bmc: None,
     };
     session.tidy_documentation();
 
@@ -1050,6 +1052,12 @@ async fn prepare_update(
     if session.kind != crate::state::SessionKind::Ssh {
         session.files = None;
     }
+    // A server management session's too (see `bmc_session_cert_trust`).
+    session.bmc = if session.kind == crate::state::SessionKind::Bmc {
+        stored.as_ref().and_then(|s| s.bmc.clone()).filter(|b| !b.is_empty())
+    } else {
+        None
+    };
 
     // A login sent is the session's own, unless it is one a credential
     // filled in (the editor shows that one): then the stored own login stays.
@@ -1088,6 +1096,10 @@ pub use webcerts::*;
 #[path = "session_ftp_cmds.rs"]
 mod ftp;
 pub use ftp::*;
+
+#[path = "session_bmc_cmds.rs"]
+mod bmc;
+pub use bmc::*;
 pub use hostkeys::*;
 
 #[path = "session_password_history_cmds.rs"]
