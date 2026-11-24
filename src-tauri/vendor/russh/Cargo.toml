@@ -1,4 +1,4 @@
-# Vendored from crates.io russh 0.63.3 (Apache-2.0, see LICENSE) so Reach can
+# Vendored from crates.io russh 0.65.4 (Apache-2.0, see LICENSE) so Reach can
 # speak every algorithm an OpenSSH ssh_config may name. Additions, none of
 # them in Preferred::DEFAULT (Reach decides when to offer them):
 # - MACs in src/mac/: hmac-md5, hmac-md5-96, hmac-sha1-96, hmac-ripemd160,
@@ -17,6 +17,19 @@
 #   fit, as OpenSSH's datagram channels (tun forwarding) send.
 # - GexParams::for_legacy_client: a group exchange minimum down to 1024 bits,
 #   for old servers when 1024-bit diffie-hellman-group1-sha1 is offered too.
+# - GSS-API key exchange (gss-*-sha*, src/kex/gss.rs, RFC 4462 section 2)
+#   and gssapi-keyex user authentication, as the GSSAPI patch of OpenSSH in
+#   Debian and Fedora speaks them.
+# - Per-key host key proofs (Session::prove_host_keys, HostKeyProof) next to
+#   upstream's all-or-nothing Handle::hostkeys_prove, since ssh disregards an
+#   RSA proof made with SHA-1 instead of failing the rest.
+# Dependencies held back ("Reach:" comments below): rsa 0.10.0-rc.18, pkcs1
+# 0.8.0-rc.4 and ssh-key 0.7.0-rc.11, the release candidates IronRDP's picky,
+# sspi and winscard pin exactly. russh 0.65.4 asks for the final rsa/pkcs1
+# and ssh-key rc.12, which cargo cannot put next to them. A few lines in
+# src/keys/format/ keep rsa's rc names (RsaPrivateKey), and src/keys/key.rs
+# and src/cert.rs refuse a certificate signed by a certificate, which ssh-key
+# rc.12 does itself. Go back to upstream's versions once picky moves on.
 # Tests: tests/test_legacy_algorithms.rs (russh to russh always; against real
 # OpenSSH servers when RUSSH_INTEROP is set) and known answers in the modules.
 # Drop this copy and the [patch.crates-io] entry in ../../Cargo.toml once
@@ -37,7 +50,7 @@
 edition = "2024"
 rust-version = "1.89"
 name = "russh"
-version = "0.63.3"
+version = "0.65.4"
 authors = ["Pierre-Étienne Meunier <pe@pijul.org>"]
 build = false
 autolib = false
@@ -59,7 +72,6 @@ all-features = true
 
 [features]
 _bench = ["dep:criterion"]
-async-trait = ["dep:async-trait"]
 aws-lc-rs = ["dep:aws-lc-rs"]
 default = [
     "flate2",
@@ -68,7 +80,6 @@ default = [
 ]
 des = ["dep:des"]
 dsa = ["ssh-key/dsa"]
-legacy-ed25519-pkcs8-parser = ["yasna"]
 ring = ["dep:ring"]
 rsa = [
     "dep:rsa",
@@ -122,8 +133,24 @@ name = "test"
 path = "examples/test.rs"
 
 [[test]]
+name = "auth_agent_req_channel_reply"
+path = "tests/auth_agent_req_channel_reply.rs"
+
+[[test]]
+name = "auth_partial_success"
+path = "tests/auth_partial_success.rs"
+
+[[test]]
+name = "auth_signer_failure"
+path = "tests/auth_signer_failure.rs"
+
+[[test]]
 name = "auth_state_reset"
 path = "tests/auth_state_reset.rs"
+
+[[test]]
+name = "test_agent_session_bind"
+path = "tests/test_agent_session_bind.rs"
 
 [[test]]
 name = "test_backpressure"
@@ -136,6 +163,10 @@ path = "tests/test_contention.rs"
 [[test]]
 name = "test_data_stream"
 path = "tests/test_data_stream.rs"
+
+[[test]]
+name = "test_keepalive_before_auth"
+path = "tests/test_keepalive_before_auth.rs"
 
 [[test]]
 name = "test_kex_shared_secret"
@@ -161,6 +192,10 @@ path = "tests/test_rekey_strict_kex.rs"
 name = "test_server_cert"
 path = "tests/test_server_cert.rs"
 
+[[test]]
+name = "test_window_adjust"
+path = "tests/test_window_adjust.rs"
+
 [[bench]]
 name = "ciphers"
 path = "benches/ciphers.rs"
@@ -169,13 +204,14 @@ harness = false
 [dependencies.aes]
 version = "0.9"
 
-[dependencies.async-trait]
-version = "0.1.50"
-optional = true
-
 [dependencies.aws-lc-rs]
 version = "1.16.2"
+features = [
+    "alloc",
+    "aws-lc-sys",
+]
 optional = true
+default-features = false
 
 [dependencies.bitflags]
 version = "2.0"
@@ -251,10 +287,6 @@ optional = true
 [dependencies.futures]
 version = "0.3"
 
-[dependencies.generic-array]
-version = "1.3.3"
-features = ["compat-0_14"]
-
 [dependencies.getrandom]
 version = "0.4"
 features = ["wasm_js"]
@@ -315,6 +347,8 @@ features = ["ecdh"]
 version = "0.13"
 
 [dependencies.pkcs1]
+# Reach: held at the release candidate picky, sspi and winscard (IronRDP)
+# pin; cargo cannot have it next to the final release.
 version = "=0.8.0-rc.4"
 optional = true
 
@@ -343,6 +377,8 @@ version = "0.17.14"
 optional = true
 
 [dependencies.rsa]
+# Reach: held at the release candidate picky, sspi and winscard (IronRDP)
+# pin; cargo cannot have it next to the final release.
 version = "=0.10.0-rc.18"
 optional = true
 
@@ -385,6 +421,7 @@ version = "0.3"
 features = ["bytes"]
 
 [dependencies.ssh-key]
+# Reach: rc.12 needs the final rsa 0.10; see [dependencies.rsa].
 version = "=0.7.0-rc.11"
 features = [
     "ed25519",
@@ -418,14 +455,6 @@ version = "1.17"
 
 [dependencies.universal-hash]
 version = "0.6.1"
-
-[dependencies.yasna]
-version = "0.6"
-features = [
-    "bit-vec",
-    "num-bigint",
-]
-optional = true
 
 [dependencies.zeroize]
 version = "1.7"
