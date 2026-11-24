@@ -82,21 +82,33 @@ pub struct Tls {
     pub refused: Arc<Mutex<Option<String>>>,
 }
 
+/// Where a refused certificate's fingerprint is left.
+pub type RefusedSlot = Arc<Mutex<Option<String>>>;
+
+/// A TLS client setup that accepts a certificate the system trusts, or one
+/// whose fingerprint is in `trusted`; the fingerprint of one it refused is
+/// put in the returned slot. Also used by server management sessions
+/// (`crate::bmc`), whose BMCs mostly have self-signed certificates.
+pub fn pinning_config(trusted: &[String]) -> Result<(ClientConfig, RefusedSlot), String> {
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
+    let webpki = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
+        .build()
+        .map_err(|e| format!("TLS setup failed: {e}"))?;
+    let refused = Arc::new(Mutex::new(None));
+    let verifier = Verifier { roots: webpki, provider: provider.clone(), trusted: trusted.to_vec(), refused: refused.clone() };
+    let config = ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|e| format!("TLS setup failed: {e}"))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth();
+    Ok((config, refused))
+}
+
 impl Tls {
     pub fn new(host: &str, trusted: &[String]) -> Result<Self, String> {
-        let provider = Arc::new(rustls::crypto::ring::default_provider());
-        let roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
-        let webpki = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
-            .build()
-            .map_err(|e| format!("TLS setup failed: {e}"))?;
-        let refused = Arc::new(Mutex::new(None));
-        let verifier = Verifier { roots: webpki, provider: provider.clone(), trusted: trusted.to_vec(), refused: refused.clone() };
-        let config = ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .map_err(|e| format!("TLS setup failed: {e}"))?
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(verifier))
-            .with_no_client_auth();
+        let (config, refused) = pinning_config(trusted)?;
         let name = ServerName::try_from(host.trim_matches(['[', ']']).to_string())
             .map_err(|e| format!("{host}: not a host name TLS can check ({e})"))?;
         Ok(Self { connector: tokio_rustls::TlsConnector::from(Arc::new(config)), name, refused })
