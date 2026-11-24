@@ -48,15 +48,17 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 	const id = crypto.randomUUID();
 	const visible = run.visible ?? true;
 	let cancelled = false;
+	let registered = false;
+	let progress: Progress | undefined;
 
 	let settle!: (result: TransferResult) => void;
 	const ended = new Promise<TransferResult>((resolve) => (settle = resolve));
-
 	const unlisten: UnlistenFn[] = await Promise.all([
 		listen<Progress>(`transfer-progress-${id}`, (event) => {
 			if (!visible) return;
 			const p = event.payload;
-			updateTransferProgress(id, p.bytesTransferred, p.totalBytes, p.percent);
+			progress = p;
+			if (registered) updateTransferProgress(id, p.bytesTransferred, p.totalBytes, p.percent);
 		}),
 		listen(`transfer-complete-${id}`, () => settle('done')),
 		listen(`transfer-cancelled-${id}`, () => settle('cancelled')),
@@ -66,22 +68,26 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 	]);
 
 	try {
+		try {
+			await run.start(id);
+			registered = true;
+		} catch (err) {
+			settle({ error: String(err) });
+		}
+
+		// Expose cancellation only after the backend acknowledges the ID.
 		if (visible) {
-			addTransfer(id, run.filename, run.totalBytes, run.kind, () => {
+			addTransfer(id, run.filename, run.totalBytes, run.kind, registered ? () => {
 				if (cancelled) return;
 				cancelled = true;
 				// An upload already writing a file finishes it before stopping.
 				if (run.kind === 'downloading') removeTransfer(id);
-				void sftpTransferCancel(id);
+				void sftpTransferCancel(id).catch((err) => settle({ error: String(err) }));
 				run.onCancel?.();
-			}, run.connectionId);
+			} : undefined, run.connectionId);
+			if (progress) updateTransferProgress(id, progress.bytesTransferred, progress.totalBytes, progress.percent);
 		}
-		run.onId?.(id);
-		try {
-			await run.start(id);
-		} catch (err) {
-			settle({ error: String(err) });
-		}
+		if (registered) run.onId?.(id);
 		const result = await ended;
 		if (typeof result === 'object') {
 			if (visible) failTransfer(id, result.error);

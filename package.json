@@ -70,6 +70,7 @@
     "keybindings:test": "node --import ./scripts/resolve-lib.mjs scripts/keybindings-test.mjs",
     "snapshot:test": "node --import ./scripts/resolve-lib.mjs scripts/snapshot-test.mjs",
     "settings-persist:test": "node --import ./scripts/resolve-lib.mjs scripts/settings-persist-test.mjs",
+    "transfer-result:test": "node scripts/transfer-result-test.mjs",
     "setup-wizard:test": "node --import ./scripts/resolve-lib.mjs scripts/setup-wizard-test.mjs"
   },
   "dependencies": {

@@ -47,6 +47,7 @@ pub enum SessionKind {
 pub struct SharedSession {
     /// An approval belongs to one share, even if the same terminal is shared again.
     pub(crate) revoked: tokio_util::sync::CancellationToken,
+    pub(crate) policy_revoked: tokio_util::sync::CancellationToken,
     pub id: String,
     pub kind: SessionKind,
     pub host: String,
@@ -88,6 +89,7 @@ impl SharedSession {
     pub fn new(id: String, kind: SessionKind, host: String, username: String) -> Self {
         Self {
             revoked: tokio_util::sync::CancellationToken::new(),
+            policy_revoked: tokio_util::sync::CancellationToken::new(),
             id,
             kind,
             host,
@@ -98,6 +100,11 @@ impl SharedSession {
             agent_id: None,
             mode: None,
         }
+    }
+
+    pub(crate) fn revoke_policy(&mut self) {
+        self.policy_revoked.cancel();
+        self.policy_revoked = tokio_util::sync::CancellationToken::new();
     }
 
     /// Feed output from the remote. Called from the SSH/PTY read loops.
