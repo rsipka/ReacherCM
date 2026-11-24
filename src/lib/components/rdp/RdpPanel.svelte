@@ -26,6 +26,7 @@
 	import { registerCapture } from '#lib/state/capture.js';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
+	import { currentMonitor, getCurrentWindow, type Monitor } from '@tauri-apps/api/window';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import {
 		FRAME_FULL,
@@ -55,6 +56,10 @@
 		parseResolution,
 		rdpRailCommand,
 		rdpRailWindows,
+		rdpViewAck,
+		rdpViewAttach,
+		rdpViewDetach,
+		railWindowsSync,
 		type RdpRailWindow,
 		type MouseAction,
 		type RdpClipEvent,
@@ -95,9 +100,17 @@
 		/** Which protocol the desktop speaks. RDP unless said otherwise. */
 		protocol?: 'rdp' | 'vnc' | 'spice';
 		active: boolean;
+		/**
+		 * A RemoteApp window of its own: the session's picture shown from
+		 * this remote window's place, in a window of this computer. Unset:
+		 * the session's tab, which connects.
+		 */
+		railView?: number;
 	}
 
-	let { id, params, protocol = 'rdp', active }: Props = $props();
+	let { id, params, protocol = 'rdp', active, railView }: Props = $props();
+	/** This view's name to the session's frame pump. */
+	const viewKey = $derived(railView === undefined ? '' : `${id}-${railView}`);
 
 	const isVnc = (): boolean => protocol === 'vnc';
 	const isSpice = (): boolean => protocol === 'spice';
@@ -107,7 +120,7 @@
 
 	/** The commands both protocols have, each sent the right way. */
 	const remote = {
-		ack: () => (isVnc() ? vncAck(id) : isSpice() ? spiceAck(id) : rdpAck(id)),
+		ack: () => (railView !== undefined ? rdpViewAck(id, viewKey) : isVnc() ? vncAck(id) : isSpice() ? spiceAck(id) : rdpAck(id)),
 		mouse: (x: number, y: number, action: MouseAction, button = 0, delta = 0) =>
 			isVnc()
 				? vncMouse(id, x, y, action, button, delta)
@@ -182,6 +195,28 @@
 	/** A RemoteApp session: the program's windows, for the row above the picture. */
 	const remoteApp = $derived(protocol === 'rdp' && (params as RdpConnectParams).options?.remote_app === true && !!(params as RdpConnectParams).options?.program?.trim());
 	let railWindows = $state<RdpRailWindow[]>([]);
+	/**
+	 * Seamless: each of the program's windows in a window of its own here,
+	 * the tab only holding the session. Desktops only.
+	 */
+	const seamless = $derived(remoteApp && railView === undefined && !isMobile() && (params as RdpConnectParams).options?.app_windows === 'separate');
+	/** The screen the seamless windows are on; the remote desktop takes its size. */
+	let monitor: Monitor | null = null;
+	/** A view: the picture's size, and this screen's pixels per CSS pixel. */
+	let fbSize = $state({ width: 0, height: 0 });
+	const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+	/** A view: where its remote window is on the remote desktop. */
+	const viewRect = $derived(railView === undefined ? null : (railWindows.find((w) => w.id === railView) ?? null));
+
+	/** Open, move and close the local windows to match the remote ones. */
+	function placeWindows(list: RdpRailWindow[]): void {
+		if (!seamless) return;
+		const at = monitor?.position ?? { x: 0, y: 0 };
+		const places = list
+			.filter((w) => w.state !== 'minimized' && w.width > 0 && w.height > 0)
+			.map((w) => ({ id: w.id, title: w.title, x: at.x + w.x, y: at.y + w.y, width: w.width, height: w.height, popup: !w.listed }));
+		void railWindowsSync(id, places).catch(() => {});
+	}
 
 	/** A window button: bring it forward, or back from minimised. */
 	function railClick(w: RdpRailWindow): void {
@@ -574,6 +609,7 @@
 			// to it. Resizing clears a canvas, so only when it has to be.
 			if (canvas.width !== fbW || canvas.height !== fbH) {
 				canvas.width = fbW;
+				if (railView !== undefined) fbSize = { width: fbW, height: fbH };
 				canvas.height = fbH;
 				if (!gl) ctx = canvas.getContext('2d', { alpha: false });
 			}
@@ -1053,6 +1089,11 @@
 	 * screen's own resolution and scaled down by CSS, it is pixel for pixel.
 	 */
 	function fitSize(): { width: number; height: number } {
+		// Seamless: the remote desktop lies under this screen, pixel for pixel.
+		if (seamless && monitor) {
+			const even = (v: number) => Math.min(8192, Math.max(200, v & ~1));
+			return { width: even(monitor.size.width), height: even(monitor.size.height) };
+		}
 		// A session set to a fixed size keeps it; the canvas scales it to fit.
 		const fixed = protocol === 'rdp' ? parseResolution((params as RdpConnectParams).options?.resolution) : null;
 		if (fixed) return fixed;
@@ -1073,7 +1114,7 @@
 		// Phones and tablets: a desktop at their screen's 300% would leave
 		// next to no room on it; they keep 100% unless the session says.
 		if (isMobile()) return 100;
-		const ratio = window.devicePixelRatio || 1;
+		const ratio = (seamless && monitor?.scaleFactor) || window.devicePixelRatio || 1;
 		return Math.min(500, Math.max(100, Math.round(ratio * 4) * 25));
 	}
 
@@ -1105,8 +1146,37 @@
 	// The WebGL context keeps its drawing buffer, so the canvas reads back.
 	let unregisterCapture: (() => void) | undefined;
 
+	/**
+	 * A view: no connection of its own. It paints the frames the session's
+	 * tab receives and sends input to the same session, and goes when its
+	 * remote window does.
+	 */
+	async function mountView(): Promise<void> {
+		initGl();
+		const closeSelf = () => void getCurrentWindow().close().catch(() => {});
+		unlistenWindows = await listen<RdpRailWindow[]>(`rdp-windows-${id}`, (event) => (railWindows = event.payload));
+		unlisten = await listen<RdpStatus>(`rdp-status-${id}`, (event) => {
+			if (event.payload.state === 'closed' || event.payload.state === 'error') closeSelf();
+		});
+		railWindows = await rdpRailWindows(id).catch(() => []);
+		try {
+			await rdpViewAttach(id, viewKey, paint);
+		} catch {
+			closeSelf();
+			return;
+		}
+		phase = 'connected';
+		sendLocks();
+		canvas?.focus();
+	}
+
 	onMount(async () => {
+		if (railView !== undefined) {
+			await mountView();
+			return;
+		}
 		unregisterCapture = registerCapture(id, () => (phase === 'connected' && canvas?.width ? canvas : null));
+		if (seamless) monitor = await currentMonitor().catch(() => null);
 		const size = fitSize();
 
 		unlisten = await listen<RdpStatus>(`${protocol}-status-${id}`, (event) => {
@@ -1140,9 +1210,13 @@
 		});
 
 		if (remoteApp) {
-			unlistenWindows = await listen<RdpRailWindow[]>(`rdp-windows-${id}`, (event) => (railWindows = event.payload));
+			unlistenWindows = await listen<RdpRailWindow[]>(`rdp-windows-${id}`, (event) => {
+				railWindows = event.payload;
+				placeWindows(event.payload);
+			});
 			// A panel re-attached to a running RemoteApp: the row as it stands.
 			railWindows = await rdpRailWindows(id).catch(() => []);
+			placeWindows(railWindows);
 		}
 
 		if (!isVnc() && clipMode !== 'off') {
@@ -1193,6 +1267,8 @@
 	function requestResize(): void {
 		{
 			if (phase !== 'connected') return;
+			// A view follows the tab's size; a seamless desktop keeps the screen's.
+			if (railView !== undefined || seamless) return;
 			// A VNC desktop is usually shared and already laid out: asked to
 			// take a phone's shape, the server cut its windows off at the new
 			// edge, for everyone watching. It is scaled to fit here instead and
@@ -1214,6 +1290,7 @@
 	}
 
 	onDestroy(() => {
+		if (railView !== undefined) void rdpViewDetach(id, viewKey).catch(() => {});
 		unregisterCapture?.();
 		unlisten?.();
 		unlistenLocks();
@@ -1243,7 +1320,7 @@
 <div class="rdp" class:fullscreen bind:this={host} onmousemove={onHostMove}>
 	<!-- The desktop's area: sized and measured on its own, so a phone's key
 	     bar below it is never drawn over the remote (its taskbar included). -->
-	{#if remoteApp && phase === 'connected' && railWindows.length}
+	{#if remoteApp && railView === undefined && phase === 'connected' && railWindows.length}
 		<div class="rail-row" role="toolbar" aria-label={t('rdp.remote_app_windows')}>
 			{#each railWindows as w (w.id)}
 				<div class="rail-win" class:minimized={w.state === 'minimized'}>
@@ -1253,7 +1330,7 @@
 			{/each}
 		</div>
 	{/if}
-	<div class="screen" bind:this={screen}>
+	<div class="screen" class:view={railView !== undefined} bind:this={screen}>
 	<!-- The canvas is the desktop: it takes focus and every key. The wrapper
 	     only sizes and centres it. -->
 	<canvas
@@ -1275,7 +1352,19 @@
 		}}
 		oncontextmenu={onLongPress}
 		class:dim={phase !== 'connected'}
+		class:cut={railView !== undefined}
+		style:width={railView !== undefined ? `${fbSize.width / dpr}px` : undefined}
+		style:height={railView !== undefined ? `${fbSize.height / dpr}px` : undefined}
+		style:left={viewRect ? `${-viewRect.x / dpr}px` : undefined}
+		style:top={viewRect ? `${-viewRect.y / dpr}px` : undefined}
 	></canvas>
+
+	{#if seamless && phase === 'connected'}
+		<div class="overlay seamless-note">
+			<span>{t('rdp.remote_app_separate')}</span>
+			<small>{t('rdp.remote_app_separate_hint')}</small>
+		</div>
+	{/if}
 
 	{#if onPhone}
 		<textarea
@@ -1296,7 +1385,7 @@
 		></textarea>
 	{/if}
 
-	{#if phase === 'connected' && !fullscreen && !onPhone && getSettings().rdpFullscreenButton}
+	{#if railView === undefined && !seamless && phase === 'connected' && !fullscreen && !onPhone && getSettings().rdpFullscreenButton}
 		<button
 			type="button"
 			class="fs-button"
@@ -1331,7 +1420,7 @@
 		</div>
 	{/if}
 
-	{#if phase === 'connected' && (transfer || heldCopy || toSave)}
+	{#if railView === undefined && phase === 'connected' && (transfer || heldCopy || toSave)}
 		<div class="clip-bar" role="status">
 			{#if transfer}
 				<span class="clip-text">
@@ -1352,7 +1441,7 @@
 		</div>
 	{/if}
 
-	{#if phase !== 'connected'}
+	{#if railView === undefined && phase !== 'connected'}
 		<div class="overlay" class:failed={phase === 'error'}>
 			{#if phase === 'connecting'}
 				<span class="spinner" aria-hidden="true"></span>
@@ -1460,6 +1549,22 @@
 		cursor: default;
 		image-rendering: auto;
 		outline: none;
+	}
+
+	/* A view: the whole picture at its own size, moved so that this
+	   window's part of it is what shows. */
+	.screen.view {
+		display: block;
+	}
+
+	canvas.cut {
+		position: absolute;
+		max-width: none;
+		max-height: none;
+	}
+
+	.seamless-note {
+		background: var(--color-bg-primary, #111);
 	}
 
 	canvas.dim {

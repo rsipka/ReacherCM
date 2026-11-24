@@ -59,6 +59,10 @@ pub struct RdpOptions {
     /// RemoteApp only: the program's command line arguments.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app_args: Option<String>,
+    /// RemoteApp in the built-in client: `separate` puts each of its windows
+    /// in a window of its own on this computer. Unset: inside the tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_windows: Option<String>,
 }
 
 /// The largest keep-alive or jiggler interval taken, one day.
@@ -85,18 +89,24 @@ impl RdpOptions {
             admin: self.admin.filter(|a| *a),
             remote_app: self.remote_app.filter(|r| *r),
             app_args: text(self.app_args),
+            app_windows: one_of(self.app_windows, &["separate"]),
             program: text(self.program),
             work_dir: text(self.work_dir),
         };
         // A RemoteApp, its arguments and the start folder mean nothing without a program.
         let tidy = if tidy.program.is_none() {
-            Self { remote_app: None, app_args: None, work_dir: None, ..tidy }
+            Self { remote_app: None, app_args: None, app_windows: None, work_dir: None, ..tidy }
         } else if tidy.remote_app.is_none() {
-            Self { app_args: None, ..tidy }
+            Self { app_args: None, app_windows: None, ..tidy }
         } else {
             tidy
         };
         (tidy != Self::default()).then_some(tidy)
+    }
+
+    /// A RemoteApp whose windows each get a window of their own here.
+    pub fn separate_windows(&self) -> bool {
+        self.is_remote_app() && self.app_windows.as_deref() == Some("separate")
     }
 
     /// Whether the session opens a RemoteApp rather than a desktop.

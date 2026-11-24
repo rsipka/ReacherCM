@@ -35,6 +35,15 @@ pub struct RailWindow {
     pub title: String,
     /// `normal`, `minimized` or `maximized`.
     pub state: &'static str,
+    /// Where the window is on the remote desktop, in its pixels.
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    /// A window a taskbar would show (else a menu, tooltip, dialog part...).
+    pub listed: bool,
+    /// The window that owns it (a dialog's or a menu's), 0 for none.
+    pub owner: u32,
 }
 
 /// What the server has said about each window so far. Orders carry only the
@@ -51,6 +60,10 @@ struct Known {
     style: u32,
     ex_style: u32,
     show: Option<ShowState>,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
 }
 
 impl Windows {
@@ -78,6 +91,12 @@ impl Windows {
                     if let Some(show) = state.show_state {
                         known.show = Some(show);
                     }
+                    if let Some(at) = &state.window_offset {
+                        (known.x, known.y) = (at.x, at.y);
+                    }
+                    if let Some(size) = &state.window_size {
+                        (known.width, known.height) = (size.width, size.height);
+                    }
                 }
                 WindowOrderBody::Icon(_) => {}
             }
@@ -85,15 +104,14 @@ impl Windows {
         self.list() != before
     }
 
-    /// The windows a taskbar would show, oldest first: shown or minimised,
-    /// not tool windows or children, not owned unless they ask to be listed.
+    /// Every window that is up (shown or minimised, not a child), oldest
+    /// first. `listed` marks those a taskbar would show: not tool windows,
+    /// not owned unless they ask to be listed.
     pub fn list(&self) -> Vec<RailWindow> {
         self.known
             .iter()
             .filter(|(_, w)| {
-                let shown = matches!(w.show, Some(ShowState::Show | ShowState::Minimized | ShowState::Maximized));
-                let listed = w.ex_style & WS_EX_APPWINDOW != 0 || (w.owner == 0 && w.ex_style & WS_EX_TOOLWINDOW == 0);
-                shown && listed && w.style & WS_CHILD == 0
+                matches!(w.show, Some(ShowState::Show | ShowState::Minimized | ShowState::Maximized)) && w.style & WS_CHILD == 0
             })
             .map(|(id, w)| RailWindow {
                 id: *id,
@@ -103,6 +121,12 @@ impl Windows {
                     Some(ShowState::Maximized) => "maximized",
                     _ => "normal",
                 },
+                x: w.x,
+                y: w.y,
+                width: w.width,
+                height: w.height,
+                listed: w.ex_style & WS_EX_APPWINDOW != 0 || (w.owner == 0 && w.ex_style & WS_EX_TOOLWINDOW == 0),
+                owner: w.owner,
             })
             .collect()
     }
@@ -152,7 +176,7 @@ pub fn send_command(input: &RdpInputSender, window_id: u32, command: &str) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ironrdp_pdu::window::{WindowOrder, WindowState, WindowStyle};
+    use ironrdp_pdu::window::{WindowOrder, WindowPoint, WindowSize, WindowState, WindowStyle};
 
     fn state(id: u32, is_new: bool, state: WindowState) -> WindowingOrder {
         WindowingOrder::Window(WindowOrder { window_id: id, is_new, body: WindowOrderBody::State(Box::new(state)) })
@@ -178,16 +202,21 @@ mod tests {
             }),
         ]);
         assert!(changed);
-        assert_eq!(w.list(), vec![RailWindow { id: 1, title: "Untitled - Notepad".into(), state: "normal" }]);
+        let listed: Vec<_> = w.list().into_iter().filter(|w| w.listed).collect();
+        assert_eq!(listed.len(), 1);
+        assert_eq!((listed[0].id, listed[0].title.as_str(), listed[0].state), (1, "Untitled - Notepad", "normal"));
+        // The tooltip is up, only not listed.
+        assert!(w.list().iter().any(|w| w.id == 2 && !w.listed && w.owner == 1));
 
         // Only the changed field comes again.
         assert!(w.apply(&[state(1, false, WindowState { show_state: Some(ShowState::Minimized), ..Default::default() })]));
         assert_eq!(w.list()[0].state, "minimized");
         assert_eq!(w.list()[0].title, "Untitled - Notepad");
-        assert!(!w.apply(&[state(2, false, WindowState { title: Some("tip".into()), ..Default::default() })]));
+        assert!(w.apply(&[state(1, false, WindowState { window_offset: Some(WindowPoint { x: 40, y: 30 }), window_size: Some(WindowSize { width: 640, height: 480 }), ..Default::default() })]));
+        assert_eq!((w.list()[0].x, w.list()[0].y, w.list()[0].width, w.list()[0].height), (40, 30, 640, 480));
 
         assert!(w.apply(&[WindowingOrder::Window(WindowOrder { window_id: 1, is_new: false, body: WindowOrderBody::Deleted })]));
-        assert!(w.list().is_empty());
+        assert!(w.list().iter().all(|w| w.id != 1));
     }
 
     #[test]

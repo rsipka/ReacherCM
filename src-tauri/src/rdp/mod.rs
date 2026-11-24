@@ -245,6 +245,13 @@ impl Flow {
         self.notify.notify_one();
     }
 
+    /// Send the whole picture next, to every canvas: one more has started
+    /// listening.
+    pub(crate) fn refresh(&self) {
+        self.refresh.store(true, Ordering::Release);
+        self.notify.notify_one();
+    }
+
     pub(crate) fn has_ended(&self) -> bool {
         self.ended.load(Ordering::Acquire)
     }
@@ -271,6 +278,17 @@ impl Flow {
         self.notify.notify_one();
     }
 }
+
+/// One more canvas the picture goes to: a RemoteApp window of its own,
+/// showing its part of the session. Paced like the panel; the slowest canvas
+/// sets the pace for all.
+pub(crate) struct View {
+    key: String,
+    channel: Channel<InvokeResponseBody>,
+    in_flight: AtomicU32,
+}
+
+type Views = Arc<std::sync::Mutex<Vec<Arc<View>>>>;
 
 /// One open desktop. Dropping the input sender does not end the session —
 /// `request_close` does — so both halves are kept.
@@ -299,6 +317,8 @@ struct Open {
     /// RemoteApp sessions: the window row as last sent, for a panel that
     /// re-attaches. Empty for a desktop.
     windows: Arc<std::sync::Mutex<Vec<remote_app::RailWindow>>>,
+    /// RemoteApp windows of their own, each showing its part of the picture.
+    views: Views,
 }
 
 #[derive(Default)]
@@ -432,10 +452,19 @@ impl RdpManager {
         let flow = Arc::new(Flow::new());
         let frames = Arc::new(std::sync::Mutex::new(frames));
         let windows = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let pump = tokio::spawn(pump_output(app, id.clone(), out_rx, Arc::clone(&frames), Arc::clone(&flow), Arc::clone(&windows)));
+        let views: Views = Arc::default();
+        let pump = tokio::spawn(pump_output(
+            app,
+            id.clone(),
+            out_rx,
+            Arc::clone(&frames),
+            Arc::clone(&flow),
+            Arc::clone(&windows),
+            Arc::clone(&views),
+        ));
 
         let scale = desktop_scale(&params).unwrap_or(100);
-        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard, scale, windows });
+        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard, scale, windows, views });
         Ok(())
     }
 
@@ -560,6 +589,35 @@ impl RdpManager {
     /// Set the remote's CapsLock, NumLock and ScrollLock to the local ones.
     pub fn sync_locks(&self, id: &str, caps: bool, num: bool, scroll: bool) -> Result<(), String> {
         self.send_fast_path(id, FastPathInputEvent::SyncEvent(lock_flags(caps, num, scroll)))
+    }
+
+    /// A RemoteApp window of its own starts showing the picture (or a
+    /// reloaded one starts again).
+    pub fn attach_view(&self, id: &str, key: &str, channel: Channel<InvokeResponseBody>) -> Result<(), String> {
+        let open = self.open.get(id).ok_or_else(|| format!("no RDP session {id}"))?;
+        let mut views = open.views.lock().unwrap_or_else(|e| e.into_inner());
+        views.retain(|v| v.key != key);
+        views.push(Arc::new(View { key: key.to_string(), channel, in_flight: AtomicU32::new(0) }));
+        open.flow.refresh();
+        Ok(())
+    }
+
+    /// A RemoteApp window of its own closed.
+    pub fn detach_view(&self, id: &str, key: &str) {
+        if let Some(open) = self.open.get(id) {
+            open.views.lock().unwrap_or_else(|e| e.into_inner()).retain(|v| v.key != key);
+            open.flow.notify.notify_one();
+        }
+    }
+
+    /// A RemoteApp window of its own painted one message.
+    pub fn ack_view(&self, id: &str, key: &str) -> Result<(), String> {
+        let open = self.open.get(id).ok_or_else(|| format!("no RDP session {id}"))?;
+        if let Some(view) = open.views.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|v| v.key == key) {
+            let _ = view.in_flight.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        }
+        open.flow.notify.notify_one();
+        Ok(())
     }
 
     /// A RemoteApp's windows as the panel's window row shows them.
@@ -945,7 +1003,17 @@ async fn pump_output(
     frames: Arc<std::sync::Mutex<Channel<InvokeResponseBody>>>,
     flow: Arc<Flow>,
     shown_windows: Arc<std::sync::Mutex<Vec<remote_app::RailWindow>>>,
+    views: Views,
 ) {
+    // Room to send: the panel and every window of its own have painted enough.
+    let room = || {
+        flow.can_send()
+            && views
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .all(|v| v.in_flight.load(Ordering::Acquire) < MAX_IN_FLIGHT)
+    };
     let status = |s: RdpStatus| {
         if matches!(s, RdpStatus::Error { .. } | RdpStatus::Closed { .. }) {
             flow.ended.store(true, Ordering::Release);
@@ -999,7 +1067,7 @@ async fn pump_output(
                     break;
                 }
             }
-            _ = flow.notify.notified(), if pending && !flow.can_send() => {}
+            _ = flow.notify.notified(), if pending && !room() => {}
             _ = tokio::time::sleep_until(deadline), if pending && !settled => {}
         }
 
@@ -1008,12 +1076,19 @@ async fn pump_output(
             screen.touch();
         }
 
-        if screen.pending() && screen.settled() && flow.can_send() {
+        if screen.pending() && screen.settled() && room() {
             flow.sent();
+            let message = screen.take();
+            // Windows of their own get the same message; one that is gone
+            // (its window closed without saying so) is dropped.
+            views.lock().unwrap_or_else(|e| e.into_inner()).retain(|v| {
+                v.in_flight.fetch_add(1, Ordering::AcqRel);
+                v.channel.send(InvokeResponseBody::Raw(message.clone())).is_ok()
+            });
             let sent = frames
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .send(InvokeResponseBody::Raw(screen.take()));
+                .send(InvokeResponseBody::Raw(message));
             if sent.is_err() {
                 // The webview is gone; nothing left to draw for.
                 break;

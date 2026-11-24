@@ -422,3 +422,21 @@ pub async fn rdp_rail_command(
 ) -> Result<(), String> {
     state.rdp_manager.lock().await.rail_command(&id, window_id, &command)
 }
+
+/// A RemoteApp window of its own starts showing session `id` (see
+/// `RdpManager::attach_view`); frames come on `on_frame` as for the panel.
+#[tauri::command]
+pub async fn rdp_view_attach(state: tauri::State<'_, AppState>, id: String, view: String, on_frame: Channel) -> Result<(), String> {
+    state.rdp_manager.lock().await.attach_view(&id, &view, on_frame)
+}
+
+#[tauri::command]
+pub async fn rdp_view_detach(state: tauri::State<'_, AppState>, id: String, view: String) -> Result<(), String> {
+    state.rdp_manager.lock().await.detach_view(&id, &view);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rdp_view_ack(state: tauri::State<'_, AppState>, id: String, view: String) -> Result<(), String> {
+    state.rdp_manager.lock().await.ack_view(&id, &view)
+}

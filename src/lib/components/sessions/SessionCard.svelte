@@ -309,6 +309,9 @@
 		{:else if filesBadge}
 			<!-- Opens in the file manager, not a terminal. -->
 			<span class="auth-badge" title={authLabel}>{unavailable ? t('serial.desktop_only_short') : filesBadge}</span>
+		{:else if session.kind === 'rdp' && session.rdp?.remote_app && session.rdp?.program}
+			<!-- Opens one program's windows, not a desktop. -->
+			<span class="auth-badge" title={`RemoteApp: ${session.rdp.program}`}>App</span>
 		{:else if session.kind === 'winbox'}
 			<!-- Opens in WinBox, not in a tab here. -->
 			<span class="auth-badge">{unavailable ? t('serial.desktop_only_short') : t('session.protocol_winbox')}</span>

@@ -69,6 +69,8 @@ export interface RdpOptions {
 	remote_app?: boolean | null;
 	/** RemoteApp only: the program's arguments. */
 	app_args?: string | null;
+	/** RemoteApp in the built-in client: `separate` for a window of its own per remote window. */
+	app_windows?: 'separate' | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */
@@ -154,6 +156,15 @@ export interface RdpRailWindow {
 	id: number;
 	title: string;
 	state: 'normal' | 'minimized' | 'maximized';
+	/** Where it is on the remote desktop, in its pixels. */
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** A window a taskbar would show (not a menu, tooltip or tool window). */
+	listed: boolean;
+	/** The window that owns it, 0 for none. */
+	owner: number;
 }
 
 export type RdpRailCommand = 'activate' | 'close' | 'minimize' | 'maximize' | 'restore';
@@ -164,6 +175,50 @@ export async function rdpRailWindows(id: string): Promise<RdpRailWindow[]> {
 
 export async function rdpRailCommand(id: string, windowId: number, command: RdpRailCommand): Promise<void> {
 	await invoke('rdp_rail_command', { id, windowId, command });
+}
+
+/** A frame channel's message as an ArrayBuffer of its own. */
+function frameBuffer(data: ArrayBuffer | Uint8Array | number[]): ArrayBuffer {
+	if (data instanceof ArrayBuffer) return data;
+	const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : Uint8Array.from(data);
+	const copy = new ArrayBuffer(bytes.byteLength);
+	new Uint8Array(copy).set(bytes);
+	return copy;
+}
+
+/**
+ * A RemoteApp window of its own: the session's frames, as the tab gets them,
+ * to paint its part of. Each message is acknowledged with rdpViewAck.
+ */
+export async function rdpViewAttach(id: string, view: string, onFrame: (frame: ArrayBuffer) => void): Promise<void> {
+	const channel = new Channel<ArrayBuffer | Uint8Array | number[]>();
+	channel.onmessage = (data) => onFrame(frameBuffer(data));
+	await invoke('rdp_view_attach', { id, view, onFrame: channel });
+}
+
+export async function rdpViewDetach(id: string, view: string): Promise<void> {
+	await invoke('rdp_view_detach', { id, view });
+}
+
+export async function rdpViewAck(id: string, view: string): Promise<void> {
+	await invoke('rdp_view_ack', { id, view });
+}
+
+/** Where a RemoteApp window of its own goes on this computer's screen, in its pixels. */
+export interface RailPlace {
+	id: number;
+	title: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** A menu, tooltip or other window part of another. */
+	popup: boolean;
+}
+
+/** Open, move and close a tab's RemoteApp windows to match `windows`; none closes them all. */
+export async function railWindowsSync(tab: string, windows: RailPlace[]): Promise<void> {
+	await invoke('rail_windows_sync', { tab, windows });
 }
 
 export async function rdpDisconnect(id: string): Promise<void> {

@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicholasraphael/nicholasr_app/main/.schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main", "editor-*", "float-*"],
+  "windows": ["main", "editor-*", "float-*", "rail-*"],
   "permissions": [
     "core:default",
     "core:event:default",
