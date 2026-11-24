@@ -249,9 +249,7 @@ fn authorize_envelope(
     let issuer = peer_key(&envelope.issuer)?;
     let bootstrap_own_key = owner.is_none() && access.role == "owner" && issuer == identity.public_key;
     if owner != Some(&issuer) && !bootstrap_own_key {
-        return Err(organization_error(
-            "Verify the vault owner's public key through a trusted channel before opening this vault",
-        ));
+        return Err(VaultError::OrganizationOwnerVerificationRequired);
     }
     if let Some(scope) = &envelope.scope {
         if scope.epoch != access.key_epoch || scope.role != envelope_role(&access.role) {
@@ -260,9 +258,7 @@ fn authorize_envelope(
             ));
         }
     } else if advancing {
-        return Err(organization_error(
-            "The vault key rotation lacks owner authorization",
-        ));
+        return Err(VaultError::OrganizationRotationUpgradeRequired);
     }
     envelope.open(identity, target).map(Some)
 }
@@ -741,7 +737,9 @@ impl VaultManager {
         let cached = cached.as_deref().map(decode_envelope).transpose()?;
         let cached_owner = match &cached {
             Some(envelope) => peer_key(&envelope.issuer)?,
-            None if local_role == "owner" => identity.public_key,
+            // An original owner may have no envelope at epoch zero, even
+            // after transferring access and losing the server's owner role.
+            None if current == 0 && vault.header.user_uuid == identity.uuid => identity.public_key,
             None => return Err(organization_error("The vault has no trusted owner key")),
         };
         let advancing = access.key_epoch > current;
@@ -801,9 +799,7 @@ impl VaultManager {
                     .transpose()?
                     .is_none_or(|envelope| envelope.scope.is_none())
             {
-                return Err(organization_error(
-                    "The ownership transfer lacks an authenticated owner grant",
-                ));
+                return Err(VaultError::OrganizationRotationUpgradeRequired);
             }
             let connection = vault.conn()?;
             let tx = connection
@@ -1148,6 +1144,10 @@ mod tests {
         let envelope = decode_envelope(&encoded).unwrap();
         let unwrapped = envelope.open(&recipient, &target).unwrap();
         master.with_key(|expected| unwrapped.with_key(|key| assert_eq!(key, expected)));
+        // Older clients ignore the scope field and use the original
+        // wrapping context. They cannot decrypt authenticated envelopes.
+        let legacy_context = wrapping_key(&recipient, &owner.public_key, &target, None).unwrap();
+        assert!(unwrap_dek_with_key(&legacy_context, &envelope.wrapped).is_err());
         assert!(envelope.open(&stranger, &target).is_err());
         assert!(
             envelope
@@ -1216,9 +1216,9 @@ mod tests {
             authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), false)
                 .is_ok()
         );
-        assert!(
-            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true)
-                .is_err()
-        );
+        assert!(matches!(
+            authorize_envelope(&recipient, &target, &access, Some(&owner.public_key), true),
+            Err(VaultError::OrganizationRotationUpgradeRequired)
+        ));
     }
 }

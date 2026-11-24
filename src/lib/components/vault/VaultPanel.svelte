@@ -407,7 +407,7 @@
 									class="row"
 									class:shared={vault.vaultType === 'shared'}
 									onclick={() => handleSelectVault(vault)}
-									title={vault.unreachable ? [t('vault.unreachable'), vault.syncError].filter(Boolean).join(' — ') : vault.name}
+									title={vault.unreachable ? [t('vault.unreachable'), vault.syncError && t(vault.syncError)].filter(Boolean).join(' — ') : vault.name}
 								>
 									{#if vault.unreachable}
 										<span class="dot"></span>

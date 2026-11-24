@@ -810,12 +810,97 @@ async fn three_native_clients_sync_through_postgres() {
     }
     assert!(!converged.iter().any(|(id, _)| id == &to_delete));
 
+    // Keep an editor offline across ownership transfer and key rotation.
+    let transfer_pending = third
+        .lock()
+        .await
+        .create_secret(
+            &vault,
+            "Edit queued before ownership transfer",
+            SecretCategory::Session,
+            value("publish after verifying the new owner"),
+        )
+        .await
+        .unwrap();
+    owner_device.activate(server).await;
+    owner
+        .lock()
+        .await
+        .change_organization_grant(&vault, &editor_device.username, Some("owner"), &editor_key)
+        .await
+        .unwrap();
+    editor_device.activate(server).await;
+    editor
+        .lock()
+        .await
+        .finish_organization_rotation(&vault)
+        .await
+        .unwrap();
+
+    let third_account = third_device.activate(server).await;
+    let target = AccountTarget::shared(&third_account, org, id).unwrap();
+    let (_, epoch_revision) = target.get().await.unwrap().unwrap();
+    let (_, failed) = sync_vaults(&third, Some(&vault), false).await;
+    assert!(matches!(
+        failed.as_slice(),
+        [(_, VaultError::OrganizationOwnerVerificationRequired)]
+    ));
+    assert_eq!(target.get().await.unwrap().unwrap().1, epoch_revision);
+    {
+        let mut manager = third.lock().await;
+        assert_eq!(
+            manager.vaults[&vault].organization_key_epoch().await.unwrap(),
+            0
+        );
+        assert_eq!(
+            manager
+                .read_secret(&vault, &transfer_pending)
+                .await
+                .unwrap()
+                .expose_secret(),
+            b"publish after verifying the new owner"
+        );
+        assert!(matches!(
+            manager
+                .open_organization_vault(&third_account, org, id, Some(&owner_key))
+                .await,
+            Err(VaultError::OrganizationOwnerVerificationRequired)
+        ));
+        manager
+            .open_organization_vault(&third_account, org, id, Some(&editor_key))
+            .await
+            .unwrap();
+    }
+    native_sync(&editor, editor_device, server, &vault).await;
+    assert!(
+        native_snapshot(&editor, &vault)
+            .await
+            .iter()
+            .any(|(id, _)| id == &transfer_pending)
+    );
+
+    // The former owner has to receive a fresh grant and verify the new
+    // owner too. An epoch-zero owner has no cached wrapped-key envelope.
+    editor
+        .lock()
+        .await
+        .change_organization_grant(&vault, &owner_device.username, Some("editor"), &owner_key)
+        .await
+        .unwrap();
+    let owner_account = owner_device.activate(server).await;
+    owner
+        .lock()
+        .await
+        .open_organization_vault(&owner_account, org, id, Some(&editor_key))
+        .await
+        .unwrap();
+
     let old_key = {
         let manager = third.lock().await;
         sync_record::RecordKey::derive(manager.vaults[&vault].master_dek.as_ref().unwrap(), &vault)
             .unwrap()
     };
-    let editor_pending = editor
+    let retained_pending = owner
         .lock()
         .await
         .create_secret(
@@ -837,14 +922,14 @@ async fn three_native_clients_sync_through_postgres() {
         )
         .await
         .unwrap();
-    let owner_account = owner_device.activate(server).await;
-    owner
+    let editor_account = editor_device.activate(server).await;
+    editor
         .lock()
         .await
         .change_organization_grant(&vault, &third_device.username, None, "")
         .await
         .unwrap();
-    let target = AccountTarget::shared(&owner_account, org, id).unwrap();
+    let target = AccountTarget::shared(&editor_account, org, id).unwrap();
     let (bundle, _) = target.get().await.unwrap().unwrap();
     assert!(crate::vault::sync_bundle::verify(&old_key, &bundle).is_err());
     let third_account = third_device.activate(server).await;
@@ -859,11 +944,13 @@ async fn three_native_clients_sync_through_postgres() {
 
     native_sync(&editor, editor_device, server, &vault).await;
     native_sync(&owner, owner_device, server, &vault).await;
+    native_sync(&editor, editor_device, server, &vault).await;
     let final_records = native_snapshot(&owner, &vault).await;
     assert_eq!(final_records, native_snapshot(&editor, &vault).await);
-    assert_eq!(final_records.len(), 5);
-    assert!(final_records.iter().any(|(id, _)| id == &editor_pending));
+    assert_eq!(final_records.len(), 6);
+    assert!(final_records.iter().any(|(id, _)| id == &transfer_pending));
+    assert!(final_records.iter().any(|(id, _)| id == &retained_pending));
     assert!(!final_records.iter().any(|(id, _)| id == &revoked_pending));
     clear_vault_test_account().await;
-    println!("Three clients converged; both collision copies and the deletion synced. Revocation and rekey preserved the retained offline edit.");
+    println!("Three clients converged; both collision copies and the deletion synced. Owner verification and revocation preserved the retained offline edits.");
 }

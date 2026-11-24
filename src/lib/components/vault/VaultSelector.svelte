@@ -364,7 +364,7 @@ Go to Settings > Sync > Accept Vault Invite`;
 							onclick={() => choose(o.filter)}
 						>
 							{#if o.vault?.unreachable}
-								<span class="dot" title={[t('vault.unreachable'), o.vault.syncError].filter(Boolean).join(' — ')}></span>
+								<span class="dot" title={[t('vault.unreachable'), o.vault.syncError && t(o.vault.syncError)].filter(Boolean).join(' — ')}></span>
 							{:else if o.key === 'all'}
 								<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
 									<rect x="3" y="4" width="18" height="6" rx="1.5"/>
