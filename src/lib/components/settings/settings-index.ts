@@ -132,7 +132,7 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'sync', label: 'sync.user_uuid' },
 	{ page: 'sync', label: 'sync.public_key' },
 	{ page: 'sync', label: 'sync.link_device', words: 'pair another device' },
-	{ page: 'sync', label: 'sync.join_device' },
+	{ page: 'sync', label: 'sync.join_device', words: 'link personal vault scan code' },
 	{ page: 'sync', label: 'sync.cloud_sync', words: 'turso cloud' },
 	{ page: 'sync', label: 'sync.personal_database' },
 	{ page: 'sync', label: 'sync.accept_invite' },

@@ -258,7 +258,7 @@
 	{:else if id === 'pwmanagers'}
 		<PasswordManagersTab />
 	{:else if id === 'account'}
-		<SettingsCard><AccountTab /></SettingsCard>
+		<SettingsCard><AccountTab onOpenVaultLinks={() => void goTo('sync.join_device')} /></SettingsCard>
 	{:else if id === 'sync'}
 		<SyncTab />
 		<SettingsCard title={t('settings.backup')}><BackupTab /></SettingsCard>

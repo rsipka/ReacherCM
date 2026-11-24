@@ -4314,5 +4314,9 @@
   "sync_account.pair_start": "Pair this device",
   "sync_account.pair_match": "Compare this code in the web portal, then approve the device there.",
   "sync_account.pair_invalid": "Enter a Reacher CM mobile pairing code.",
-  "sync_account.pair_camera": "Camera access is required to scan. You can paste the pairing code instead."
+  "sync_account.pair_camera": "Camera access is required to scan. You can paste the pairing code instead.",
+  "sync_account.mobile_vault_link_help": "On a trusted device with personal vault sync enabled, open Sync & Backup and show its vault link code. Scan it or paste it on this device.",
+  "sync_account.vault_link_confirm": "This device will open the linked personal vault. Its previous local vault will stay on this device and can be restored in Sync & Backup.",
+  "sync_account.local_vault_restore": "Restore the previous local vault",
+  "sync_account.local_vault_restore_confirm": "Open your previous local vault again? The linked vault stays on disk and on the sync server. You may need the previous password."
 }

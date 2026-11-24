@@ -544,6 +544,20 @@ pub async fn vault_link_device(code: String, state: State<'_, AppState>) -> Resu
 }
 
 #[tauri::command]
+pub async fn vault_local_link_recovery_available(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.vault_manager.lock().await.local_vault_recovery_available())
+}
+
+#[tauri::command]
+pub async fn vault_restore_local_before_link(state: State<'_, AppState>) -> Result<(), String> {
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
+    let mut manager = state.vault_manager.lock().await;
+    manager.restore_local_vault_before_link().await.map_err(|e| e.to_string())?;
+    crate::pwmanager::forget_all();
+    Ok(())
+}
+
+#[tauri::command]
 #[tracing::instrument(skip(state))]
 pub async fn vault_get_public_key(state: State<'_, AppState>) -> Result<Option<String>, String> {
     let manager = state.vault_manager.lock().await;
@@ -1262,7 +1276,6 @@ pub async fn vault_set_personal_sync(
     manager.set_personal_sync_config(sync_url, sync_token).await.map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_account_sync_enabled(state: State<'_, AppState>) -> Result<bool, String> {
     use crate::vault::sync_account_store::AccountTarget;

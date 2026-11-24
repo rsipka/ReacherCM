@@ -4314,5 +4314,9 @@
   "sync_account.pair_start": "Dieses Gerät koppeln",
   "sync_account.pair_match": "Vergleichen Sie diesen Code im Webportal und bestätigen Sie das Gerät dort.",
   "sync_account.pair_invalid": "Geben Sie einen Kopplungscode für Reacher CM Mobile ein.",
-  "sync_account.pair_camera": "Zum Scannen ist Kamerazugriff erforderlich. Sie können den Kopplungscode auch einfügen."
+  "sync_account.pair_camera": "Zum Scannen ist Kamerazugriff erforderlich. Sie können den Kopplungscode auch einfügen.",
+  "sync_account.mobile_vault_link_help": "Öffnen Sie auf einem vertrauenswürdigen Gerät mit aktiviertem persönlichem Tresor-Sync „Sync & Sicherung“ und zeigen Sie den Verknüpfungscode an. Scannen Sie ihn oder fügen Sie ihn auf diesem Gerät ein.",
+  "sync_account.vault_link_confirm": "Dieses Gerät öffnet den verknüpften persönlichen Tresor. Der bisherige lokale Tresor bleibt auf diesem Gerät und kann unter „Sync & Sicherung“ wiederhergestellt werden.",
+  "sync_account.local_vault_restore": "Vorherigen lokalen Tresor wiederherstellen",
+  "sync_account.local_vault_restore_confirm": "Den vorherigen lokalen Tresor erneut öffnen? Der verknüpfte Tresor bleibt auf dem Gerät und dem Sync-Server. Möglicherweise benötigen Sie das bisherige Passwort."
 }

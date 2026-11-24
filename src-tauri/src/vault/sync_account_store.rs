@@ -1,4 +1,5 @@
 use reqwest::{header, StatusCode};
+#[cfg(desktop)]
 use serde::Deserialize;
 use url::Url;
 use uuid::Uuid;
@@ -31,6 +32,7 @@ fn connection_error(key: &str) -> VaultError {
     })
 }
 
+#[cfg(desktop)]
 #[derive(Deserialize)]
 struct VaultList {
     vault_ids: Vec<Uuid>,
@@ -95,6 +97,7 @@ impl AccountTarget {
         format!("{}#{}", self.config(), self.username)
     }
 
+    #[cfg(desktop)]
     pub(crate) async fn listed(&self) -> Result<Vec<Uuid>, VaultError> {
         let url = self
             .server
@@ -115,6 +118,7 @@ impl AccountTarget {
             .map_err(|_| error("The sync server returned an invalid vault list"))
     }
 
+    #[cfg(desktop)]
     pub(crate) fn shared(
         account: &sync_account_commands::AccountView,
         organization: Uuid,

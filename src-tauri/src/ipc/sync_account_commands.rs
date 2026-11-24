@@ -704,7 +704,6 @@ pub async fn sync_account_preferences(
     Ok(snapshot)
 }
 
-#[cfg(desktop)]
 pub(crate) async fn vault_request(
     server: &Url,
     username: &str,
@@ -764,6 +763,9 @@ async fn account_request(
     }
     Err(SERVER_ERROR)
 }
+
+#[cfg(test)]
+pub(crate) static VAULT_TEST_ACCOUNT: Mutex<()> = Mutex::const_new(());
 
 #[cfg(test)]
 pub(crate) async fn seed_vault_test_account(server: &str, username: &str) -> AccountView {
