@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import OrganizationVaults from './OrganizationVaults.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
@@ -168,6 +169,9 @@
 				<button type="button" disabled={action !== null} onclick={() => confirmVaultSync = true}>{t('sync_account.vault_enable')}</button>
 			{/if}
 		</div>
+		{#key account.server + '/' + account.username}
+			<OrganizationVaults />
+		{/key}
 	{:else if action === 'load'}
 		<p role="status">{t('sync_account.loading')}</p>
 	{:else}

@@ -198,14 +198,36 @@ async fn counter_seen(local: &Connection) -> Result<i64, VaultError> {
 /// Sync a vault with the file in `store`.
 pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Result<Report, VaultError> {
     let mut report = Report::default();
+    #[cfg(desktop)]
+    let organization = matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some());
+    #[cfg(desktop)]
+    let read_only = if organization {
+        let mut roles = local.query("SELECT role FROM organization_vault_access WHERE singleton = 1", ()).await?;
+        match roles.next().await? {
+            Some(row) => row.get::<String>(0)? == "viewer",
+            None => return Err(VaultError::AccessDenied("Open the organization vault from Settings → Account".into())),
+        }
+    } else {
+        false
+    };
+    #[cfg(not(desktop))]
+    let read_only = false;
     sync_local::set_state(local, sync_engine::STATE_FORMAT, "file").await?;
     for _ in 0..ATTEMPTS {
         let seen = counter_seen(local).await?;
         let (rows, body, revision) = match store.get().await? {
             Some((data, revision)) => {
                 let (rows, body) = open(&target.key, &data)?;
+                #[cfg(desktop)]
+                if organization && !matches!(
+                    rows.0.get(1),
+                    Some(Value::Text(name)) if crate::vault::manager::valid_organization_vault_name(name)
+                ) {
+                    return Err(VaultError::SyncError("Invalid organization vault name".into()));
+                }
                 (rows, body, Some(revision))
             }
+            None if read_only => return Err(VaultError::AccessDenied("This organization vault is unavailable".into())),
             None => {
                 // Nothing there yet (or no longer): set it up from here.
                 if seen > 0 {
@@ -225,7 +247,9 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         let rolled_back = revision.is_some() && body.counter < seen;
         if rolled_back {
             tracing::warn!(vault = %target.vault_id, "The sync location holds an older vault file than this device has read; writing it again");
-            sync_local::mark_all_dirty(local).await?;
+            if !read_only {
+                sync_local::mark_all_dirty(local).await?;
+            }
         }
 
         let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -249,6 +273,11 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         let merged = merge(target, local, records, revision.is_some() && !rolled_back).await?;
         report.pulled += merged.pulled;
         report.conflicts += merged.conflicts;
+
+        if read_only {
+            sync_local::set_state(local, STATE_COUNTER, &body.counter.max(seen).to_string()).await?;
+            return Ok(report);
+        }
 
         let out = outgoing(target, local).await?;
         if out.is_empty() && revision.is_some() {
