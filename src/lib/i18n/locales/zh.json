@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "没有作业。",
   "bmc.col_job": "作业",
   "bmc.col_state": "状态",
-  "bmc.licence_needed": "控制器需要许可证才能执行此操作。它报告：{{message}}"
+  "bmc.licence_needed": "控制器需要许可证才能执行此操作。它报告：{{message}}",
+  "organization.rotation_pending": "上传已暂停，直到保险库所有者更换密钥。",
+  "organization.finish_rotation": "完成密钥轮换",
+  "organization.key_rotated": "保险库密钥已更换。"
 }

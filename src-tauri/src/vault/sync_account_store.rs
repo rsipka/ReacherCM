@@ -16,6 +16,7 @@ pub struct AccountTarget {
     username: String,
     pub(crate) vault_id: Uuid,
     pub(crate) organization: Option<Uuid>,
+    pub(crate) key_epoch: u64,
 }
 
 fn error(message: &str) -> VaultError {
@@ -46,6 +47,7 @@ impl AccountTarget {
             username: account.username.clone(),
             vault_id,
             organization: None,
+            key_epoch: 0,
         })
     }
 
@@ -78,6 +80,7 @@ impl AccountTarget {
             username: username.to_owned(),
             vault_id,
             organization,
+            key_epoch: 0,
         })
     }
 
@@ -205,6 +208,11 @@ impl AccountTarget {
                 .put(url.clone())
                 .header(header::CONTENT_TYPE, "application/octet-stream")
                 .body(data.to_vec());
+            let request = if self.organization.is_some() {
+                request.header("X-Reacher-Vault-Key-Epoch", self.key_epoch)
+            } else {
+                request
+            };
             match expected {
                 Some(etag) => request.header(header::IF_MATCH, etag),
                 None => request.header(header::IF_NONE_MATCH, "*"),
@@ -215,6 +223,9 @@ impl AccountTarget {
         match response.status() {
             StatusCode::NO_CONTENT => Ok(true),
             StatusCode::PRECONDITION_FAILED => Ok(false),
+            StatusCode::CONFLICT if self.organization.is_some() => {
+                Err(error("The vault owner must finish key rotation before changes can sync"))
+            }
             StatusCode::CONFLICT => Err(error(
                 "This sync account already has a different personal vault",
             )),

@@ -5,7 +5,7 @@
 
 	type Organization = { id: string; name: string };
 	type Role = 'owner' | 'editor' | 'viewer';
-	type SharedVault = { id: string; name: string | null; role: Role };
+	type SharedVault = { id: string; name: string | null; role: Role; rotation_required: boolean };
 	type Grant = { username: string; role: 'editor' | 'viewer' };
 
 	let organizations = $state<Organization[]>([]);
@@ -104,8 +104,20 @@
 				await loadVaults();
 			} else {
 				await loadGrants(managing);
+				if (access === null) {
+					vaults = vaults.map((vault) => vault.id === managing ? { ...vault, rotation_required: false } : vault);
+				}
 			}
-			message = 'organization.access_saved';
+			message = access === null ? 'organization.key_rotated' : 'organization.access_saved';
+		});
+	}
+
+	function finishRotation(vaultId: string): Promise<void> {
+		return run(async () => {
+			await invoke('vault_organization_open', { organization, vaultId });
+			await invoke('vault_organization_finish_rotation', { vaultId });
+			await loadVaults();
+			message = 'organization.key_rotated';
 		});
 	}
 
@@ -155,6 +167,14 @@
 								<button type="button" disabled={busy} onclick={() => open(vault.id, true)}>{t('organization.access')}</button>
 							{/if}
 						</div>
+						{#if vault.rotation_required}
+							<p>{t('organization.rotation_pending')}</p>
+							{#if vault.role === 'owner'}
+								<button type="button" disabled={busy} onclick={() => finishRotation(vault.id)}>
+									{t('organization.finish_rotation')}
+								</button>
+							{/if}
+						{/if}
 						{#if managing === vault.id}
 							{#if grants.length}
 								<ul>

@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "Aucun travail.",
   "bmc.col_job": "Travail",
   "bmc.col_state": "État",
-  "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}"
+  "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}",
+  "organization.rotation_pending": "Les envois sont suspendus jusqu’à ce que le propriétaire du coffre renouvelle la clé.",
+  "organization.finish_rotation": "Terminer le renouvellement de la clé",
+  "organization.key_rotated": "Clé du coffre renouvelée."
 }

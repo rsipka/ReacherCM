@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "Заданий нет.",
   "bmc.col_job": "Задание",
   "bmc.col_state": "Состояние",
-  "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}"
+  "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}",
+  "organization.rotation_pending": "Отправка изменений приостановлена до смены ключа владельцем хранилища.",
+  "organization.finish_rotation": "Завершить смену ключа",
+  "organization.key_rotated": "Ключ хранилища заменён."
 }

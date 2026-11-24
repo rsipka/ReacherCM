@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "Keine Jobs.",
   "bmc.col_job": "Job",
   "bmc.col_state": "Status",
-  "bmc.licence_needed": "Der Controller braucht dafür eine Lizenz. Er meldet: {{message}}"
+  "bmc.licence_needed": "Der Controller braucht dafür eine Lizenz. Er meldet: {{message}}",
+  "organization.rotation_pending": "Uploads sind pausiert, bis der Tresorbesitzer den Schlüssel erneuert.",
+  "organization.finish_rotation": "Schlüsselwechsel abschließen",
+  "organization.key_rotated": "Tresorschlüssel erneuert."
 }

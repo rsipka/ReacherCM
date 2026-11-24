@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "No jobs.",
   "bmc.col_job": "Job",
   "bmc.col_state": "State",
-  "bmc.licence_needed": "The controller needs a licence for this. It said: {{message}}"
+  "bmc.licence_needed": "The controller needs a licence for this. It said: {{message}}",
+  "organization.rotation_pending": "Uploads are paused until the vault owner rotates the key.",
+  "organization.finish_rotation": "Finish key rotation",
+  "organization.key_rotated": "Vault key rotated."
 }

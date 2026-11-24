@@ -4280,5 +4280,8 @@
   "bmc.jobs_none": "No hay trabajos.",
   "bmc.col_job": "Trabajo",
   "bmc.col_state": "Estado",
-  "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}"
+  "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}",
+  "organization.rotation_pending": "Las subidas están pausadas hasta que el propietario de la bóveda cambie la clave.",
+  "organization.finish_rotation": "Completar el cambio de clave",
+  "organization.key_rotated": "Clave de la bóveda cambiada."
 }
