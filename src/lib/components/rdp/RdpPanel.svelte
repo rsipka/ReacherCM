@@ -192,6 +192,7 @@
 	let unlisten: UnlistenFn | null = null;
 	let unlistenClip: UnlistenFn | null = null;
 	let unlistenWindows: UnlistenFn | null = null;
+	let unlistenFocus: UnlistenFn | null = null;
 	/** A RemoteApp session: the program's windows, for the row above the picture. */
 	const remoteApp = $derived(protocol === 'rdp' && (params as RdpConnectParams).options?.remote_app === true && !!(params as RdpConnectParams).options?.program?.trim());
 	let railWindows = $state<RdpRailWindow[]>([]);
@@ -212,9 +213,11 @@
 	function placeWindows(list: RdpRailWindow[]): void {
 		if (!seamless) return;
 		const at = monitor?.position ?? { x: 0, y: 0 };
+		// Bottom first, so that windows opened together stack as they do there.
 		const places = list
 			.filter((w) => w.state !== 'minimized' && w.width > 0 && w.height > 0)
-			.map((w) => ({ id: w.id, title: w.title, x: at.x + w.x, y: at.y + w.y, width: w.width, height: w.height, popup: !w.listed }));
+			.sort((a, b) => b.z - a.z)
+			.map((w) => ({ id: w.id, title: w.title, x: at.x + w.x, y: at.y + w.y, width: w.width, height: w.height, popup: !w.listed, active: w.active }));
 		void railWindowsSync(id, places).catch(() => {});
 	}
 
@@ -694,6 +697,10 @@
 		const p = remotePoint(e);
 		if (!p) return;
 		if (action === 'down') canvas.focus();
+		// A window of its own shows its part of one shared picture: where
+		// another remote window lies over it there, the click would land on
+		// that one. Bring this one to the front there first.
+		if (action === 'down') activateRemote();
 		e.preventDefault();
 		sendInput(remote.mouse(p.x, p.y, action, e.button));
 	}
@@ -1151,8 +1158,19 @@
 	 * tab receives and sends input to the same session, and goes when its
 	 * remote window does.
 	 */
+	/** A view: put its remote window in front there, unless it already is. */
+	function activateRemote(): void {
+		// Menus and tooltips are left alone: activating one there closes it.
+		if (railView === undefined || !viewRect || viewRect.active || !viewRect.listed) return;
+		sendInput(rdpRailCommand(id, railView, 'activate'));
+	}
+
 	async function mountView(): Promise<void> {
 		initGl();
+		// Focused here (clicked, Alt+Tab): focused there too, so keys go to it.
+		unlistenFocus = await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+			if (focused) activateRemote();
+		});
 		const closeSelf = () => void getCurrentWindow().close().catch(() => {});
 		unlistenWindows = await listen<RdpRailWindow[]>(`rdp-windows-${id}`, (event) => (railWindows = event.payload));
 		unlisten = await listen<RdpStatus>(`rdp-status-${id}`, (event) => {
@@ -1297,6 +1315,7 @@
 		clearTimeout(lockSyncTimer);
 		unlistenClip?.();
 		unlistenWindows?.();
+		unlistenFocus?.();
 		unlistenDrop?.();
 		sizeObserver?.disconnect();
 		if (resizeTimer) clearTimeout(resizeTimer);

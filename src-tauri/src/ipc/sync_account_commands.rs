@@ -436,10 +436,11 @@ pub async fn sync_account_sign_out() -> Result<bool> {
 }
 
 #[tauri::command]
-pub fn sync_account_manage() -> Result<()> {
+pub fn sync_account_manage(organizations: Option<bool>) -> Result<()> {
     let stored = saved()?.ok_or(REVOKED)?;
     let server = origin(&stored.account.server)?;
-    tauri_plugin_opener::open_url(endpoint(&server, "/devices").as_str(), None::<&str>)
+    let path = if organizations == Some(true) { "/organizations" } else { "/devices" };
+    tauri_plugin_opener::open_url(endpoint(&server, path).as_str(), None::<&str>)
         .map_err(|_| "sync_account.error_browser")
 }
 

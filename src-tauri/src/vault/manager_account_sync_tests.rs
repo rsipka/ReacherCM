@@ -7,9 +7,11 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+static TEST_ACCOUNT: Mutex<()> = Mutex::const_new(());
 
 #[derive(Default)]
 struct Remote {
@@ -82,6 +84,7 @@ async fn flush(manager: &VaultManager, id: &str) -> sync_engine::Report {
 async fn an_account_vault_migrates_and_links_without_exposing_records() {
     use crate::ipc::sync_account_commands::{clear_vault_test_account, seed_vault_test_account};
 
+    let _account_guard = TEST_ACCOUNT.lock().await;
     let remote: Shared = Default::default();
     let router = Router::new()
         .route("/api/v1/vaults", get(list))
@@ -236,4 +239,125 @@ async fn an_account_vault_migrates_and_links_without_exposing_records() {
     clear_vault_test_account().await;
     service.abort();
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn an_organization_vault_opens_for_a_recipient_and_stays_readable_offline() {
+    use crate::ipc::sync_account_commands::{clear_vault_test_account, seed_vault_test_account};
+    use axum::routing::put;
+    use uuid::Uuid;
+
+    let _account_guard = TEST_ACCOUNT.lock().await;
+    let remote = Arc::new(Mutex::new(Remote {
+        writes_allowed: true,
+        ..Default::default()
+    }));
+    let org = Uuid::new_v4();
+    let vaults = format!("/api/v1/organizations/{org}/vaults");
+    let grant = Arc::new(Mutex::new(None::<Value>));
+    let router = Router::new()
+        .route(&vaults, get({
+            let grant = grant.clone();
+            let remote = remote.clone();
+            move || async move {
+                let grant = grant.lock().await;
+                let remote = remote.lock().await;
+                let entries: Vec<_> = remote.id.iter().map(|id| match &*grant {
+                    Some(grant) => json!({"id": id, "role": grant["role"], "wrapped_key": grant["wrapped_key"]}),
+                    None => json!({"id": id, "role": "owner"}),
+                }).collect();
+                Json(entries)
+            }
+        }))
+        .route(&format!("{vaults}/{{id}}/members/recipient"), put({
+            let grant = grant.clone();
+            move |Json(value): Json<Value>| async move {
+                *grant.lock().await = Some(value);
+                StatusCode::NO_CONTENT
+            }
+        }))
+        .route(&format!("{vaults}/{{id}}/bundle"), get(download).put(upload))
+        .with_state(remote.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let service = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut owner = VaultManager::new(dir.path().join("owner"));
+    let mut recipient = VaultManager::new(dir.path().join("recipient"));
+    owner.init_identity("owner-password").await.unwrap();
+    recipient.init_identity("recipient-password").await.unwrap();
+    let account = seed_vault_test_account(&url, "owner").await;
+    let info = owner
+        .create_organization_vault(&account, org, "Team vault")
+        .await
+        .unwrap();
+    let secret = "private-session-record-in-team-vault";
+    let record = owner
+        .create_secret(
+            &info.id,
+            "Team server",
+            SecretCategory::Session,
+            value(secret),
+        )
+        .await
+        .unwrap();
+    flush(&owner, &info.id).await;
+    assert!(!remote
+        .lock()
+        .await
+        .bytes
+        .windows(secret.len())
+        .any(|s| s == secret.as_bytes()));
+    let public_key = BASE64.encode(recipient.identity.as_ref().unwrap().public_key.as_bytes());
+    owner
+        .change_organization_grant(&info.id, "recipient", Some("viewer"), &public_key)
+        .await
+        .unwrap();
+
+    let account = seed_vault_test_account(&url, "recipient").await;
+    let id = Uuid::parse_str(&info.id).unwrap();
+    recipient
+        .open_organization_vault(&account, org, id)
+        .await
+        .unwrap();
+    assert_eq!(
+        recipient
+            .read_secret(&info.id, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        secret.as_bytes()
+    );
+    assert!(matches!(
+        recipient
+            .update_secret(&info.id, &record, value("viewer edit"))
+            .await,
+        Err(VaultError::AccessDenied(_))
+    ));
+
+    grant.lock().await.as_mut().unwrap()["role"] = json!("editor");
+    recipient
+        .open_organization_vault(&account, org, id)
+        .await
+        .unwrap();
+    recipient
+        .update_secret(&info.id, &record, value("editor edit"))
+        .await
+        .unwrap();
+    assert_eq!(flush(&recipient, &info.id).await.pushed, 1);
+
+    drop(recipient);
+    clear_vault_test_account().await;
+    service.abort();
+    let mut restarted = VaultManager::new(dir.path().join("recipient"));
+    assert!(restarted.unlock("recipient-password").await.unwrap());
+    assert_eq!(
+        restarted
+            .read_secret(&info.id, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"editor edit"
+    );
 }

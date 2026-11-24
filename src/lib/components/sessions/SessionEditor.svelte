@@ -387,7 +387,7 @@
 
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
-	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web');
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc');
 	/** The saved credential the login comes from; null: the fields below. */
 	let usedCredential = $derived(
 		!takesCredential || credentialId === OWN_LOGIN
@@ -503,7 +503,7 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
@@ -512,8 +512,9 @@
 		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice'] },
 		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
 		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] },
-		// Neither a terminal nor a remote desktop: a device's web page, MikroTik's own app.
-		{ id: 'other', kinds: ['web', 'winbox'] }
+		// Neither a terminal nor a remote desktop: a server's management
+		// controller over Redfish, a device's web page, MikroTik's own app.
+		{ id: 'other', kinds: ['web', 'bmc', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -548,6 +549,7 @@
 		if (next !== 'ssh' && username === 'root') username = '';
 		if (next === 'ssh' && username === '') username = 'root';
 		if (next === 'winbox' && username === '') username = 'admin';
+		if (next === 'bmc' && username === '') username = 'root';
 		// A VNC user name means a Mac's own login: not one carried over.
 		if (next === 'vnc' || next === 'spice' || next === 'serial') username = '';
 		// A port name is not a host name, nor the other way round.
@@ -652,7 +654,7 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && !filesProto);
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
@@ -924,7 +926,8 @@
 		const web = kind === 'web';
 		const ftp = kind === 'ftp';
 		/** Jump hosts, proxies, login shells and ssh_config are SSH's alone. */
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp;
+		const bmc = kind === 'bmc';
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
 		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
 		const via = vnc || spice ? viaSessionId || null : null;
@@ -966,7 +969,7 @@
 		const notesToSave = notes.trim() ? notes : null;
 		// Remote desktops paint their own screen, and WinBox is its own
 		// program: no terminal colours.
-		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || !!filesProto;
+		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || bmc || !!filesProto;
 		const themeToSave = noTerminal ? null : terminalTheme || null;
 		const cursorToSave = noTerminal ? null : cursorChoice || null;
 		const blinkToSave = noTerminal || !blinkChoice ? null : blinkChoice === 'on';
@@ -1280,7 +1283,7 @@
 		<div class="columns" class:wide>
 		<div class="column">
 		{#if wide}<span class="column-title">{t('session.column_connection')}</span>{/if}
-		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
+		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
 
 		{#if kind === 'wsl'}
 			<div class="shell-field">
@@ -1403,7 +1406,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : 'root'} disabled={saving} />
+			<Input label={kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -1922,6 +1925,16 @@
 				</select>
 				<p class="shell-hint">{ftpTls === 'none' ? t('ftp.tls_none_hint') : t('ftp.tls_hint')}</p>
 			</div>
+		{:else if kind === 'bmc'}
+			<!-- A Redfish login: the BMC's own user (root on an iDRAC,
+			     Administrator on an iLO). -->
+			{#if !usedCredential}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('session.password')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+				</div>
+			{/if}
+			<p class="shell-hint">{t('bmc.editor_hint')}</p>
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->

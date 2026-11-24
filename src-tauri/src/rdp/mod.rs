@@ -1081,6 +1081,12 @@ async fn pump_output(
                     RdpOutputEvent::WindowingOrders(orders) => {
                         if windows.apply(orders) {
                             let list = windows.list();
+                            for w in &list {
+                                tracing::debug!(
+                                    "RDP {id}: RemoteApp window {:#x} {} at {},{} {}x{} listed={} owner={:#x} active={} z={}",
+                                    w.id, w.state, w.x, w.y, w.width, w.height, w.listed, w.owner, w.active, w.z
+                                );
+                            }
                             *shown_windows.lock().unwrap_or_else(|e| e.into_inner()) = list.clone();
                             let _ = app.emit(&format!("rdp-windows-{id}"), list);
                         }
