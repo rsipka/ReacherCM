@@ -69,6 +69,7 @@
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
 	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
+	import { bmcConsoleSession } from '#lib/sessions/bmc-console.js';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
@@ -223,6 +224,14 @@
 			} else if (r.kind === 'quick-connect') {
 				quickPrefill = r.prefill ?? null;
 				showQuickConnect = true;
+			} else if (r.kind === 'bmc-console') {
+				void sessionGet(r.sessionId)
+					.then((s) => {
+						setActivePage('terminal');
+						consoleOnConnect = { id: s.id, command: r.command };
+						return handleConnect(bmcConsoleSession(s, r.port));
+					})
+					.catch((err) => addToast(String(err), 'error'));
 			} else if (r.kind === 'connect-many') {
 				setActivePage('terminal');
 				void (async () => {
@@ -1695,6 +1704,16 @@
 		if (s) openFileManager(s);
 	}
 
+	/** A server management session's text console being connected: the
+	 *  command its tab types once logged in (see #lib/sessions/bmc-console). */
+	let consoleOnConnect: { id: string; command: string } | undefined;
+
+	/** A connect of a server management session's text console: the saved
+	 *  session is a BMC one. */
+	function isBmcConsole(session: SessionConfig): boolean {
+		return sessionKind(session) === 'ssh' && sessions.some((s) => s.id === session.id && sessionKind(s) === 'bmc');
+	}
+
 	/** A connect of an RDP session's file manager: the saved session is RDP. */
 	function isRdpFiles(session: SessionConfig): boolean {
 		return sessionKind(session) === 'ssh' && sessions.some((s) => s.id === session.id && sessionKind(s) === 'rdp');
@@ -1919,6 +1938,7 @@
 			const keyPassphraseRef = authType === 'Key' && !connectKeyPassphrase && session.auth_method.type === 'Key'
 				? (session.auth_method.passphrase_ref ?? undefined)
 				: undefined;
+			const bmcConsole = isBmcConsole(session);
 			const paramsFor = (addr: ResolvedAddress) => ({
 				id,
 				host: addr.host,
@@ -1939,7 +1959,8 @@
 				tmux: session.x11_desktop || session.files ? null : tmuxView(tmuxFor(session, folders)),
 				x11Desktop: session.files ? null : (session.x11_desktop ?? null),
 				terminal: session.terminal ?? null,
-				injectColors: session.files ? false : getSettings().typeShellSetup,
+				// A controller's command line is no shell to set up.
+				injectColors: session.files || bmcConsole ? false : getSettings().typeShellSetup,
 				sessionLog: session.files ? null : sessionLogConfig(session.name),
 				showLoginMessage: getSettings().showLoginMessage,
 				tryAgentKeys: authType === 'Key' && session.try_agent_keys === true,
@@ -2001,7 +2022,11 @@
 				return;
 			}
 
-			const tab = createTab('ssh', `${session.username}@${used.host}`, id, session.name, session.detected_os);
+			if (bmcConsole && consoleOnConnect?.id === session.id) {
+				Object.assign(connectParams, { afterLogin: consoleOnConnect.command });
+				consoleOnConnect = undefined;
+			}
+			const tab = createTab('ssh', `${session.username}@${used.host}`, id, session.name, bmcConsole ? null : session.detected_os);
 			tab.sshConnectParams = connectParams;
 			tab.sessionId = session.id;
 			tab.terminalTheme = session.terminal_theme ?? null;
@@ -2031,7 +2056,7 @@
 			// their own logos now.
 			// Not for an RDP session's file manager: its OS says how the
 			// remote desktop connects (GNOME), not what SSH would find.
-			if (!isRdpFiles(session) && osNeedsDetection(session.detected_os, session.os_manual)) {
+			if (!isRdpFiles(session) && !bmcConsole && osNeedsDetection(session.detected_os, session.os_manual)) {
 				sshDetectOs(id).then(async (osId) => {
 					if (osId && osId !== session.detected_os) {
 						updateTabOs(id, osId);

@@ -972,6 +972,7 @@ pub fn run() {
             web_session_cert_add,
             web_session_cert_remove,
             web_session_clear_data,
+            bmc_remote_console,
             // WireGuard profiles and tunnels (see `wireguard`)
             wireguard_list,
             wireguard_get,

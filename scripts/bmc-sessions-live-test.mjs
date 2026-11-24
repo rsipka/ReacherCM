@@ -152,7 +152,11 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 			return SESSIONS.find((x) => x.id === args.sessionId);
 		case 'bmc_connect':
 			if (!certTrusted) throw `BMC_UNTRUSTED_CERT:${FP}`;
-			return { vendor: 'dell', product: 'Integrated Dell Remote Access Controller' };
+			return { vendor: 'dell', product: 'Integrated Dell Remote Access Controller', consoleCommand: 'console com2' };
+		case 'bmc_remote_console':
+			return 'web-1';
+		case 'ssh_connect':
+			return args.id;
 		case 'bmc_session_cert_trust':
 			certTrusted = args.fingerprint === FP;
 			return null;
@@ -303,6 +307,22 @@ try {
 	check('and shown with Eject', await until(async () => (await page.getByRole('button', { name: 'Eject' }).count()) === 1));
 	check('jobs are listed', (await body()).includes('Configure: RAID.Integrated.1-1'));
 	await shot('tasks');
+
+	console.log('\nconsoles');
+	await page.getByRole('button', { name: 'Remote console' }).click();
+	check('Remote console opens the console window for this session', await until(() => calls.some((c) => c.cmd === 'bmc_remote_console' && c.args.sessionId === 's-idrac')));
+	await page.getByRole('button', { name: 'Text console' }).click();
+	check('Text console asks for the port and command', await until(async () => (await page.locator('.console-form').count()) === 1));
+	check('with the controller\'s command filled in', (await page.locator('.console-form input').nth(1).inputValue()) === 'console com2');
+	await shot('text-console');
+	await page.locator('.console-form button[type="submit"]').click();
+	check('it connects over SSH to the controller', await until(() => calls.some((c) => c.cmd === 'ssh_connect' && c.args.port === 22 && c.args.sessionId === 's-idrac')));
+	const sshCall = calls.find((c) => c.cmd === 'ssh_connect');
+	check('without typing a shell setup into it', sshCall && !sshCall.args.injectColors && !sshCall.args.tmux, JSON.stringify(sshCall?.args));
+	const typed = (c) => c.cmd === 'ssh_send' && String.fromCharCode(...c.args.data) === 'console com2\r';
+	check('and types the console command once logged in', await until(() => calls.some(typed), 12000));
+	check('only once', calls.filter(typed).length === 1);
+	await page.locator('.tab').first().click();
 
 	console.log('\nclosing');
 	const id = calls.find((c) => c.cmd === 'bmc_connect' && certTrusted)?.args.id;

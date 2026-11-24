@@ -140,6 +140,19 @@ pub(crate) fn check_matches_session(
             ))
         };
     }
+    // A server management session's text console logs in over SSH to the
+    // same controller, as the same user, at whatever port its SSH is on.
+    if stored.kind == crate::state::SessionKind::Bmc {
+        let same = stored.host == host && stored.username == username && jumps.is_empty() && proxy.is_none();
+        return if same {
+            Ok(())
+        } else {
+            Err(format!(
+                "This connection does not match the saved session '{}', so its password manager entries are not used. Reload the session list and connect again.",
+                stored.name
+            ))
+        };
+    }
     let same = stored.kind == crate::state::SessionKind::Ssh && addr_ok && stored.username == username && route_ok;
     if same {
         Ok(())

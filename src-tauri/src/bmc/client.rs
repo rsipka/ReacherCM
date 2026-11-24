@@ -87,7 +87,7 @@ pub fn valid_path(path: &str) -> bool {
 }
 
 /// A host for a URL: an IPv6 address in brackets.
-fn url_host(host: &str) -> String {
+pub(crate) fn url_host(host: &str) -> String {
     let h = host.trim().trim_matches(['[', ']']);
     if h.contains(':') { format!("[{h}]") } else { h.to_string() }
 }
@@ -287,6 +287,27 @@ impl Redfish {
     pub async fn post(&self, path: &str, body: &Value) -> Result<Option<String>, BmcError> {
         let (v, _) = self.send(Method::POST, path, Some(body), None, true).await?;
         Ok(Some(error_message(&v)).filter(|m| !m.is_empty()))
+    }
+
+    /// POST an action and keep what it answered (an action that returns data).
+    pub async fn post_for(&self, path: &str, body: &Value) -> Result<Value, BmcError> {
+        self.send(Method::POST, path, Some(body), None, true).await.map(|(v, _)| v)
+    }
+
+    /// `https://host:port`, as the connection was opened.
+    pub fn base(&self) -> &str {
+        &self.base
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    /// The password this connection logged in with, for the console page's
+    /// sign-in (`crate::web::autologin`), which only types it into a page of
+    /// the controller's own origin.
+    pub(crate) fn password(&self) -> &str {
+        &self.password
     }
 
     pub async fn patch(&self, path: &str, body: &Value, etag: Option<&str>) -> Result<(), BmcError> {

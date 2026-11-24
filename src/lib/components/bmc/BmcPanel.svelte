@@ -17,6 +17,7 @@
 		bmcOverview,
 		bmcSensors,
 		bmcHardware,
+		bmcRemoteConsole,
 		BMC_PASSWORD_NEEDED,
 		BMC_LOGIN_REFUSED,
 		BMC_UNTRUSTED_CERT,
@@ -28,6 +29,10 @@
 		type BmcSensor
 	} from '#lib/ipc/bmc.js';
 	import Button from '#lib/components/shared/Button.svelte';
+	import Modal from '#lib/components/shared/Modal.svelte';
+	import { isMobile } from '#lib/platform.js';
+	import { requestSessionAction } from '#lib/state/palette.svelte.js';
+	import { BMC_SSH_PORT, rememberedConsole, rememberConsole } from '#lib/sessions/bmc-console.js';
 	import BmcLogs from './BmcLogs.svelte';
 	import BmcTasks from './BmcTasks.svelte';
 	import { healthClass, healthLabel, word, when, num, bmcError, vendorName } from './bmc-format.js';
@@ -155,6 +160,48 @@
 		void openUrl(`https://${host}${p.port && p.port !== 443 ? ':' + p.port : ''}/`).catch((e) => addToast(String(e), 'error'));
 	}
 
+	/** The controller's own console, in a web window (desktop). */
+	let consoleOpening = $state(false);
+	async function remoteConsole(): Promise<void> {
+		const p = params;
+		const id = tab.bmcConnectionId;
+		if (!p || !id || consoleOpening) return;
+		consoleOpening = true;
+		try {
+			await bmcRemoteConsole(id, p.sessionId);
+		} catch (err) {
+			addToast(bmcError(err), 'error');
+		} finally {
+			consoleOpening = false;
+		}
+	}
+
+	/** Text console: SSH to the controller, then its serial console command. */
+	let textConsole = $state<{ port: string; command: string } | null>(null);
+	function askTextConsole(): void {
+		const p = params;
+		if (!p) return;
+		const last = rememberedConsole(p.sessionId);
+		textConsole = {
+			port: String(last?.port ?? (opened?.vendor === 'openbmc' ? 2200 : BMC_SSH_PORT)),
+			command: last?.command ?? opened?.consoleCommand ?? ''
+		};
+	}
+	function openTextConsole(): void {
+		const p = params;
+		const c = textConsole;
+		if (!p || !c) return;
+		const port = Number.parseInt(c.port, 10);
+		if (!(port > 0 && port < 65536)) {
+			addToast(t('bmc.console_bad_port'), 'error');
+			return;
+		}
+		const command = c.command.trim();
+		rememberConsole(p.sessionId, port, command);
+		textConsole = null;
+		requestSessionAction({ kind: 'bmc-console', sessionId: p.sessionId, port, command });
+	}
+
 	onMount(() => {
 		if (tab.bmcConnectionId) {
 			stage = { kind: 'up' };
@@ -252,6 +299,10 @@
 				{#if overview?.powerState}
 					<span class="power {overview.powerState === 'On' ? 'on' : 'off'}">{word('bmc.power_state_', overview.powerState)}</span>
 				{/if}
+				{#if !isMobile()}
+					<Button variant="secondary" size="sm" disabled={consoleOpening} onclick={() => void remoteConsole()}>{t('bmc.remote_console')}</Button>
+				{/if}
+				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
 				<Button variant="ghost" size="sm" onclick={openWeb}>{t('bmc.open_web')}</Button>
 				<Button variant="secondary" size="sm" disabled={loading !== null} onclick={() => void load(page, true)}>{t('bmc.refresh')}</Button>
 			</div>
@@ -372,6 +423,27 @@
 	</div>
 {/if}
 
+<Modal open={textConsole !== null} onclose={() => (textConsole = null)} title={t('bmc.text_console')} maxWidth="440px">
+	{#if textConsole}
+		<form class="console-form" onsubmit={(e) => { e.preventDefault(); openTextConsole(); }}>
+			<p class="note">{t('bmc.text_console_intro')}</p>
+			<label>
+				<span>{t('bmc.console_port')}</span>
+				<input type="text" inputmode="numeric" bind:value={textConsole.port} />
+			</label>
+			<label>
+				<span>{t('bmc.console_command')}</span>
+				<input type="text" class="mono" bind:value={textConsole.command} placeholder={t('bmc.console_command_none')} autocomplete="off" spellcheck="false" />
+			</label>
+			<p class="note dim">{t('bmc.console_command_hint')}</p>
+			<div class="console-actions">
+				<Button variant="ghost" size="sm" type="button" onclick={() => (textConsole = null)}>{t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" type="submit">{t('bmc.console_open')}</Button>
+			</div>
+		</form>
+	{/if}
+</Modal>
+
 <style>
 	.bmc {
 		position: absolute;
@@ -411,6 +483,31 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.console-form {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.console-form label {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 12px;
+		color: var(--color-text-secondary);
+	}
+	.console-form input {
+		padding: 6px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg-primary);
+		color: var(--color-text-primary);
+		font-size: 13px;
+	}
+	.console-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
 	}
 	.top-actions {
 		display: flex;
