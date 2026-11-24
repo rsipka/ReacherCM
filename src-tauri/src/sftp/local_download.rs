@@ -262,6 +262,27 @@ mod tests {
     use super::*;
     use std::io::Write;
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_download_creates_publishes_and_cleans_up_in_the_selected_folder() {
+        // Set this to a writable UNC share to exercise the network path.
+        let root = match std::env::var_os("REACH_WINDOWS_TEST_SHARE") {
+            Some(share) => tempfile::tempdir_in(share),
+            None => tempfile::tempdir(),
+        }.unwrap();
+        let target = DownloadTarget::InFolder {
+            root: root.path().to_owned(),
+            names: vec!["nested".into(), "report.txt".into()],
+        };
+        let mut download = LocalDownload::for_target(&target).unwrap();
+        download.writer.write_all(b"finished").unwrap();
+        download.commit(&CancellationToken::new()).unwrap();
+        drop(LocalDownload::for_target(&target).unwrap());
+
+        assert_eq!(std::fs::read(target.path()).unwrap(), b"finished");
+        assert_eq!(std::fs::read_dir(root.path().join("nested")).unwrap().count(), 1);
+    }
+
     #[test]
     fn an_abandoned_download_cannot_remove_another_transfers_result() {
         let dir = tempfile::tempdir().unwrap();

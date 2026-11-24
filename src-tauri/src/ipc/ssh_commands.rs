@@ -70,6 +70,17 @@ fn proxy_endpoint(p: &crate::state::ProxyConfig) -> (&str, &str, u16, Option<&st
 /// The connect must go where the saved session goes for its password
 /// manager entries to be sent: the same server, user, jump hosts and proxy.
 /// Their approvals were given for exactly that (`approval_context`).
+/// The SSH login of an RDP session's file manager: its user, behind its
+/// domain as Windows OpenSSH takes it (`DOMAIN\\user`) unless the user name
+/// already names one. Mirrors `rdpFilesUsername` in src/lib/sessions/rdp-files.ts.
+pub(crate) fn rdp_files_username(s: &crate::state::SessionConfig) -> String {
+    let user = s.username.trim();
+    match s.domain.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(domain) if !user.contains(['\\', '@']) => format!("{domain}\\{user}"),
+        _ => user.to_string(),
+    }
+}
+
 pub(crate) fn check_matches_session(
     stored: &crate::state::SessionConfig,
     via: Option<&crate::state::SessionConfig>,
@@ -111,6 +122,24 @@ pub(crate) fn check_matches_session(
     } else {
         jumps == stored_jumps && proxy.map(proxy_endpoint) == stored.proxy.as_ref().map(proxy_endpoint)
     };
+    // An RDP session's file manager (session menu > Open file manager) logs
+    // in over SFTP to the same host, at its files port, as the same user:
+    // its password goes to the machine it is saved for, and nowhere else.
+    if stored.kind == crate::state::SessionKind::Rdp {
+        let same = stored.host == host
+            && port == crate::rdp::options::RdpOptions::files_port(stored.rdp.as_ref())
+            && rdp_files_username(stored) == username
+            && jumps.is_empty()
+            && proxy.is_none();
+        return if same {
+            Ok(())
+        } else {
+            Err(format!(
+                "This connection does not match the saved session '{}', so its password manager entries are not used. Reload the session list and connect again.",
+                stored.name
+            ))
+        };
+    }
     let same = stored.kind == crate::state::SessionKind::Ssh && addr_ok && stored.username == username && route_ok;
     if same {
         Ok(())

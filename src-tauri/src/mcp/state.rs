@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 use crate::mcp::agents::{self, Agent};
 use crate::mcp::guard::WriteRequest;
@@ -102,6 +103,30 @@ pub struct SendRequest {
     pub command: String,
     /// Shown in the echo banner so the scrollback records which agent acted.
     pub agent_name: String,
+    credential_revoked: CancellationToken,
+    share_revoked: CancellationToken,
+    global_policy_revoked: CancellationToken,
+    session_policy_revoked: CancellationToken,
+    request_closed: CancellationToken,
+}
+
+impl SendRequest {
+    /// Check again after obtaining the terminal, immediately before writing.
+    pub fn check_revocation(&self) -> Result<(), String> {
+        if self.credential_revoked.is_cancelled() {
+            return Err("The MCP credential changed before dispatch.".into());
+        }
+        if self.share_revoked.is_cancelled() {
+            return Err("This terminal's share ended before dispatch.".into());
+        }
+        if self.global_policy_revoked.is_cancelled() || self.session_policy_revoked.is_cancelled() {
+            return Err("The terminal's permissions changed before dispatch.".into());
+        }
+        if self.request_closed.is_cancelled() {
+            return Err("The MCP request closed before dispatch.".into());
+        }
+        Ok(())
+    }
 }
 
 /// One shared session, as the settings UI needs to show it.
@@ -134,30 +159,64 @@ pub struct ConfirmRequest {
     pub danger_reason: Option<String>,
 }
 
+#[derive(Default)]
+struct Credential {
+    token: Option<String>,
+    revoked: CancellationToken,
+}
+
+#[derive(Clone)]
+struct Policy {
+    agent_id: String,
+    mode: Mode,
+    revoked: CancellationToken,
+}
+
+impl Default for Policy {
+    fn default() -> Self {
+        Self { agent_id: agents::default_agent().id, mode: Mode::Ask, revoked: CancellationToken::new() }
+    }
+}
+
+impl Policy {
+    fn revoke(&mut self) {
+        self.revoked.cancel();
+        self.revoked = CancellationToken::new();
+    }
+
+    // A session override can only remove tools from the global agent.
+    fn agent_for(&self, override_id: Option<&str>) -> Agent {
+        let global = agents::find(&self.agent_id).unwrap_or_else(agents::default_agent);
+        let Some(mut chosen) = override_id.and_then(agents::find) else { return global };
+        chosen.tools.retain(|t| global.tools.contains(t));
+        chosen
+    }
+}
+
 pub struct McpState {
     enabled: AtomicBool,
-    token: std::sync::RwLock<Option<String>>,
-    agent_id: std::sync::RwLock<String>,
+    credential: std::sync::RwLock<Credential>,
+    policy: std::sync::RwLock<Policy>,
     sessions: RwLock<HashMap<String, SharedSession>>,
     clients: RwLock<HashMap<String, ClientState>>,
     confirmer: Mutex<Option<Confirmer>>,
     sender: Mutex<Option<Sender>>,
-    mode: std::sync::RwLock<Mode>,
+    dispatch_slots: Arc<Semaphore>,
 }
 
 impl Default for McpState {
     fn default() -> Self {
         Self {
             enabled: AtomicBool::new(false),
-            token: std::sync::RwLock::new(None),
+            credential: std::sync::RwLock::new(Credential::default()),
             // The most restricted built-in. A default that can write is a
             // default that surprises someone.
-            agent_id: std::sync::RwLock::new(agents::default_agent().id),
+            policy: std::sync::RwLock::new(Policy::default()),
             sessions: RwLock::new(HashMap::new()),
             clients: RwLock::new(HashMap::new()),
             confirmer: Mutex::new(None),
             sender: Mutex::new(None),
-            mode: std::sync::RwLock::new(Mode::Ask),
+            dispatch_slots: Arc::new(Semaphore::new(8)),
         }
     }
 }
@@ -172,18 +231,27 @@ impl McpState {
     }
 
     pub fn token(&self) -> Option<String> {
-        self.token.read().ok().and_then(|g| g.clone())
+        self.credential.read().ok()?.token.clone()
     }
 
     pub fn set_token(&self, t: Option<String>) {
-        if let Ok(mut g) = self.token.write() {
-            *g = t;
+        if let Ok(mut credential) = self.credential.write() {
+            credential.revoked.cancel();
+            *credential = Credential { token: t, revoked: CancellationToken::new() };
         }
     }
 
+    pub(crate) fn token_snapshot(&self) -> Option<(String, CancellationToken)> {
+        let credential = self.credential.read().ok()?;
+        Some((credential.token.clone()?, credential.revoked.clone()))
+    }
+
     pub fn agent(&self) -> Agent {
-        let id = self.agent_id.read().ok().map(|g| g.clone()).unwrap_or_default();
-        agents::find(&id).unwrap_or_else(agents::default_agent)
+        self.policy_snapshot().agent_for(None)
+    }
+
+    fn policy_snapshot(&self) -> Policy {
+        self.policy.read().map(|policy| policy.clone()).unwrap_or_default()
     }
 
     /// Set by the user in Reach's settings. There is deliberately no MCP method
@@ -192,8 +260,11 @@ impl McpState {
         if agents::find(id).is_none() {
             return Err(format!("Unknown agent `{id}`"));
         }
-        if let Ok(mut g) = self.agent_id.write() {
-            *g = id.to_string();
+        if let Ok(mut policy) = self.policy.write() {
+            if policy.agent_id != id {
+                policy.revoke();
+                policy.agent_id = id.to_string();
+            }
         }
         Ok(())
     }
@@ -211,30 +282,34 @@ impl McpState {
     }
 
     pub fn mode(&self) -> Mode {
-        self.mode.read().ok().map(|g| *g).unwrap_or_default()
+        self.policy.read().map(|policy| policy.mode).unwrap_or_default()
     }
 
     /// Chosen by the user in Reach. As with the agent, there is deliberately no
     /// MCP method that reaches this — a model able to pick its own mode would
     /// pick the one that stops asking.
     pub fn set_mode(&self, m: Mode) {
-        if let Ok(mut g) = self.mode.write() {
-            *g = m;
+        if let Ok(mut policy) = self.policy.write() {
+            if policy.mode != m {
+                policy.revoke();
+                policy.mode = m;
+            }
         }
     }
 
     /// Share a session. Nothing is visible to any client until this is called.
     pub async fn share(&self, id: String, kind: SessionKind, host: String, username: String) {
-        self.sessions
-            .write()
-            .await
-            .insert(id.clone(), SharedSession::new(id, kind, host, username));
+        let mut sessions = self.sessions.write().await;
+        drop(sessions.insert(id.clone(), SharedSession::new(id, kind, host, username)));
     }
 
     /// Stop sharing. Every client's preconditions for it are dropped, so
     /// re-sharing later cannot reuse stale consent.
     pub async fn unshare(&self, id: &str) {
-        self.sessions.write().await.remove(id);
+        {
+            let mut sessions = self.sessions.write().await;
+            drop(sessions.remove(id));
+        }
         for client in self.clients.write().await.values_mut() {
             client.forget(id);
         }
@@ -261,27 +336,6 @@ impl McpState {
         self.clients.write().await.clear();
     }
 
-    /// The agent for one session: its override if set, otherwise the global
-    /// one — with tools intersected against the global agent either way.
-    ///
-    /// The intersection is the load-bearing part. `tools/list` is answered once
-    /// per connection, before any session is named, so a session override that
-    /// *added* a tool would advertise a capability and then hand it out for one
-    /// session only, which is both surprising and unenforceable at the protocol
-    /// level. Narrowing is always safe; widening is not.
-    fn agent_for(&self, override_id: Option<&str>) -> Agent {
-        let global = self.agent();
-        let Some(id) = override_id else { return global };
-        let Some(mut chosen) = agents::find(id) else { return global };
-        chosen.tools.retain(|t| global.tools.contains(t));
-        chosen
-    }
-
-    /// The mode for one session: its override if set, otherwise the global one.
-    fn mode_for(&self, override_mode: Option<Mode>) -> Mode {
-        override_mode.unwrap_or_else(|| self.mode())
-    }
-
     /// Point one session at a different agent. `None` returns it to the global
     /// agent. Reach's UI only.
     pub async fn set_session_agent(&self, id: &str, agent_id: Option<&str>) -> Result<(), String> {
@@ -294,7 +348,10 @@ impl McpState {
         let Some(session) = sessions.get_mut(id) else {
             return Err(format!("`{id}` is not shared"));
         };
-        session.agent_id = agent_id.map(str::to_string);
+        if session.agent_id.as_deref() != agent_id {
+            session.revoke_policy();
+            session.agent_id = agent_id.map(str::to_string);
+        }
         Ok(())
     }
 
@@ -305,7 +362,10 @@ impl McpState {
         let Some(session) = sessions.get_mut(id) else {
             return Err(format!("`{id}` is not shared"));
         };
-        session.mode = mode;
+        if session.mode != mode {
+            session.revoke_policy();
+            session.mode = mode;
+        }
         Ok(())
     }
 
@@ -331,8 +391,17 @@ impl McpState {
         out
     }
 
-    /// Dispatch one JSON-RPC method.
+    #[cfg(test)]
     pub async fn handle(&self, req: Request) -> Result<Value, (i32, String)> {
+        let revoked = self.credential.read().unwrap().revoked.clone();
+        self.handle_authorized(req, &revoked).await
+    }
+
+    /// Dispatch one JSON-RPC method for the credential that admitted it.
+    pub(crate) async fn handle_authorized(&self, req: Request, revoked: &CancellationToken) -> Result<Value, (i32, String)> {
+        if revoked.is_cancelled() {
+            return Err((protocol::INVALID_REQUEST, "The MCP credential changed before dispatch.".into()));
+        }
         // One client for now: the token identifies the connection, and Reach
         // hands out a single token. Kept keyed so per-client preconditions do
         // not have to be rewritten when multiple clients are supported.
@@ -365,7 +434,7 @@ impl McpState {
                 Ok(tools::prompt_content(&agent))
             }
 
-            "tools/call" => self.call_tool(req.params, &client_key).await,
+            "tools/call" => self.call_tool(req.params, &client_key, revoked).await,
 
             other => Err((
                 protocol::METHOD_NOT_FOUND,
@@ -374,7 +443,7 @@ impl McpState {
         }
     }
 
-    async fn call_tool(&self, params: Value, client_key: &str) -> Result<Value, (i32, String)> {
+    async fn call_tool(&self, params: Value, client_key: &str, revoked: &CancellationToken) -> Result<Value, (i32, String)> {
         let name = params
             .get("name")
             .and_then(|v| v.as_str())
@@ -386,8 +455,9 @@ impl McpState {
         let session_id = args.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
         let sessions = self.sessions.read().await;
         let session = sessions.get(session_id);
-        let agent = self.agent_for(session.and_then(|s| s.agent_id.as_deref()));
-        let session_mode = session.and_then(|s| s.mode);
+        let policy = self.policy_snapshot();
+        let agent = policy.agent_for(session.and_then(|s| s.agent_id.as_deref()));
+        let session_mode = session.and_then(|s| s.mode).unwrap_or(policy.mode);
 
         // A tool the agent was not granted is not in `tools/list`, so calling it
         // is a mistake worth an explicit refusal rather than silence.
@@ -399,6 +469,9 @@ impl McpState {
         }
 
         let mut clients = self.clients.write().await;
+        if revoked.is_cancelled() {
+            return Err((protocol::INVALID_REQUEST, "The MCP credential changed before dispatch.".into()));
+        }
         let client = clients.entry(client_key.to_string()).or_default();
 
         match tool {
@@ -452,7 +525,9 @@ impl McpState {
                 let Some(session) = session else {
                     return Ok(protocol::tool_refusal("This terminal is no longer shared.".into()));
                 };
-                let (host, kind, share_id) = (session.host.clone(), session.kind, session.share_id);
+                let (host, kind) = (session.host.clone(), session.kind);
+                let share_revoked = session.revoked.clone();
+                let session_policy_revoked = session.policy_revoked.clone();
 
                 // Locks are released before awaiting the human: a confirm
                 // dialog can sit open for minutes, and holding the session lock
@@ -477,7 +552,7 @@ impl McpState {
                 // this only decides whether a human is asked. The command is
                 // still echoed into the terminal, which in auto mode is the
                 // only place it becomes visible.
-                let auto = self.mode_for(session_mode).auto_approves(approved.danger);
+                let auto = session_mode.auto_approves(approved.danger);
 
                 let allowed = if auto {
                     true
@@ -513,33 +588,37 @@ impl McpState {
                             .into(),
                     ));
                 };
-                // Hold a shared lock through dispatch so unshare and dispatch
-                // have a definite order, including after a long confirmation.
-                let sessions = self.sessions.read().await;
-                let Some(current) = sessions.get(session_id).filter(|current| current.share_id == share_id) else {
-                    return Ok(protocol::tool_refusal("This terminal's share ended before dispatch.".into()));
-                };
-                let current_agent = self.agent_for(current.agent_id.as_deref());
-                if current_agent.id != agent.id
-                    || !current_agent.grants(tool)
-                    || (auto && !self.mode_for(current.mode).auto_approves(approved.danger))
-                {
-                    return Ok(protocol::tool_refusal("The terminal's permissions changed before dispatch.".into()));
-                }
-
+                // Each approval carries its policy and share at preparation.
+                // The sender rechecks them after waiting for the terminal.
+                let request_closed = CancellationToken::new();
+                let _close_request = request_closed.clone().drop_guard();
                 let send = SendRequest {
                     session_id: session_id.to_string(),
                     kind,
                     command: req.command.clone(),
                     agent_name: agent.name.clone(),
+                    credential_revoked: revoked.clone(),
+                    share_revoked,
+                    global_policy_revoked: policy.revoked,
+                    session_policy_revoked,
+                    request_closed,
                 };
-
-                let sent = sender(send).await;
-                drop(sessions);
+                if let Err(reason) = send.check_revocation() {
+                    return Ok(protocol::tool_refusal(reason));
+                }
+                let Ok(slot) = self.dispatch_slots.clone().try_acquire_owned() else {
+                    return Ok(protocol::tool_refusal("Terminal dispatch is busy. Nothing ran.".into()));
+                };
+                let dispatched = tokio::spawn(async move {
+                    let _slot = slot;
+                    send.check_revocation()?;
+                    sender(send).await
+                });
+                let sent = dispatched.await.unwrap_or_else(|e| Err(e.to_string()));
                 if let Err(e) = sent {
                     return Ok(protocol::tool_refusal(format!(
                         "The user approved this, but writing to the session failed: {e}. \
-                         Nothing ran — check the session is still connected."
+                         Check the session before trying again."
                     )));
                 }
 
@@ -613,12 +692,12 @@ mod tests {
 
         // Asking for a writing agent on one session must not grant send_input
         // when the connection-wide agent cannot write.
-        let a = s.agent_for(Some("linux-administrator"));
+        let a = s.policy_snapshot().agent_for(Some("linux-administrator"));
         assert!(a.is_read_only(), "a session override must not widen the tool surface");
 
         // With a writing global agent, narrowing works.
         s.set_agent("linux-administrator").unwrap();
-        let narrowed = s.agent_for(Some("architect"));
+        let narrowed = s.policy_snapshot().agent_for(Some("architect"));
         assert!(narrowed.is_read_only(), "narrowing to a read-only agent must hold");
     }
 
@@ -628,12 +707,10 @@ mod tests {
         s.set_mode(Mode::Ask);
         s.share("s1".into(), SessionKind::Ssh, "db".into(), "root".into()).await;
 
-        assert_eq!(s.mode_for(None), Mode::Ask, "no override falls back to global");
-        assert_eq!(s.mode_for(Some(Mode::Auto)), Mode::Auto, "override wins");
-
         s.set_session_mode("s1", Some(Mode::Auto)).await.unwrap();
         let settings = s.session_settings().await;
         assert_eq!(settings[0].mode, Some(Mode::Auto));
+        assert_eq!(s.mode(), Mode::Ask);
     }
 
     #[tokio::test]
@@ -803,6 +880,94 @@ mod tests {
         }))).await.unwrap();
         assert!(result.to_string().contains("share ended"));
         assert!(typed.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_token_rotated_during_confirmation_cannot_dispatch() {
+        let s = Arc::new(McpState::default());
+        s.set_token(Some("before".into()));
+        let (_, revoked) = s.token_snapshot().unwrap();
+        s.set_agent("linux-administrator").unwrap();
+        s.share("s1".into(), SessionKind::Ssh, "example.com".into(), "example".into()).await;
+        let during_confirmation = Arc::downgrade(&s);
+        s.set_confirmer(Some(Arc::new(move |_| {
+            let s = during_confirmation.upgrade().unwrap();
+            Box::pin(async move {
+                s.set_token(Some("after".into()));
+                true
+            })
+        }))).await;
+        let (sender, typed) = recording_sender();
+        s.set_sender(Some(sender)).await;
+        s.handle(req("tools/call", json!({
+            "name": "describe_session", "arguments": { "sessionId": "s1" }
+        }))).await.unwrap();
+        let result = s.handle_authorized(req("tools/call", json!({
+            "name": "send_input",
+            "arguments": { "sessionId": "s1", "command": "uptime", "rationale": "check system uptime" }
+        })), &revoked).await.unwrap();
+        assert!(result.to_string().contains("credential changed"));
+        assert!(typed.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_waiting_sender_observes_revocation_before_writing() {
+        for (change, expected) in [
+            ("unshare", "share ended"),
+            ("global", "permissions changed"),
+            ("session", "permissions changed"),
+            ("close", "request closed"),
+        ] {
+            let s = Arc::new(McpState::default());
+            s.set_agent("linux-administrator").unwrap();
+            s.set_mode(Mode::AutoSafe);
+            s.share("s1".into(), SessionKind::Ssh, "example.com".into(), "example".into()).await;
+            let started = Arc::new(tokio::sync::Notify::new());
+            let ready = Arc::new(tokio::sync::Notify::new());
+            let finished = Arc::new(tokio::sync::Notify::new());
+            let observed = Arc::new(Mutex::new(None));
+            let (sending, blocked, done, result) = (started.clone(), ready.clone(), finished.clone(), observed.clone());
+            s.set_sender(Some(Arc::new(move |send| {
+                let (sending, blocked, done, result) = (sending.clone(), blocked.clone(), done.clone(), result.clone());
+                Box::pin(async move {
+                    sending.notify_one();
+                    blocked.notified().await;
+                    let outcome = send.check_revocation();
+                    *result.lock().await = Some(outcome.clone());
+                    done.notify_one();
+                    outcome
+                })
+            }))).await;
+            s.handle(req("tools/call", json!({
+                "name": "describe_session", "arguments": { "sessionId": "s1" }
+            }))).await.unwrap();
+            let state = s.clone();
+            let dispatch = tokio::spawn(async move {
+                state.handle(req("tools/call", json!({
+                    "name": "send_input",
+                    "arguments": { "sessionId": "s1", "command": "uptime", "rationale": "check system uptime" }
+                }))).await.unwrap()
+            });
+            let deadline = std::time::Duration::from_secs(2);
+            tokio::time::timeout(deadline, started.notified()).await.unwrap();
+            match change {
+                "unshare" => tokio::time::timeout(deadline, s.unshare("s1")).await.unwrap(),
+                "global" => s.set_mode(Mode::Ask),
+                "session" => s.set_session_mode("s1", Some(Mode::Ask)).await.unwrap(),
+                "close" => dispatch.abort(),
+                _ => unreachable!(),
+            }
+            if change == "close" {
+                assert!(dispatch.await.unwrap_err().is_cancelled());
+                ready.notify_one();
+                tokio::time::timeout(deadline, finished.notified()).await.unwrap();
+                let result = observed.lock().await.take().unwrap();
+                assert!(result.unwrap_err().contains(expected));
+            } else {
+                ready.notify_one();
+                assert!(dispatch.await.unwrap().to_string().contains(expected), "{change}");
+            }
+        }
     }
 
     /// A rejected command must not be typed. The reply already said so; now the

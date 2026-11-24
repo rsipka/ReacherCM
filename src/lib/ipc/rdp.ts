@@ -66,6 +66,9 @@ export interface RdpOptions {
 	/** Started instead of the desktop. */
 	program?: string | null;
 	work_dir?: string | null;
+	/** The SSH port the session menu's Open file manager uses (SFTP on the
+	 *  same host). Absent: 22. */
+	files_port?: number | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */
