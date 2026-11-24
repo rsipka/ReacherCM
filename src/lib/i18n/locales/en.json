@@ -4283,5 +4283,12 @@
   "bmc.licence_needed": "The controller needs a licence for this. It said: {{message}}",
   "organization.rotation_pending": "Uploads are paused until the vault owner rotates the key.",
   "organization.finish_rotation": "Finish key rotation",
-  "organization.key_rotated": "Vault key rotated."
+  "organization.key_rotated": "Vault key rotated.",
+  "sync_account.pair_help": "In the sync web portal, open Devices → Add device → Pair a phone or tablet.",
+  "sync_account.pair_scan": "Scan pairing QR",
+  "sync_account.pair_code": "Pairing code",
+  "sync_account.pair_start": "Pair this device",
+  "sync_account.pair_match": "Compare this code in the web portal, then approve the device there.",
+  "sync_account.pair_invalid": "Enter a Reacher CM mobile pairing code.",
+  "sync_account.pair_camera": "Camera access is required to scan. You can paste the pairing code instead."
 }

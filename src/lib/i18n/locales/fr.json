@@ -4283,5 +4283,12 @@
   "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}",
   "organization.rotation_pending": "Les envois sont suspendus jusqu’à ce que le propriétaire du coffre renouvelle la clé.",
   "organization.finish_rotation": "Terminer le renouvellement de la clé",
-  "organization.key_rotated": "Clé du coffre renouvelée."
+  "organization.key_rotated": "Clé du coffre renouvelée.",
+  "sync_account.pair_help": "Dans le portail de synchronisation, ouvrez Appareils → Ajouter un appareil → Associer un téléphone ou une tablette.",
+  "sync_account.pair_scan": "Scanner le QR code d’association",
+  "sync_account.pair_code": "Code d’association",
+  "sync_account.pair_start": "Associer cet appareil",
+  "sync_account.pair_match": "Comparez ce code dans le portail web, puis approuvez l’appareil.",
+  "sync_account.pair_invalid": "Saisissez un code d’association Reacher CM pour mobile.",
+  "sync_account.pair_camera": "L’accès à la caméra est nécessaire pour scanner le code. Vous pouvez aussi coller le code d’association."
 }

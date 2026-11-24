@@ -4283,5 +4283,12 @@
   "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}",
   "organization.rotation_pending": "Las subidas están pausadas hasta que el propietario de la bóveda cambie la clave.",
   "organization.finish_rotation": "Completar el cambio de clave",
-  "organization.key_rotated": "Clave de la bóveda cambiada."
+  "organization.key_rotated": "Clave de la bóveda cambiada.",
+  "sync_account.pair_help": "En el portal web de sincronización, abre Dispositivos → Añadir dispositivo → Vincular un teléfono o una tableta.",
+  "sync_account.pair_scan": "Escanear QR de vinculación",
+  "sync_account.pair_code": "Código de vinculación",
+  "sync_account.pair_start": "Vincular este dispositivo",
+  "sync_account.pair_match": "Compara este código en el portal web y aprueba allí el dispositivo.",
+  "sync_account.pair_invalid": "Introduce un código de vinculación de Reacher CM para móviles.",
+  "sync_account.pair_camera": "Se necesita acceso a la cámara para escanear. También puedes pegar el código de vinculación."
 }

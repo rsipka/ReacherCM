@@ -1,7 +1,9 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import OrganizationVaults from './OrganizationVaults.svelte';
-	import { invoke } from '@tauri-apps/api/core';
+	import { Channel, invoke } from '@tauri-apps/api/core';
+	import { isMobile } from '#lib/platform.js';
+	import { scanLinkCode } from '#lib/state/link-scan.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
@@ -9,16 +11,23 @@
 		bindPreferenceAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
 	} from '#lib/state/preference-sync.svelte.js';
 
+	const mobile = isMobile();
+	let pairingCode = $state('');
+	let pairingServer = $state('');
+	let verificationCode = $state('');
 	let account = $state<SyncAccount | null>(null);
 	let server = $state('');
 	let label = $state('');
 	let vaultSync = $state(false);
 	let confirmVaultSync = $state(false);
-	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | 'vault' | null>('load');
+	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | 'vault' | 'scan' | 'pair' | null>('load');
 	let error = $state('');
 	let message = $state('');
 
 	onMount(() => { void load(); });
+	onDestroy(() => {
+		if (action === 'pair') void invoke('sync_account_cancel');
+	});
 
 	$effect(() => {
 		if (preferenceSync.error === 'sync_account.error_revoked' && account && action === null) {
@@ -33,7 +42,7 @@
 			account = await invoke<SyncAccount | null>('sync_account_status');
 			if (account) {
 				server = account.server;
-				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
+				if (!mobile) vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			}
 			bindPreferenceAccount(account);
 		} catch (cause) {
@@ -58,12 +67,59 @@
 			account = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
 			server = account.server;
 			bindPreferenceAccount(account);
-			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
+			if (!mobile) vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			message = '';
 		} catch (cause) {
 			error = errorKey(cause);
 			message = '';
 		} finally {
+			action = null;
+		}
+	}
+
+	async function scanPairing(): Promise<void> {
+		action = 'scan';
+		error = '';
+		try {
+			const code = await scanLinkCode();
+			if (code) {
+				pairingCode = code;
+				pairingServer = await invoke<string>('sync_account_pair_origin', { code });
+			}
+		} catch (cause) {
+			error = typeof cause === 'string' ? errorKey(cause) : 'sync_account.pair_camera';
+		} finally {
+			action = null;
+		}
+	}
+
+	async function pair(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		error = '';
+		message = '';
+		if (!pairingServer) {
+			action = 'scan';
+			try {
+				pairingServer = await invoke<string>('sync_account_pair_origin', { code: pairingCode });
+			} catch (cause) {
+				error = errorKey(cause);
+			} finally {
+				action = null;
+			}
+			return;
+		}
+		action = 'pair';
+		try {
+			const verification = new Channel<string>((code) => { verificationCode = code; });
+			account = await invoke<SyncAccount>('sync_account_pair', { code: pairingCode, label, verification });
+			server = pairingServer;
+			bindPreferenceAccount(account);
+		} catch (cause) {
+			error = errorKey(cause);
+		} finally {
+			verificationCode = '';
+			pairingCode = '';
+			pairingServer = '';
 			action = null;
 		}
 	}
@@ -154,26 +210,56 @@
 			{#if preferenceSync.syncing}<p role="status">{t('sync_account.syncing')}</p>{/if}
 			{#if preferenceSync.error}<p class="error" role="alert">{t(preferenceSync.error)}</p>{/if}
 		</div>
-		<div class="preferences">
-			{#if vaultSync}
-				<p role="status">{t('sync_account.vault_enabled')}</p>
-			{:else if action === 'vault'}
-				<p role="status">{t('sync_account.vault_moving')}</p>
-			{:else if confirmVaultSync}
-				<p>{t('sync_account.vault_confirm')}</p>
-				<div class="actions">
-					<button type="button" onclick={enableVaultSync}>{t('common.confirm')}</button>
-					<button type="button" onclick={() => confirmVaultSync = false}>{t('common.cancel')}</button>
-				</div>
-			{:else}
-				<button type="button" disabled={action !== null} onclick={() => confirmVaultSync = true}>{t('sync_account.vault_enable')}</button>
-			{/if}
-		</div>
-		{#key account.server + '/' + account.username}
-			<OrganizationVaults />
-		{/key}
+		{#if !mobile}
+			<div class="preferences">
+				{#if vaultSync}
+					<p role="status">{t('sync_account.vault_enabled')}</p>
+				{:else if action === 'vault'}
+					<p role="status">{t('sync_account.vault_moving')}</p>
+				{:else if confirmVaultSync}
+					<p>{t('sync_account.vault_confirm')}</p>
+					<div class="actions">
+						<button type="button" onclick={enableVaultSync}>{t('common.confirm')}</button>
+						<button type="button" onclick={() => confirmVaultSync = false}>{t('common.cancel')}</button>
+					</div>
+				{:else}
+					<button type="button" disabled={action !== null} onclick={() => confirmVaultSync = true}>{t('sync_account.vault_enable')}</button>
+				{/if}
+			</div>
+			{#key account.server + '/' + account.username}
+				<OrganizationVaults />
+			{/key}
+		{/if}
 	{:else if action === 'load'}
 		<p role="status">{t('sync_account.loading')}</p>
+	{:else if mobile}
+		<form onsubmit={pair}>
+			<p>{t('sync_account.pair_help')}</p>
+			{#if pairingServer}
+				<dl><dt>{t('sync_account.server')}</dt><dd>{pairingServer}</dd></dl>
+			{:else}
+				<button type="button" disabled={action !== null} onclick={scanPairing}>{t('sync_account.pair_scan')}</button>
+				<label for="sync-pair-code">{t('sync_account.pair_code')}</label>
+				<input id="sync-pair-code" bind:value={pairingCode} maxlength="2048" autocomplete="off"
+					spellcheck="false" autocapitalize="off" required disabled={action !== null} />
+			{/if}
+			<label for="sync-mobile-name">{t('sync_account.device_name')}</label>
+			<input id="sync-mobile-name" bind:value={label} maxlength="64" required disabled={action !== null} />
+			{#if verificationCode}
+				<p role="status">{t('sync_account.pair_match')}</p>
+				<strong class="verification">{verificationCode}</strong>
+			{/if}
+			<div class="actions">
+				<button class="primary" type="submit" disabled={action !== null}>
+					{t(pairingServer ? 'sync_account.pair_start' : 'common.confirm')}
+				</button>
+				{#if action === 'pair'}
+					<button type="button" onclick={() => void invoke('sync_account_cancel')}>{t('common.cancel')}</button>
+				{:else if pairingServer}
+					<button type="button" onclick={() => { pairingServer = ''; pairingCode = ''; }}>{t('common.cancel')}</button>
+				{/if}
+			</div>
+		</form>
 	{:else}
 		<form onsubmit={signIn}>
 			<label class="setting-label" for="sync-origin">{t('sync_account.server')}</label>
@@ -225,5 +311,6 @@
 	.preferences label { display: flex; align-items: center; gap: 7px; }
 	.preferences label input { accent-color: var(--color-accent); }
 	.preferences button { margin-top: 8px; }
+	.verification { font-size: 1.75rem; font-family: monospace; letter-spacing: 0.15em; }
 	.error { color: var(--color-danger); }
 </style>
