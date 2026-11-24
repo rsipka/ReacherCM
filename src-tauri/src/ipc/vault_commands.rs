@@ -499,6 +499,7 @@ pub async fn vault_import_identity(
     secret_key: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
     let mut manager = state.vault_manager.lock().await;
     // Another identity: as for a new one.
     crate::pwmanager::forget_all();
@@ -536,6 +537,7 @@ pub fn qr_svg(text: String) -> Result<String, String> {
 #[tauri::command(rename_all = "snake_case")]
 #[tracing::instrument(skip(state, code))]
 pub async fn vault_link_device(code: String, state: State<'_, AppState>) -> Result<String, String> {
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
     let mut manager = state.vault_manager.lock().await;
     crate::pwmanager::forget_all();
     manager.link_device(&code).await.map_err(|e| e.to_string())
@@ -1258,6 +1260,34 @@ pub async fn vault_set_personal_sync(
 ) -> Result<(), String> {
     let mut manager = state.vault_manager.lock().await;
     manager.set_personal_sync_config(sync_url, sync_token).await.map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_account_sync_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    use crate::vault::sync_account_store::AccountTarget;
+    let Some(account) = crate::ipc::sync_account_commands::sync_account_status().map_err(str::to_owned)? else {
+        return Ok(false);
+    };
+    let manager = state.vault_manager.lock().await;
+    let (Some(config), Some(username)) = manager.get_personal_sync_config() else { return Ok(false) };
+    if username != account.username {
+        return Ok(false);
+    }
+    let Ok(active) = AccountTarget::parse(&config, &username) else { return Ok(false) };
+    let current = AccountTarget::from_account(&account, active.vault_id).map_err(|error| error.to_string())?;
+    Ok(current.config() == config)
+}
+
+/// Move the personal vault to the signed-in Reacher CM Sync account.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_enable_account_sync(state: State<'_, AppState>) -> Result<String, String> {
+    let account = crate::ipc::sync_account_commands::sync_account_status()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "Sign in to Reacher CM Sync first".to_string())?;
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
+    state.vault_manager.lock().await.enable_account_sync(&account).await.map_err(|e| e.to_string())
 }
 
 /// Get personal sync config.

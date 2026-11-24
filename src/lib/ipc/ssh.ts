@@ -1,3 +1,4 @@
+import { ensureWireguard } from '#lib/state/wireguard.svelte.js';
 import { invoke } from '@tauri-apps/api/core';
 import type { SshOptions, TerminalOptions, X11Desktop } from './sessions';
 import type { SecretRef } from './pwmanager';
@@ -121,6 +122,9 @@ export interface SshConnectParams {
   x11Desktop?: X11Desktop | null;
   /** Terminal type, Backspace and encoding; absent: the defaults. */
   terminal?: TerminalOptions | null;
+  /** A WireGuard profile whose tunnel carries the connection; brought up
+   *  first (asking the person) when it is off. */
+  wireguard?: string | null;
   /** The session's other addresses, for a reconnect to fall back on when
    *  the one it used no longer answers (a laptop that left the office).
    *  Kept on the tab only; not sent to the backend. */
@@ -129,7 +133,7 @@ export interface SshConnectParams {
 
 /** See `SshConnectParams.fallback`. */
 export interface AddressFallback {
-  addresses: { host: string; port: number; routed: boolean; label: string; index: number; viaSessionId?: string }[];
+  addresses: { host: string; port: number; routed: boolean; label: string; index: number; viaSessionId?: string; wireguardId?: string; tunnelOnly?: boolean }[];
   /** The hops of addresses that go through another saved session, by
    *  that session's id. */
   viaChains?: Record<string, JumpHostConnectParams[]>;
@@ -185,6 +189,7 @@ export function sessionLogStop(stream: string): Promise<boolean> {
 }
 
 export async function sshConnect(params: SshConnectParams): Promise<string> {
+  if (params.wireguard) await ensureWireguard(params.wireguard);
   return invoke<string>('ssh_connect', {
     id: params.id,
     host: params.host,
@@ -211,6 +216,7 @@ export async function sshConnect(params: SshConnectParams): Promise<string> {
     tmux: params.tmux ?? null,
     x11Desktop: params.x11Desktop ?? null,
     terminal: params.terminal ?? null,
+    wireguard: params.wireguard ?? null,
   });
 }
 

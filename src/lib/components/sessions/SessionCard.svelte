@@ -315,6 +315,9 @@
 		{:else if session.kind === 'bmc'}
 			<!-- Talks Redfish to the server's management controller. -->
 			<span class="auth-badge" title={t('bmc.badge_hint')}>{t('bmc.badge')}</span>
+		{:else if session.kind === 'rdp' && session.rdp?.remote_app && session.rdp?.program}
+			<!-- Opens one program's windows, not a desktop. -->
+			<span class="auth-badge" title={`RemoteApp: ${session.rdp.program}`}>App</span>
 		{:else if session.kind === 'winbox'}
 			<!-- Opens in WinBox, not in a tab here. -->
 			<span class="auth-badge">{unavailable ? t('serial.desktop_only_short') : t('session.protocol_winbox')}</span>

@@ -152,10 +152,82 @@ pub async fn float_window_focus(app: AppHandle, label: String) -> Result<(), Str
     win.set_focus().map_err(|e| e.to_string())
 }
 
+/// Labels of RemoteApp windows: `rail-<tab>-<remote window id>`.
+pub const RAIL_PREFIX: &str = "rail-";
+
+/// One RemoteApp window as it should be here: where (physical pixels on this
+/// screen), how big, what it is called.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RailPlace {
+    pub id: u32,
+    pub title: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    /// A menu, tooltip or other window that is part of another: kept above
+    /// the others, off the taskbar, and never takes focus by itself.
+    pub popup: bool,
+}
+
+/// Make this computer's RemoteApp windows for the tab `tab` match `windows`:
+/// open the missing ones, move and resize the rest, close those gone.
+/// Each shows `/?railview=<tab>&win=<id>`, its part of the session's picture.
+#[tauri::command]
+pub async fn rail_windows_sync(app: AppHandle, tab: String, windows: Vec<RailPlace>) -> Result<(), String> {
+    if tab.is_empty() || !tab.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Err("bad tab id".into());
+    }
+    let prefix = format!("{RAIL_PREFIX}{tab}-");
+    let wanted: HashMap<String, &RailPlace> = windows.iter().map(|w| (format!("{prefix}{}", w.id), w)).collect();
+    for (label, win) in app.webview_windows() {
+        if label.starts_with(&prefix) && !wanted.contains_key(&label) {
+            let _ = win.destroy();
+        }
+    }
+    for (label, place) in wanted {
+        let (size, at) = (
+            tauri::PhysicalSize::new(place.width.max(1), place.height.max(1)),
+            tauri::PhysicalPosition::new(place.x, place.y),
+        );
+        if let Some(win) = app.get_webview_window(&label) {
+            if win.outer_size().ok() != Some(size) {
+                let _ = win.set_size(size);
+            }
+            if win.outer_position().ok() != Some(at) {
+                let _ = win.set_position(at);
+            }
+            if win.title().ok().as_deref() != Some(place.title.as_str()) {
+                let _ = win.set_title(&place.title);
+            }
+            continue;
+        }
+        let url = WebviewUrl::App(format!("/?railview={tab}&win={}", place.id).into());
+        let win = WebviewWindowBuilder::new(&app, &label, url)
+            .title(if place.title.is_empty() { "RemoteApp" } else { &place.title })
+            .decorations(false)
+            .resizable(false)
+            .shadow(false)
+            .skip_taskbar(place.popup)
+            .always_on_top(place.popup)
+            .focused(!place.popup)
+            .background_color(tauri::window::Color(0, 0, 0, 255))
+            .visible(false)
+            .build()
+            .map_err(|e| e.to_string())?;
+        // Wayland ignores a position (the compositor places windows).
+        let _ = win.set_size(size);
+        let _ = win.set_position(at);
+        let _ = win.show();
+    }
+    Ok(())
+}
+
 /// The main window went: its floating windows go with it, as the app ends.
 pub fn close_floating(app: &AppHandle) {
     for (label, win) in app.webview_windows() {
-        if label.starts_with(FLOAT_PREFIX) {
+        if label.starts_with(FLOAT_PREFIX) || label.starts_with(RAIL_PREFIX) {
             let _ = win.destroy();
         }
     }

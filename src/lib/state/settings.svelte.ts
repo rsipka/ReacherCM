@@ -3,6 +3,7 @@ import * as settingsIpc from '#lib/ipc/settings.js';
 import type { SessionLogConfig } from '#lib/ipc/ssh.js';
 import { defaults, readStoredSettings, storeSettings, STORAGE_KEY, type Settings } from '#lib/state/settings-store.js';
 export { DEFAULT_LOG_NAME } from '#lib/state/settings-store.js';
+import { portablePreferences, type Preferences } from '#lib/sync/preferences.js';
 import { NEW_FEATURE_IDS } from '#lib/data/whats-new.js';
 
 export type { Settings };
@@ -47,8 +48,33 @@ export function sessionLogConfig(session = ''): SessionLogConfig | null {
 	};
 }
 
+let onPortableChange: ((values: Preferences) => void) | null = null;
+
+export function onPortableSettingChanged(listener: (values: Preferences) => void): () => void {
+	onPortableChange = listener;
+	return () => { if (onPortableChange === listener) onPortableChange = null; };
+}
+
 export function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]): void {
+	const changed = settings[key] !== value;
 	settings[key] = value;
+	if (changed && onPortableChange) {
+		const portable = portablePreferences({ [key]: value });
+		if (Object.keys(portable).length > 0) onPortableChange(portable);
+	}
+	saveSettings();
+}
+
+export function applyPortableSettings(values: Preferences): void {
+	const portable = portablePreferences(values);
+	let changed = Object.entries(portable).some(([key, value]) => settings[key as keyof Settings] !== value);
+	if (portable.theme !== undefined && (settings.themeId === 'reach-dark' || settings.themeId === 'reach-light')
+		&& portable.theme !== settings.theme) {
+		settings.themeId = undefined;
+		changed = true;
+	}
+	if (!changed) return;
+	Object.assign(settings, portable);
 	saveSettings();
 }
 

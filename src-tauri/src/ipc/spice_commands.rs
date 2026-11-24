@@ -57,6 +57,10 @@ pub async fn spice_connect(
                         .await
                         .inspect_err(|e| tracing::warn!("SPICE {id}: SSH leg failed: {e}"))?
                 }
+                // Or a WireGuard tunnel the saved session goes through.
+                None if !running => crate::ipc::wireguard_commands::session_forward_to(&state, session_id.as_deref(), &params.host, params.port, params.target_port())
+                    .await?
+                    .map(crate::db::conn::Forward::borrowed),
                 None => None,
             })
         })

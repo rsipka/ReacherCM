@@ -8,7 +8,8 @@
   ],
   "windows": [
     "main",
-    "float-*"
+    "float-*",
+    "rail-*"
   ],
   "permissions": [
     "core:tray:default",

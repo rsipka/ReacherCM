@@ -7,6 +7,7 @@ import type { RdpOptions } from './rdp';
 import type { HistoryMode } from './history';
 import type { CursorStyle } from '#lib/terminal/cursor.js';
 import { t } from '#lib/state/i18n.svelte.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 export interface AuthMethod {
   type: 'Password' | 'Key' | 'Agent';
@@ -51,6 +52,9 @@ export interface SessionConfig {
   vault_id?: string | null; // Which vault this session belongs to
   jump_chain?: JumpHostConfig[] | null; // ProxyJump chain
   proxy?: ProxySessionConfig | null; // Proxy config (SOCKS5/Tor, HTTP)
+  /** A WireGuard profile whose tunnel carries the connection to the main
+   *  address (or the first jump host). SSH and Telnet. */
+  wireguard_id?: string | null;
   shell?: string | null; // Optional per-session login shell (e.g. "fish -l")
   /** What the session connects with. Absent means SSH: older saves have no kind. */
   kind?: SessionKind;
@@ -224,6 +228,7 @@ export function webSessionUrl(s: Pick<SessionConfig, 'host' | 'port' | 'web'>): 
 
 /** Open a web session in its own window (desktop); resolves with its label. */
 export async function webSessionOpen(sessionId: string): Promise<string> {
+  await ensureSessionWireguard(sessionId);
   return invoke<string>('web_session_open', { sessionId });
 }
 
@@ -258,6 +263,9 @@ export interface SessionAddress {
   /** Reached through another saved SSH session instead (its jump hosts,
    *  then its server); wins over `direct`. */
   via_session_id?: string | null;
+  /** Reached through this WireGuard profile's tunnel, straight; wins over
+   *  the others. */
+  via_wireguard?: string | null;
 }
 
 /** A server key a session trusts. */
@@ -409,6 +417,7 @@ export async function sessionCreate(params: {
   vaultId?: string | null;
   jumpChain?: JumpHostConfig[] | null;
   proxy?: ProxySessionConfig | null;
+  wireguardId?: string | null;
   shell?: string | null;
   kind?: SessionKind;
   domain?: string | null;
@@ -458,6 +467,7 @@ export async function sessionCreate(params: {
     vaultId: params.vaultId ?? null,
     jumpChain: params.jumpChain ?? null,
     proxy: params.proxy ?? null,
+    wireguardId: params.wireguardId || null,
     shell: params.shell?.trim() ? params.shell.trim() : null,
     kind: params.kind ?? 'ssh',
     domain: params.domain?.trim() ? params.domain.trim() : null,

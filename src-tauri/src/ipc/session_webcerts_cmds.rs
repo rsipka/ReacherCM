@@ -81,7 +81,19 @@ pub async fn web_session_open(state: State<'_, AppState>, app: tauri::AppHandle,
             }
         }
     }
-    crate::web::window::open(&app, &stored, password)
+    // Through the session's WireGuard tunnel, by a local SOCKS5 proxy. An
+    // open window already has its proxy.
+    let socks = if crate::web::window::is_open(&session_id) {
+        None
+    } else {
+        crate::ipc::wireguard_commands::session_socks(&state, Some(&session_id), &stored.host, stored.port).await?
+    };
+    // Without Tauri's `macos-proxy` feature (macOS 14 and later) the proxy
+    // would be ignored and the page loaded straight, outside the tunnel.
+    if socks.is_some() && cfg!(target_os = "macos") {
+        return Err("Web sessions through a WireGuard tunnel are not available on macOS yet.".into());
+    }
+    crate::web::window::open(&app, &stored, password, socks)
 }
 
 /// The answer to `web-cert-ask`: trust the certificate (kept on the

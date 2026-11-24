@@ -48,6 +48,16 @@ pub async fn rdp_connect(
                 .await
                 .inspect_err(|e| tracing::warn!("RDP {id}: {e}"))?;
         }
+        // A saved session routed through a WireGuard tunnel connects to a
+        // local port into it; the server's name stays for TLS and CredSSP.
+        if !state.rdp_manager.lock().await.running(&id) {
+            params.connect_port = crate::ipc::wireguard_commands::session_forward(&state, session_id.as_deref(), &params.host, params.port).await?;
+        }
+        // Kerberos: the KDC to get the ticket from, looked up before the
+        // session is started (the lookup is a network round trip).
+        if crate::rdp::kerberos::wanted(params.options.as_ref()) && !state.rdp_manager.lock().await.running(&id) {
+            params.kdc = crate::rdp::kerberos::find_kdc(params.options.as_ref(), &params.username, &params.domain, &params.host).await;
+        }
         state
             .rdp_manager
             .lock()
@@ -403,4 +413,40 @@ pub async fn rdp_resize(
     height: u16,
 ) -> Result<(), String> {
     state.rdp_manager.lock().await.resize(&id, width, height)
+}
+
+/// A RemoteApp's windows, for a panel that (re)attaches; later changes come
+/// as `rdp-windows-{id}` events.
+#[tauri::command]
+pub async fn rdp_rail_windows(state: tauri::State<'_, AppState>, id: String) -> Result<Vec<crate::rdp::remote_app::RailWindow>, String> {
+    Ok(state.rdp_manager.lock().await.rail_windows(&id))
+}
+
+/// `activate`, `close`, `minimize`, `maximize` or `restore` a RemoteApp window.
+#[tauri::command]
+pub async fn rdp_rail_command(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    window_id: u32,
+    command: String,
+) -> Result<(), String> {
+    state.rdp_manager.lock().await.rail_command(&id, window_id, &command)
+}
+
+/// A RemoteApp window of its own starts showing session `id` (see
+/// `RdpManager::attach_view`); frames come on `on_frame` as for the panel.
+#[tauri::command]
+pub async fn rdp_view_attach(state: tauri::State<'_, AppState>, id: String, view: String, on_frame: Channel) -> Result<(), String> {
+    state.rdp_manager.lock().await.attach_view(&id, &view, on_frame)
+}
+
+#[tauri::command]
+pub async fn rdp_view_detach(state: tauri::State<'_, AppState>, id: String, view: String) -> Result<(), String> {
+    state.rdp_manager.lock().await.detach_view(&id, &view);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn rdp_view_ack(state: tauri::State<'_, AppState>, id: String, view: String) -> Result<(), String> {
+    state.rdp_manager.lock().await.ack_view(&id, &view)
 }

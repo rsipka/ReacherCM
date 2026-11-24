@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /**
  * Remote desktop over RDP.
@@ -65,9 +66,23 @@ export interface RdpOptions {
 	/** Started instead of the desktop. */
 	program?: string | null;
 	work_dir?: string | null;
+	/** Run `program` as a RemoteApp: only its windows. */
+	remote_app?: boolean | null;
+	/** RemoteApp only: the program's arguments. */
+	app_args?: string | null;
+	/** RemoteApp in the built-in client: `separate` for a window of its own per remote window. */
+	app_windows?: 'separate' | null;
 	/** The SSH port the session menu's Open file manager uses (SFTP on the
 	 *  same host). Absent: 22. */
 	files_port?: number | null;
+	/** More local folders shown as drives (desktops). */
+	drives?: string[] | null;
+	/** Every local drive as well (desktops). */
+	all_drives?: boolean | null;
+	/** `kerberos`: log in with Kerberos, NTLM as the fallback. */
+	auth?: 'kerberos' | null;
+	/** Kerberos only: the KDC host or KDC proxy URL; unset: found in DNS. */
+	kdc?: string | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */
@@ -145,7 +160,78 @@ export async function rdpConnect(
 		onFrame(copy);
 	};
 	const { sessionId, forwardLockKeys: _forwardLockKeys, ...rest } = params;
+	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('rdp_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
+}
+
+/** A RemoteApp window as the panel's window row shows it; changes come on `rdp-windows-{id}`. */
+export interface RdpRailWindow {
+	id: number;
+	title: string;
+	state: 'normal' | 'minimized' | 'maximized';
+	/** Where it is on the remote desktop, in its pixels. */
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** A window a taskbar would show (not a menu, tooltip or tool window). */
+	listed: boolean;
+	/** The window that owns it, 0 for none. */
+	owner: number;
+}
+
+export type RdpRailCommand = 'activate' | 'close' | 'minimize' | 'maximize' | 'restore';
+
+export async function rdpRailWindows(id: string): Promise<RdpRailWindow[]> {
+	return invoke<RdpRailWindow[]>('rdp_rail_windows', { id });
+}
+
+export async function rdpRailCommand(id: string, windowId: number, command: RdpRailCommand): Promise<void> {
+	await invoke('rdp_rail_command', { id, windowId, command });
+}
+
+/** A frame channel's message as an ArrayBuffer of its own. */
+function frameBuffer(data: ArrayBuffer | Uint8Array | number[]): ArrayBuffer {
+	if (data instanceof ArrayBuffer) return data;
+	const bytes = ArrayBuffer.isView(data) ? new Uint8Array(data.buffer, data.byteOffset, data.byteLength) : Uint8Array.from(data);
+	const copy = new ArrayBuffer(bytes.byteLength);
+	new Uint8Array(copy).set(bytes);
+	return copy;
+}
+
+/**
+ * A RemoteApp window of its own: the session's frames, as the tab gets them,
+ * to paint its part of. Each message is acknowledged with rdpViewAck.
+ */
+export async function rdpViewAttach(id: string, view: string, onFrame: (frame: ArrayBuffer) => void): Promise<void> {
+	const channel = new Channel<ArrayBuffer | Uint8Array | number[]>();
+	channel.onmessage = (data) => onFrame(frameBuffer(data));
+	await invoke('rdp_view_attach', { id, view, onFrame: channel });
+}
+
+export async function rdpViewDetach(id: string, view: string): Promise<void> {
+	await invoke('rdp_view_detach', { id, view });
+}
+
+export async function rdpViewAck(id: string, view: string): Promise<void> {
+	await invoke('rdp_view_ack', { id, view });
+}
+
+/** Where a RemoteApp window of its own goes on this computer's screen, in its pixels. */
+export interface RailPlace {
+	id: number;
+	title: string;
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+	/** A menu, tooltip or other window part of another. */
+	popup: boolean;
+}
+
+/** Open, move and close a tab's RemoteApp windows to match `windows`; none closes them all. */
+export async function railWindowsSync(tab: string, windows: RailPlace[]): Promise<void> {
+	await invoke('rail_windows_sync', { tab, windows });
 }
 
 export async function rdpDisconnect(id: string): Promise<void> {

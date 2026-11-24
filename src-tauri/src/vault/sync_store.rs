@@ -89,6 +89,8 @@ pub enum Store {
     Files(Files),
     Git(GitStore),
     S3(crate::vault::sync_s3::S3Store),
+    #[cfg(desktop)]
+    Account(crate::vault::sync_account_store::AccountTarget),
 }
 
 impl Store {
@@ -114,6 +116,8 @@ impl Store {
             Store::Files(f) => f.get().await,
             Store::Git(g) => g.get().await,
             Store::S3(s) => s.get().await,
+            #[cfg(desktop)]
+            Store::Account(s) => s.get().await,
         }
     }
 
@@ -124,6 +128,8 @@ impl Store {
             Store::Files(f) => f.put(data, expected).await,
             Store::Git(g) => g.put(data, expected).await,
             Store::S3(s) => s.put(data, expected).await,
+            #[cfg(desktop)]
+            Store::Account(s) => s.put(data, expected).await,
         }
     }
 }

@@ -6,6 +6,7 @@
 	import AppearanceTab from './AppearanceTab.svelte';
 	import SecurityTab from './SecurityTab.svelte';
 	import SyncTab from './SyncTab.svelte';
+	import AccountTab from './AccountTab.svelte';
 	import BackupTab from './BackupTab.svelte';
 	import AITab from './AITab.svelte';
 	import McpTab from './McpTab.svelte';
@@ -256,6 +257,8 @@
 		<SettingsCard><SecurityTab /></SettingsCard>
 	{:else if id === 'pwmanagers'}
 		<PasswordManagersTab />
+	{:else if id === 'account' && !mobile}
+		<SettingsCard><AccountTab /></SettingsCard>
 	{:else if id === 'sync'}
 		<SyncTab />
 		<SettingsCard title={t('settings.backup')}><BackupTab /></SettingsCard>

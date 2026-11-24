@@ -40,10 +40,13 @@
 	import { initScreenEdges } from '#lib/edges.js';
 	import { initKeyboardViewport } from '#lib/keyboard-viewport.js';
 	import { onMount } from 'svelte';
+	import { isMobile } from '#lib/platform.js';
+	import { startPreferenceSync } from '#lib/state/preference-sync.svelte.js';
 
 	let { children }: { children: Snippet } = $props();
 
-	const isEditorWindow = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('editor');
+	// A seamless RemoteApp's window is as bare as the editor's: no tray, lock screen or setup.
+	const isEditorWindow = typeof window !== 'undefined' && ['editor', 'railview'].some((k) => new URLSearchParams(window.location.search).has(k));
 	const settings = getSettings();
 	/** A floating session window (#lib/state/windows): a slim shell, and the main window owns the rest. */
 	const isFloat = isFloatWindow();
@@ -102,6 +105,7 @@
 		startAutoLock();
 		// The tray's tooltip and menu follow the main window's state.
 		if (!isEditorWindow) startTray();
+		const stopPreferenceSync = !isEditorWindow && !isMobile() ? startPreferenceSync() : undefined;
 		// After loadSettings, or the count read back as zero and reset itself
 		// every launch, which would hold the community prompt off forever.
 		recordLaunch();
@@ -146,6 +150,7 @@
 			stopTooltips();
 			stopKeyboardViewport();
 			stopPeriodicChecks();
+			stopPreferenceSync?.();
 		};
 	});
 

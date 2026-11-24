@@ -100,7 +100,8 @@ pub(crate) fn check_matches_session(
     let other = stored.host != host || stored.port != port;
     let (addr_ok, straight, through) = if other {
         match stored.alt_address(host, port) {
-            Some(a) => (true, a.direct, a.via_session_id.as_deref()),
+            // Through a WireGuard tunnel: straight, inside the tunnel.
+            Some(a) => (true, a.direct || a.via_wireguard.is_some(), a.via_session_id.as_deref()),
             None => (false, false, None),
         }
     } else {
@@ -322,9 +323,30 @@ pub(crate) async fn open_saved_headless(
     .await?;
     let mut opts: crate::ssh::client::HopOptions = crate::ssh::sshconf::session::plan_for(s.ssh_options.as_ref(), &s.host, s.port, &s.username, false).into();
     opts.trust = trust;
+    // Through the session's WireGuard tunnel when it is up; a background
+    // connection never turns one on by itself.
+    let mut jumps = jumps;
+    if let Some(wg) = s.wireguard_id.clone() {
+        if !crate::wireguard::manager::is_up(&wg).await {
+            return Err(format!("SSH to {}: its WireGuard tunnel is off. Connect to the session first.", s.name));
+        }
+        match jumps.first_mut() {
+            Some(j) => j.opts.wireguard = Some(wg),
+            None => opts.wireguard = Some(wg),
+        }
+    }
     SshManager::open_headless(&s.host, s.port, &s.username, auth, jumps, proxy, app.clone(), opts)
         .await
         .map_err(|e| format!("SSH to {}: {e}", s.name))
+}
+
+/// The WireGuard profile a saved session reaches `host:port` through: an
+/// other address's own, else the session's for its main address.
+pub(crate) fn wireguard_route<'a>(s: &'a crate::state::SessionConfig, host: &str, port: u16) -> Option<&'a str> {
+    if s.host == host && s.port == port {
+        return s.wireguard_id.as_deref();
+    }
+    s.alt_address(host, port).and_then(|a| a.via_wireguard.as_deref())
 }
 
 #[tauri::command]
@@ -357,6 +379,7 @@ pub async fn ssh_connect(
     tmux: Option<crate::ssh::tmux::TmuxStart>,
     x11_desktop: Option<crate::ssh::x11_desktop::X11Desktop>,
     terminal: Option<crate::ssh::terminal::TerminalOptions>,
+    wireguard: Option<String>,
 ) -> Result<String, String> {
     // Boxed: Tauri builds a command's future on the main thread and passes it
     // by value before spawning it, and the main thread's stack is small
@@ -500,6 +523,19 @@ pub async fn ssh_connect(
         if x11_desktop.is_some() {
             crate::ssh::x11_desktop::apply(&mut target_opts, &host, &format!("{username}@{host}")).await?;
         }
+        // A WireGuard route: only the one the saved session has for this
+        // address, so a window cannot send the login into another network.
+        let wireguard = wireguard.filter(|w| !w.is_empty());
+        if let Some(wg) = &wireguard {
+            let sid = crate::ipc::session_commands::require_session_id(session_id.as_deref())?;
+            let stored = crate::ipc::session_commands::stored_session(&state, sid).await?;
+            if wireguard_route(&stored, &host, port) != Some(wg.as_str()) {
+                return Err(format!("'{}' does not go through this WireGuard tunnel. Connect again.", stored.name));
+            }
+        }
+        if jump_chain.as_ref().is_none_or(|c| c.is_empty()) {
+            target_opts.wireguard = wireguard.clone();
+        }
         let connlog = target_opts.log.as_ref().map(|(level, verbose)| crate::ssh::connlog::ConnLog::new(level.as_deref(), verbose));
         target_opts.connlog = connlog.clone();
         let span = connlog.as_ref().map_or_else(tracing::Span::none, |l| l.span());
@@ -522,6 +558,7 @@ pub async fn ssh_connect(
                 }
 
                 // Build jump host params
+                let first = std::cell::Cell::new(true);
                 let jump_params: Result<Vec<JumpHostParams>, String> = chain
                     .into_iter()
                     .map(|j| {
@@ -537,6 +574,8 @@ pub async fn ssh_connect(
                         )?;
                         let mut opts: crate::ssh::client::HopOptions = crate::ssh::sshconf::session::plan_for(ssh_options.as_ref(), &j.host, j.port, &j.username, true).into();
                         opts.trust = trust.clone();
+                        // The tunnel carries the first hop.
+                        opts.wireguard = wireguard.clone().filter(|_| first.replace(false));
                         Ok(JumpHostParams {
                             host: j.host,
                             port: j.port,

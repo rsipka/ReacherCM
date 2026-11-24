@@ -132,6 +132,11 @@ pub struct SessionConfig {
     /// Which vault this session belongs to (None = private __sessions__ vault)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vault_id: Option<String>,
+    /// A WireGuard profile (`ipc::wireguard_commands`) whose tunnel carries
+    /// the connection to the main address, or to the first jump host. SSH
+    /// and Telnet only for now. The tunnel is brought up on connect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wireguard_id: Option<String>,
     /// ProxyJump chain: ordered list of jump hosts to tunnel through
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jump_chain: Option<Vec<JumpHostConfig>>,
@@ -326,6 +331,10 @@ pub struct SessionAddress {
     /// the office one straight, the internet one through a gateway.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub via_session_id: Option<String>,
+    /// Reached through this WireGuard profile's tunnel instead, straight
+    /// (without the session's jump hosts or proxy). Wins over the others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via_wireguard: Option<String>,
 }
 
 /// One named value of a session's documentation.
@@ -404,7 +413,13 @@ impl SessionConfig {
                 if a.via_session_id.as_deref().is_some_and(|v| v.trim().is_empty() || v == own) {
                     a.via_session_id = None;
                 }
-                if a.via_session_id.is_some() {
+                if a.via_wireguard.as_deref().is_some_and(|v| v.trim().is_empty()) {
+                    a.via_wireguard = None;
+                }
+                if a.via_wireguard.is_some() {
+                    a.via_session_id = None;
+                }
+                if a.via_session_id.is_some() || a.via_wireguard.is_some() {
                     a.direct = false;
                 }
             }
@@ -412,6 +427,9 @@ impl SessionConfig {
         }
         if self.alt_addresses.as_ref().is_some_and(|l| l.is_empty()) {
             self.alt_addresses = None;
+        }
+        if self.wireguard_id.as_deref().is_some_and(|v| v.trim().is_empty()) {
+            self.wireguard_id = None;
         }
         if self.host_label.as_deref().is_some_and(|l| l.trim().is_empty()) {
             self.host_label = None;

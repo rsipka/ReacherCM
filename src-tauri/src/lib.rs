@@ -46,6 +46,7 @@ pub mod toolchain;
 pub mod tunnel;
 pub mod vault;
 pub mod web;
+pub mod wireguard;
 pub mod wsl;
 pub mod zmodem;
 
@@ -65,6 +66,8 @@ use ipc::marketplace_commands::*;
 use ipc::registry_url_commands::*;
 use ipc::credential_commands::*;
 use ipc::settings_commands::*;
+#[cfg(desktop)]
+use ipc::sync_account_commands::*;
 use ipc::history_commands::*;
 use ipc::font_commands::*;
 use ipc::mcp_commands::*;
@@ -110,6 +113,7 @@ use ipc::editor_commands::*;
 #[cfg(desktop)]
 use ipc::window_commands::*;
 use ipc::snippet_commands::*;
+use ipc::wireguard_commands::*;
 use ipc::recipe_commands::*;
 use ipc::share_commands::*;
 use ipc::pwmanager_commands::*;
@@ -453,6 +457,15 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.invoke_handler(refuse_web_pages(tauri::generate_handler![
+            vault_enable_account_sync,
+            vault_account_sync_enabled,
+            sync_account_status,
+            sync_account_sign_in,
+            sync_account_cancel,
+            sync_account_check,
+            sync_account_sign_out,
+            sync_account_manage,
+            sync_account_preferences,
             // MCP server. Off until the user enables it; nothing here starts
             // a listener or shares a session on its own.
             mcp_start,
@@ -473,6 +486,11 @@ pub fn run() {
             rdp_sync_locks,
             rdp_local_numlock,
             rdp_resize,
+            rdp_rail_windows,
+            rdp_rail_command,
+            rdp_view_attach,
+            rdp_view_detach,
+            rdp_view_ack,
             rdp_ack,
             rdp_disconnect_all,
             rdp_clipboard_sync,
@@ -938,6 +956,7 @@ pub fn run() {
             editor_hide_window,
             // Floating session windows
             float_window_open,
+            rail_windows_sync,
             float_window_take,
             float_window_list,
             float_window_focus,
@@ -947,6 +966,17 @@ pub fn run() {
             web_session_cert_add,
             web_session_cert_remove,
             web_session_clear_data,
+            // WireGuard profiles and tunnels (see `wireguard`)
+            wireguard_list,
+            wireguard_get,
+            wireguard_check,
+            wireguard_save,
+            wireguard_delete,
+            wireguard_up,
+            wireguard_down,
+            wireguard_running,
+            wireguard_generate_key,
+            wireguard_session_route,
             // Snippet commands
             snippet_list,
             snippet_create,
@@ -1052,6 +1082,11 @@ pub fn run() {
             rdp_sync_locks,
             rdp_local_numlock,
             rdp_resize,
+            rdp_rail_windows,
+            rdp_rail_command,
+            rdp_view_attach,
+            rdp_view_detach,
+            rdp_view_ack,
             rdp_ack,
             rdp_disconnect_all,
             rdp_clipboard_sync,
@@ -1475,6 +1510,17 @@ pub fn run() {
             editor_open_file,
             editor_get_pending_file,
             editor_hide_window,
+            // WireGuard profiles and tunnels (see `wireguard`)
+            wireguard_list,
+            wireguard_get,
+            wireguard_check,
+            wireguard_save,
+            wireguard_delete,
+            wireguard_up,
+            wireguard_down,
+            wireguard_running,
+            wireguard_generate_key,
+            wireguard_session_route,
             // Snippet commands
             snippet_list,
             snippet_create,

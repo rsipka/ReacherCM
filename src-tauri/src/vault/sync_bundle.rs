@@ -186,6 +186,11 @@ fn open(key: &RecordKey, data: &[u8]) -> Result<(HeaderRows, Body), VaultError> 
     Ok((rows, body))
 }
 
+#[cfg(desktop)]
+pub(crate) fn verify(key: &RecordKey, data: &[u8]) -> Result<HeaderRows, VaultError> {
+    open(key, data).map(|(rows, _)| rows)
+}
+
 async fn counter_seen(local: &Connection) -> Result<i64, VaultError> {
     Ok(sync_local::state(local, STATE_COUNTER).await?.and_then(|v| v.parse().ok()).unwrap_or(0))
 }

@@ -1,5 +1,5 @@
 import type { SshConnectParams } from '#lib/ipc/ssh.js';
-import { rdpDisconnect, type RdpConnectParams } from '#lib/ipc/rdp.js';
+import { railWindowsSync, rdpDisconnect, type RdpConnectParams } from '#lib/ipc/rdp.js';
 import { vncDisconnect, type VncConnectParams } from '#lib/ipc/vnc.js';
 import { spiceDisconnect, type SpiceConnectParams } from '#lib/ipc/spice.js';
 import type { TelnetConnectParams } from '#lib/ipc/telnet.js';
@@ -331,6 +331,8 @@ export function closeTab(id: string): void {
 	// tab going is what ends it.
 	if (tabs[index].type === 'rdp') {
 		void rdpDisconnect(id).catch(() => {});
+		// A RemoteApp's windows of their own go with it.
+		void railWindowsSync(id, []).catch(() => {});
 	} else if (tabs[index].type === 'vnc') {
 		void vncDisconnect(id).catch(() => {});
 	} else if (tabs[index].type === 'spice') {

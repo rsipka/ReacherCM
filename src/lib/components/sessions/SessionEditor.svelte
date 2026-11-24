@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wireguardProfiles } from '#lib/state/wireguard.svelte.js';
 	import { untrack } from 'svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
@@ -122,8 +123,18 @@
 	let rdpKeepalive = $state('');
 	let rdpJiggler = $state('');
 	let rdpAdmin = $state(false);
+	/** More local folders shared as drives (desktops), and every local drive. */
+	let rdpDrives = $state<string[]>([]);
+	let rdpAllDrives = $state(false);
+	/** '' for NTLM, 'kerberos' for Kerberos with NTLM as the fallback. */
+	let rdpAuth = $state<'' | 'kerberos'>('');
+	let rdpKdc = $state('');
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
+	let rdpRemoteApp = $state(false);
+	/** RemoteApp: its windows in the tab, or each in a window of its own. */
+	let rdpAppWindows = $state<'' | 'separate'>('');
+	let rdpAppArgs = $state('');
 	/** The SSH port of Open file manager (SFTP on the same host); '' for 22. */
 	let rdpSftpPort = $state('');
 	const RDP_RESOLUTIONS = ['1280x720', '1280x1024', '1366x768', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3840x2160'];
@@ -177,8 +188,15 @@
 		rdpKeepalive = o?.keepalive ? String(o.keepalive) : '';
 		rdpJiggler = o?.jiggler ? String(o.jiggler) : '';
 		rdpAdmin = o?.admin === true;
+		rdpDrives = [...(o?.drives ?? [])];
+		rdpAllDrives = o?.all_drives === true;
+		rdpAuth = o?.auth === 'kerberos' ? 'kerberos' : '';
+		rdpKdc = o?.kdc ?? '';
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
+		rdpRemoteApp = o?.remote_app === true;
+		rdpAppWindows = o?.app_windows === 'separate' ? 'separate' : '';
+		rdpAppArgs = o?.app_args ?? '';
 		rdpSftpPort = o?.files_port ? String(o.files_port) : '';
 	}
 
@@ -202,8 +220,15 @@
 			keepalive: num(rdpKeepalive),
 			jiggler: num(rdpJiggler),
 			admin: rdpAdmin || null,
+			drives: rdpDrives.map((d) => d.trim()).filter(Boolean).length ? rdpDrives.map((d) => d.trim()).filter(Boolean) : null,
+			all_drives: rdpAllDrives || null,
+			auth: rdpAuth || null,
+			kdc: rdpAuth && rdpKdc.trim() ? rdpKdc.trim() : null,
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
+			remote_app: rdpProgram.trim() && rdpRemoteApp ? true : null,
+			app_args: rdpProgram.trim() && rdpRemoteApp ? rdpAppArgs.trim() || null : null,
+			app_windows: rdpProgram.trim() && rdpRemoteApp && rdpAppWindows ? rdpAppWindows : null,
 			files_port: sftpPortToSave(),
 		};
 		return Object.values(o).some((v) => v !== null) ? o : null;
@@ -470,7 +495,8 @@
 				const a: SessionAddress = { host: r.host.trim() };
 				if (r.label.trim()) a.label = r.label.trim();
 				if (p > 0 && p < 65536) a.port = p;
-				if (r.via) a.via_session_id = r.via;
+				if (r.wireguard) a.via_wireguard = r.wireguard;
+				else if (r.via) a.via_session_id = r.via;
 				else if (r.direct) a.direct = true;
 				return a;
 			});
@@ -600,6 +626,11 @@
 		findTerminalTheme(terminalTheme)?.name ?? (terminalTheme ? t('termtheme.missing') : t('termtheme.session_default'))
 	);
 	let jumpEnabled = $state(false);
+	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
+	let wireguardId = $state('');
+	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox'];
+	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
 	let proxyType = $state<'socks5' | 'socks4' | 'http'>('socks5');
@@ -722,7 +753,7 @@
 			host = editSession.host;
 			portStr = String(editSession.port);
 			hostLabel = editSession.host_label ?? '';
-			addressRows = (editSession.alt_addresses ?? []).map((a) => ({ label: a.label ?? '', host: a.host, port: a.port ? String(a.port) : '', direct: !!a.direct, via: a.via_session_id ?? '' }));
+			addressRows = (editSession.alt_addresses ?? []).map((a) => ({ label: a.label ?? '', host: a.host, port: a.port ? String(a.port) : '', direct: !!a.direct, via: a.via_session_id ?? '', wireguard: a.via_wireguard ?? '' }));
 			addressMode = editSession.connect_mode ?? 'auto';
 			addressCheck = editSession.address_check == null ? '' : editSession.address_check ? 'on' : 'off';
 			username = editSession.username;
@@ -778,6 +809,7 @@
 				jumpEnabled = false;
 				jumpHops = [];
 			}
+		wireguardId = editSession.wireguard_id ?? '';
 		if (editSession.proxy) {
 			proxyEnabled = true;
 			proxyType = (editSession.proxy.proxy_type as 'socks5' | 'socks4' | 'http') ?? 'socks5';
@@ -851,6 +883,7 @@
 			colorsOpen = false;
 			jumpEnabled = false;
 			jumpHops = [];
+			wireguardId = '';
 			proxyEnabled = false;
 			proxyType = 'socks5';
 			proxyHost = '127.0.0.1';
@@ -949,6 +982,10 @@
 		const terminalToSave: TerminalOptions | null = termSsh && (termType.trim() || backspaceChoice || encodingChoice)
 			? { term: termType.trim() || null, backspace: backspaceChoice || null, encoding: encodingChoice || null }
 			: null;
+		if (kind === 'rdp' && rdpRemoteApp && !rdpProgram.trim()) {
+			error = t('session.rdp_app_program_missing');
+			return;
+		}
 		if (terminalToSave?.term && !/^[\x21-\x7e]{1,64}$/.test(terminalToSave.term)) {
 			error = t('session.term_type_invalid');
 			return;
@@ -1034,6 +1071,7 @@
 					tags,
 					jump_chain: jumpChain,
 					proxy: proxyConfig,
+					wireguard_id: wireguardToSave(),
 					shell: desktop ? null : (shell.trim() || null),
 					kind,
 					domain: filled ? (editSession.domain ?? null) : rdp ? (domain.trim() || null) : null,
@@ -1092,6 +1130,7 @@
 					vaultId: sessionVault,
 					jumpChain,
 					proxy: proxyConfig,
+					wireguardId: wireguardToSave(),
 					shell: desktop ? null : (shell.trim() || null),
 					kind,
 					domain: rdp ? domain : null,
@@ -1176,6 +1215,16 @@
 		try {
 			const selected = await openDialog({ multiple: false, directory: true, title: t('session.rdp_share_folder') });
 			if (typeof selected === 'string') sharePath = selected;
+		} catch {
+			// User cancelled the dialog
+		}
+	}
+
+	/** Another shared folder, picked in the folder dialog. */
+	async function addDrive(): Promise<void> {
+		try {
+			const selected = await openDialog({ multiple: false, directory: true, title: t('session.rdp_share_folder') });
+			if (typeof selected === 'string' && !rdpDrives.includes(selected)) rdpDrives = [...rdpDrives, selected];
 		} catch {
 			// User cancelled the dialog
 		}
@@ -1294,7 +1343,22 @@
 				</div>
 			</div>
 			{#if kind === 'ssh'}
-				<SessionAddresses bind:mainLabel={hostLabel} bind:rows={addressRows} bind:mode={addressMode} bind:check={addressCheck} checkByDefault={getSettings().checkAddresses} jumpSessions={sshSessions.filter((s) => s.id !== editSession?.id).map((s) => ({ id: s.id, name: s.name }))} routed={jumpEnabled || proxyEnabled} port={portStr} disabled={saving} />
+				<SessionAddresses bind:mainLabel={hostLabel} bind:rows={addressRows} bind:mode={addressMode} bind:check={addressCheck} checkByDefault={getSettings().checkAddresses} jumpSessions={sshSessions.filter((s) => s.id !== editSession?.id).map((s) => ({ id: s.id, name: s.name }))} wireguardProfiles={wgProfiles} routed={jumpEnabled || proxyEnabled} port={portStr} disabled={saving} />
+			{/if}
+			{#if wireguardKinds.includes(kind) && (wgProfiles.length || wireguardId)}
+				<div class="shell-field">
+					<label class="via-label" for="session-wireguard">{t('wireguard.session_route')}</label>
+					<select id="session-wireguard" class="via-select" bind:value={wireguardId} disabled={saving}>
+						<option value="">{t('wireguard.none')}</option>
+						{#each wgProfiles as wg (wg.id)}
+							<option value={wg.id}>{wg.name}</option>
+						{/each}
+						{#if wireguardId && !wgProfiles.some((wg) => wg.id === wireguardId)}
+							<option value={wireguardId}>{t('wireguard.missing')}</option>
+						{/if}
+					</select>
+					<p class="shell-hint">{jumpEnabled ? t('wireguard.session_route_jump_hint') : t('wireguard.session_route_hint')}</p>
+				</div>
 			{/if}
 		{/if}
 
@@ -1364,6 +1428,18 @@
 			</div>
 			<Input label={t('session.rdp_domain')} bind:value={domain} placeholder="CORP" disabled={saving} />
 			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="rdp-auth">{t('session.rdp_auth')}</label>
+				<select id="rdp-auth" class="via-select" bind:value={rdpAuth} disabled={saving}>
+					<option value="">{t('session.rdp_auth_ntlm')}</option>
+					<option value="kerberos">{t('session.rdp_auth_kerberos')}</option>
+				</select>
+				{#if rdpAuth === 'kerberos'}
+					<p class="shell-hint">{t('session.rdp_auth_kerberos_hint')}</p>
+					<Input label={t('session.rdp_kdc')} bind:value={rdpKdc} placeholder="dc01.example.com" disabled={saving} />
+					<p class="shell-hint">{t('session.rdp_kdc_hint')}</p>
+				{/if}
+			</div>
 			<div class="auth-section">
 				<span class="auth-label">{t('session.os')}</span>
 				<div class="auth-toggle">
@@ -1372,6 +1448,31 @@
 					<button type="button" class="auth-btn" class:active={os === 'gnome'} disabled={saving} onclick={() => (os = 'gnome')}>{t('session.os_gnome')}</button>
 				</div>
 			</div>
+			<div class="auth-section">
+				<span class="auth-label">{t('session.rdp_opens')}</span>
+				<div class="auth-toggle">
+					<button type="button" class="auth-btn" class:active={!rdpRemoteApp} disabled={saving} onclick={() => (rdpRemoteApp = false)}>{t('session.rdp_opens_desktop')}</button>
+					<button type="button" class="auth-btn" class:active={rdpRemoteApp} disabled={saving} onclick={() => (rdpRemoteApp = true)}>RemoteApp</button>
+				</div>
+			</div>
+			{#if rdpRemoteApp}
+				<div class="shell-field">
+					<Input label={t('session.rdp_app_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
+					<p class="shell-hint">{t('session.rdp_remote_app_hint')}</p>
+				</div>
+				<Input label={t('session.rdp_app_args')} bind:value={rdpAppArgs} placeholder="C:\Users\Public\notes.txt" disabled={saving} />
+				<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+				{#if rdpClient === 'ironrdp' && !isMobile()}
+					<div class="shell-field">
+						<label class="via-label" for="rdp-app-windows">{t('session.rdp_app_windows')}</label>
+						<select id="rdp-app-windows" class="via-select" bind:value={rdpAppWindows} disabled={saving}>
+							<option value="">{t('session.rdp_app_windows_tab')}</option>
+							<option value="separate">{t('session.rdp_app_windows_separate')}</option>
+						</select>
+						{#if rdpAppWindows === 'separate'}<p class="shell-hint">{t('session.rdp_app_windows_separate_hint')}</p>{/if}
+					</div>
+				{/if}
+			{/if}
 			{#if onIos}
 			<div class="shell-field">
 				<label class="jump-toggle">
@@ -1391,6 +1492,30 @@
 					</Button>
 				</div>
 				<p class="shell-hint">{t('session.rdp_share_hint')}</p>
+			</div>
+			{/if}
+			{#if !isMobile()}
+			<div class="shell-field">
+				{#each rdpDrives as _, i (i)}
+					<div class="key-path-row">
+						<div class="key-path-input">
+							<Input label={t('session.rdp_share_more', { n: String(i + 2) })} bind:value={rdpDrives[i]} disabled={saving} />
+						</div>
+						<Button variant="secondary" size="sm" onclick={() => (rdpDrives = rdpDrives.filter((_, j) => j !== i))} disabled={saving}>
+							{t('session.rdp_share_remove')}
+						</Button>
+					</div>
+				{/each}
+				{#if rdpDrives.length < 16}
+					<div>
+						<Button variant="secondary" size="sm" onclick={addDrive} disabled={saving}>{t('session.rdp_share_add')}</Button>
+					</div>
+				{/if}
+				<label class="jump-toggle">
+					<input type="checkbox" bind:checked={rdpAllDrives} disabled={saving} />
+					<span class="jump-toggle-text">{t('session.rdp_share_all_drives')}</span>
+				</label>
+				<p class="shell-hint">{t('session.rdp_share_all_drives_hint')}</p>
 			</div>
 			{/if}
 			{#if !isMobile()}
@@ -1508,12 +1633,14 @@
 							<span class="jump-toggle-text">{t('session.rdp_admin')}</span>
 						</label>
 					</div>
-					<div class="shell-field">
-						<Input label={t('session.rdp_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
-						<p class="shell-hint">{t('session.rdp_program_hint')}</p>
-					</div>
-					{#if rdpProgram.trim()}
-						<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+					{#if !rdpRemoteApp}
+						<div class="shell-field">
+							<Input label={t('session.rdp_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
+							<p class="shell-hint">{t('session.rdp_program_hint')}</p>
+						</div>
+						{#if rdpProgram.trim()}
+							<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+						{/if}
 					{/if}
 				</div>
 			</details>

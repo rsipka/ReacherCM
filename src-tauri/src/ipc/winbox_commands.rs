@@ -275,7 +275,16 @@ pub async fn winbox_launch(
             .await
             .map_err(|e| e.to_string())??
     };
-    let address = address(&params.host, params.port);
+    // A saved session routed through a WireGuard tunnel: WinBox connects to
+    // a local port into it.
+    let tunnel_port = if params.port == 0 { DEFAULT_PORT } else { params.port };
+    let address = match crate::ipc::wireguard_commands::session_forward_to(&state, session_id.as_deref(), &params.host, params.port, tunnel_port).await? {
+        Some(_) if is_mac(params.host.trim()) => {
+            return Err("A MAC address cannot be reached through a WireGuard tunnel. Use the router's IP address.".to_string());
+        }
+        Some(local) => format!("127.0.0.1:{local}"),
+        None => address(&params.host, params.port),
+    };
     let username = params.username.unwrap_or_default();
     let on_command_line = if params.password_mode == PasswordMode::Argument { password.as_deref() } else { None };
     let args = arguments(&address, username.trim(), on_command_line);

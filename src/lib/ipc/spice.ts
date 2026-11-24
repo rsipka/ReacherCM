@@ -1,6 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type { MouseAction, RdpStatus } from '#lib/ipc/rdp.js';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /**
  * Remote desktop over SPICE: KVM/QEMU virtual machines (Proxmox VE, libvirt,
@@ -67,6 +68,7 @@ export async function spiceConnect(params: SpiceConnectParams, onFrame: (frame: 
 		onFrame(copy);
 	};
 	const { sessionId, ...rest } = params;
+	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('spice_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }
 

@@ -57,6 +57,12 @@ cryptoki-sys = "0.5"
 # OpenSSH dlopens it.
 libloading = "0.9"
 
+# WireGuard inside the app (src/wireguard): boringtun speaks the protocol
+# (noise only, no system device) and smoltcp is the TCP/IP stack on the
+# tunnel's side, so no VPN permission, root or network interface is needed.
+boringtun = { version = "0.7.1", default-features = false }
+smoltcp = { version = "0.14", default-features = false, features = ["std", "log", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-tcp-cubic", "socket-udp", "socket-dns"] }
+
 # ZMODEM (rz/sz) in terminal sessions (src/zmodem): a sans-IO state machine
 # the session loops drive, tested against lrzsz upstream.
 zmodem2 = "0.7"
@@ -210,6 +216,10 @@ ironrdp-cliprdr-format = { git = "https://github.com/Devolutions/IronRDP", rev =
 image = { version = "0.25", default-features = false, features = ["png"] }
 ironrdp-rdpdr = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
 ironrdp-svc = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
+# RemoteApp (RAIL) launch and window commands; see src/rdp/remote_app.rs.
+ironrdp-rail = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
+# Kerberos login settings for CredSSP; see src/rdp/kerberos.rs.
+ironrdp-connector = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false }
 ironrdp-tls = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false, features = ["rustls"] }
 # H.264 for the graphics pipeline: OpenH264 compiled in (the user's call; see the changelog).
 ironrdp-egfx = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", features = ["openh264-bundled"] }

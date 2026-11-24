@@ -46,7 +46,16 @@ pub async fn telnet_connect(
         params.host,
         params.port
     );
-    let stream = crate::telnet::open(&params.host, params.port).await?;
+    // A WireGuard route: only the saved session's own for this address.
+    let wireguard = params.wireguard.clone().filter(|w| !w.is_empty());
+    if let Some(wg) = &wireguard {
+        let sid = crate::ipc::session_commands::require_session_id(session_id.as_deref())?;
+        let stored = crate::ipc::session_commands::stored_session(&state, sid).await?;
+        if crate::ipc::ssh_commands::wireguard_route(&stored, &params.host, params.port) != Some(wg.as_str()) {
+            return Err(format!("'{}' does not go through this WireGuard tunnel. Connect again.", stored.name));
+        }
+    }
+    let stream = crate::telnet::open(&params.host, params.port, wireguard.as_deref()).await?;
     state
         .telnet_manager
         .lock()

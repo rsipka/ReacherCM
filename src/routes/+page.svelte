@@ -38,8 +38,11 @@
 	import ContainersPage from '#lib/components/containers/ContainersPage.svelte';
 	import K8sPage from '#lib/components/k8s/K8sPage.svelte';
 	import EditorWindow from '#lib/components/editor/EditorWindow.svelte';
+	import RailView from '#lib/components/rdp/RailView.svelte';
 
 	const isEditorWindow = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('editor');
+	/** A seamless RemoteApp's window of its own. */
+	const isRailView = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('railview');
 
 	/**
 	 * Handle terminal title changes from OSC 2 escape sequences.
@@ -402,7 +405,9 @@
 
 <svelte:window bind:innerWidth />
 
-{#if isEditorWindow}
+{#if isRailView}
+	<RailView />
+{:else if isEditorWindow}
 	<EditorWindow />
 {:else}
 	<div class="page-container">
