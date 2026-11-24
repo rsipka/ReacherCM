@@ -129,6 +129,14 @@
 	/** '' for NTLM, 'kerberos' for Kerberos with NTLM as the fallback. */
 	let rdpAuth = $state<'' | 'kerberos'>('');
 	let rdpKdc = $state('');
+	/** An RD Gateway to connect through, and how. */
+	let rdpGateway = $state('');
+	let rdpGatewayDetect = $state(false);
+	let rdpGatewayRpc = $state(false);
+	/** The gateway's own login; off: the session's. */
+	let rdpGatewayOwnLogin = $state(false);
+	let rdpGatewayUser = $state('');
+	let rdpGatewayPassword = $state('');
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
 	let rdpRemoteApp = $state(false);
@@ -192,6 +200,12 @@
 		rdpAllDrives = o?.all_drives === true;
 		rdpAuth = o?.auth === 'kerberos' ? 'kerberos' : '';
 		rdpKdc = o?.kdc ?? '';
+		rdpGateway = o?.gateway ?? '';
+		rdpGatewayDetect = o?.gateway_detect === true;
+		rdpGatewayRpc = o?.gateway_rpc === true;
+		rdpGatewayOwnLogin = !!o?.gateway_user;
+		rdpGatewayUser = o?.gateway_user ?? '';
+		rdpGatewayPassword = o?.gateway_password ?? '';
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
 		rdpRemoteApp = o?.remote_app === true;
@@ -224,6 +238,7 @@
 			all_drives: rdpAllDrives || null,
 			auth: rdpAuth || null,
 			kdc: rdpAuth && rdpKdc.trim() ? rdpKdc.trim() : null,
+			...gatewayToSave(),
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
 			remote_app: rdpProgram.trim() && rdpRemoteApp ? true : null,
@@ -1220,6 +1235,19 @@
 		}
 	}
 
+	/** The gateway settings as saved; all null without a gateway. */
+	function gatewayToSave(): Pick<RdpOptions, 'gateway' | 'gateway_detect' | 'gateway_rpc' | 'gateway_user' | 'gateway_password'> {
+		const gateway = rdpGateway.trim();
+		const own = !!gateway && rdpGatewayOwnLogin && !!rdpGatewayUser.trim();
+		return {
+			gateway: gateway || null,
+			gateway_detect: gateway && rdpGatewayDetect ? true : null,
+			gateway_rpc: gateway && rdpGatewayRpc ? true : null,
+			gateway_user: own ? rdpGatewayUser.trim() : null,
+			gateway_password: own && rdpGatewayPassword ? rdpGatewayPassword : null,
+		};
+	}
+
 	/** Another shared folder, picked in the folder dialog. */
 	async function addDrive(): Promise<void> {
 		try {
@@ -1438,6 +1466,30 @@
 					<p class="shell-hint">{t('session.rdp_auth_kerberos_hint')}</p>
 					<Input label={t('session.rdp_kdc')} bind:value={rdpKdc} placeholder="dc01.example.com" disabled={saving} />
 					<p class="shell-hint">{t('session.rdp_kdc_hint')}</p>
+				{/if}
+			</div>
+			<div class="shell-field">
+				<Input label={t('session.rdp_gateway')} bind:value={rdpGateway} placeholder="gateway.example.com" disabled={saving} />
+				<p class="shell-hint">{t('session.rdp_gateway_hint')}</p>
+				{#if rdpGateway.trim()}
+					<label class="jump-toggle">
+						<input type="checkbox" bind:checked={rdpGatewayDetect} disabled={saving} />
+						<span class="jump-toggle-text">{t('session.rdp_gateway_detect')}</span>
+					</label>
+					<label class="jump-toggle">
+						<input type="checkbox" bind:checked={rdpGatewayRpc} disabled={saving} />
+						<span class="jump-toggle-text">{t('session.rdp_gateway_rpc')}</span>
+					</label>
+					<label class="jump-toggle">
+						<input type="checkbox" bind:checked={rdpGatewayOwnLogin} disabled={saving} />
+						<span class="jump-toggle-text">{t('session.rdp_gateway_own_login')}</span>
+					</label>
+					{#if rdpGatewayOwnLogin}
+						<Input label={t('session.rdp_gateway_user')} bind:value={rdpGatewayUser} placeholder="CORP\user" disabled={saving} />
+						<Input type="password" label={t('session.rdp_gateway_password')} bind:value={rdpGatewayPassword} placeholder={t('session.stored_encrypted')} disabled={saving} />
+					{:else}
+						<p class="shell-hint">{t('session.rdp_gateway_same_login')}</p>
+					{/if}
 				{/if}
 			</div>
 			<div class="auth-section">

@@ -84,6 +84,22 @@ pub struct RdpOptions {
     /// system's Kerberos settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kdc: Option<String>,
+    /// An RD Gateway to connect through, `host` or `host:port` (443).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+    /// Gateway: try the server directly first, the gateway only when that
+    /// fails (mstsc's "detect"). Unset: always through the gateway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_detect: Option<bool>,
+    /// Gateway: RPC over HTTP, for gateways older than Windows Server 2012.
+    /// Unset: HTTP transport.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_rpc: Option<bool>,
+    /// Gateway: a login of its own. Unset: the session's login.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_user: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway_password: Option<String>,
 }
 
 /// The most extra drives a session keeps.
@@ -133,6 +149,21 @@ impl RdpOptions {
             all_drives: self.all_drives.filter(|a| *a),
             kdc: if self.auth.as_deref() == Some("kerberos") { text(self.kdc).filter(|k| kdc_url(k).is_some()) } else { None },
             auth: one_of(self.auth, &["kerberos"]),
+            gateway: text(self.gateway).filter(|g| parse_gateway(g).is_some()),
+            gateway_detect: self.gateway_detect.filter(|d| *d),
+            gateway_rpc: self.gateway_rpc.filter(|r| *r),
+            gateway_user: text(self.gateway_user),
+            // A password is kept as typed: spaces may be part of it.
+            gateway_password: self.gateway_password.filter(|p| !p.is_empty() && !p.contains('\0')),
+        };
+        // The gateway's own settings mean nothing without a gateway, and its
+        // password nothing without its user.
+        let tidy = if tidy.gateway.is_none() {
+            Self { gateway_detect: None, gateway_rpc: None, gateway_user: None, gateway_password: None, ..tidy }
+        } else if tidy.gateway_user.is_none() {
+            Self { gateway_password: None, ..tidy }
+        } else {
+            tidy
         };
         // A RemoteApp, its arguments and the start folder mean nothing without a program.
         let tidy = if tidy.program.is_none() {
@@ -155,6 +186,11 @@ impl RdpOptions {
         self.remote_app == Some(true) && self.program.as_deref().is_some_and(|p| !p.trim().is_empty())
     }
 
+    /// The RD Gateway to connect through, as host and port.
+    pub fn gateway_endpoint(&self) -> Option<(String, u16)> {
+        parse_gateway(self.gateway.as_deref()?)
+    }
+
     /// The SSH port of the session's file manager.
     pub fn files_port(options: Option<&Self>) -> u16 {
         options.and_then(|o| o.files_port).unwrap_or(FILES_PORT)
@@ -173,6 +209,24 @@ impl RdpOptions {
             _ => None,
         }
     }
+}
+
+/// `gw.example.com[:port]` as host and port, 443 unless said; an
+/// `https://` prefix and a trailing path are taken off.
+pub fn parse_gateway(text: &str) -> Option<(String, u16)> {
+    let text = text.trim();
+    let text = text.strip_prefix("https://").unwrap_or(text);
+    let text = text.split('/').next().unwrap_or("");
+    if text.is_empty() || text.contains(char::is_whitespace) || text.contains(',') {
+        return None;
+    }
+    let (host, port) = match text.rsplit_once(':') {
+        Some((h, p)) if !h.contains(':') => (h, p.parse::<u16>().ok().filter(|p| *p != 0)?),
+        Some(_) => return None,
+        None => (text, 443),
+    };
+    let ok = !host.is_empty() && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    ok.then(|| (host.to_ascii_lowercase(), port))
 }
 
 /// The KDC a session names, as the URL Kerberos takes: a proxy URL as it
@@ -253,6 +307,17 @@ mod tests {
         let o = RdpOptions { program: Some("notepad".into()), remote_app: Some(true), app_args: Some("a.txt".into()), ..Default::default() }.tidy().unwrap();
         assert!(o.is_remote_app());
         assert_eq!(o.app_args.as_deref(), Some("a.txt"));
+    }
+
+    #[test]
+    fn gateway_forms() {
+        assert_eq!(parse_gateway("gw.example.com"), Some(("gw.example.com".into(), 443)));
+        assert_eq!(parse_gateway("https://GW.example.com:8443/"), Some(("gw.example.com".into(), 8443)));
+        assert_eq!(parse_gateway("gw example"), None);
+        let o = RdpOptions { gateway_rpc: Some(true), gateway_user: Some("u".into()), ..Default::default() };
+        assert_eq!(o.tidy(), None);
+        let o = RdpOptions { gateway: Some("gw.example.com".into()), gateway_password: Some("p".into()), ..Default::default() }.tidy().unwrap();
+        assert_eq!(o.gateway_password, None);
     }
 
     #[test]
