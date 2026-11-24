@@ -1,6 +1,6 @@
 [package]
 name = "reacher-cm"
-version = "26.11.1-dev.7"
+version = "26.11.1-dev.8"
 description = "Cross-platform SSH & Remote Management Tool"
 authors = ["Reach Contributors", "Reacher CM contributors"]
 repository = "https://github.com/rsipka/ReacherCM"
@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tempfile = "3"
+cap-std = "4.0.3"
+cap-fs-ext = "4.0.3"
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-dialog = "2"
 # Opening links in the browser. The shell plugin's open is denied on Android
@@ -40,7 +42,7 @@ uuid = { version = "1", features = ["v4"] }
 russh = { version = "0.63", default-features = false, features = ["ring", "rsa", "des", "flate2"] }
 # The SFTP subsystem, for vault sync to an SFTP server.
 russh-sftp = "3.0.1"
-url = "2.5"
+url = "2.5.9"
 smb = "0.12.1"
 # Used to read what a key says
 # about itself (algorithm, fingerprint, whether it is encrypted) without

@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Clear finished",
   "files.queue_remove": "Remove from list",
   "files.upload": "Upload",
+  "files.stop_upload": "Stop after the current file",
   "files.download": "Download",
   "files.job_queued": "Waiting",
   "files.job_running": "Running",

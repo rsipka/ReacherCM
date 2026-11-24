@@ -4,7 +4,7 @@
  * walked here and fetched file by file, since a download is one file.
  */
 import { sftpDownload, sftpListDir, sftpUpload } from '#lib/ipc/sftp.js';
-import { localJoin, localMkdir } from '#lib/ipc/localfs.js';
+import { localPrepareDownloadDir } from '#lib/ipc/localfs.js';
 import { runTransfer } from './run-transfer.js';
 import { remoteJoin, type PaneKind } from './pane.svelte.js';
 import type { FileEntry } from '#lib/state/explorer.svelte.js';
@@ -16,23 +16,23 @@ function errorText(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-/** Fetch a server folder into `localParent`, merging into a folder of the
- *  same name already there. False when the person cancelled a file. */
-async function downloadTree(conn: string, remoteDir: string, localParent: string, name: string, onId?: (id: string) => void): Promise<boolean> {
-	const localDir = await localMkdir(localParent, name, true);
+/** Fetch a server folder beneath the original local pane directory.
+ *  False when the person cancelled a file. */
+async function downloadTree(conn: string, remoteDir: string, root: string, parents: string[], onId?: (id: string) => void): Promise<boolean> {
+	await localPrepareDownloadDir(root, parents);
 	const children = await sftpListDir(conn, remoteDir);
 	for (const child of children) {
+		const names = [...parents, child.name];
 		if (child.isDirectory) {
-			if (!(await downloadTree(conn, child.path, localDir, child.name, onId))) return false;
+			if (!(await downloadTree(conn, child.path, root, names, onId))) return false;
 			continue;
 		}
-		const target = await localJoin(localDir, child.name);
 		const done = await runTransfer({
 			kind: 'downloading',
 			connectionId: conn,
 			filename: child.name,
 			totalBytes: child.size,
-			start: (id) => sftpDownload(conn, child.path, target, id),
+			start: (id) => sftpDownload(conn, child.path, { root, names }, id),
 			onId
 		});
 		if (!done) return false;
@@ -56,15 +56,14 @@ export async function copyEntry(conn: string, entry: FileEntry, from: PaneKind, 
 			return done ? 'done' : 'cancelled';
 		}
 		if (entry.isDirectory) {
-			return (await downloadTree(conn, entry.path, toDir, entry.name, onId)) ? 'done' : 'cancelled';
+			return (await downloadTree(conn, entry.path, toDir, [entry.name], onId)) ? 'done' : 'cancelled';
 		}
-		const target = await localJoin(toDir, entry.name);
 		const done = await runTransfer({
 			kind: 'downloading',
 			connectionId: conn,
 			filename: entry.name,
 			totalBytes: entry.size,
-			start: (id) => sftpDownload(conn, entry.path, target, id),
+			start: (id) => sftpDownload(conn, entry.path, { root: toDir, names: [entry.name] }, id),
 			onId
 		});
 		return done ? 'done' : 'cancelled';

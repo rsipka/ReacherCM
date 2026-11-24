@@ -13,7 +13,7 @@ use super::client::{Client, FtpError, DATA_IDLE};
 use super::list::{self, base_name, parent};
 use super::{with_client, FtpConn};
 use crate::sftp::browser::RemoteEntry;
-use crate::sftp::local_download::LocalDownload;
+use crate::sftp::local_download::{DownloadTarget, LocalDownload};
 use crate::sftp::transfer::plan_directory;
 
 /// Hears a transfer's bytes done so far and its total.
@@ -46,10 +46,16 @@ async fn drain(s: &mut Box<dyn super::client::Stream>) {
     .await;
 }
 
-/// A server close without TLS's goodbye (close_notify) still ends a transfer
-/// that has arrived whole; many servers skip it.
-fn ended(e: &std::io::Error) -> bool {
-    e.kind() == std::io::ErrorKind::UnexpectedEof
+/// TLS peers sometimes omit close_notify. Only accept that when the
+/// expected size independently confirms a complete transfer.
+fn complete_size(expected: Option<u64>, received: u64, unclean_eof: bool) -> Result<(), FtpError> {
+    match expected {
+        Some(size) if received != size => Err(FtpError::Other(format!(
+            "FTP download size mismatch: expected {size} bytes, received {received}"
+        ))),
+        None if unclean_eof => Err(FtpError::Other("FTP data connection ended without confirming the complete file".into())),
+        _ => Ok(()),
+    }
 }
 
 async fn list_on(c: &mut Client, path: &str) -> Result<Vec<RemoteEntry>, FtpError> {
@@ -182,7 +188,10 @@ pub async fn touch(conn: &FtpConn, path: &str) -> Result<(), FtpError> {
 
 async fn size_of(c: &mut Client, path: &str) -> Result<Option<u64>, FtpError> {
     let r = c.cmd(&format!("SIZE {path}")).await?;
-    Ok((r.code == 213).then(|| r.text.trim().parse().ok()).flatten())
+    if r.code != 213 {
+        return Ok(None);
+    }
+    r.text.trim().parse().map(Some).map_err(|_| FtpError::Other("The FTP server sent an invalid file size".into()))
 }
 
 async fn read_on(c: &mut Client, path: &str) -> Result<String, FtpError> {
@@ -193,17 +202,16 @@ async fn read_on(c: &mut Client, path: &str) -> Result<String, FtpError> {
             MAX_EDIT_SIZE as f64 / (1024.0 * 1024.0)
         ))
     };
-    if let Some(size) = size_of(c, path).await? {
-        if size > MAX_EDIT_SIZE {
-            return Err(too_large(size));
-        }
+    let size = size_of(c, path).await?;
+    if let Some(size) = size.filter(|&size| size > MAX_EDIT_SIZE) {
+        return Err(too_large(size));
     }
     let s = c.data(&format!("RETR {path}")).await?;
     let mut out = Vec::new();
     let read = tokio::time::timeout(DATA_IDLE, s.take(MAX_EDIT_SIZE + 1).read_to_end(&mut out)).await;
-    match read {
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) if ended(&e) => {}
+    let unclean_eof = match read {
+        Ok(Ok(_)) => false,
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => true,
         Ok(Err(e)) => {
             c.broken = true;
             return Err(FtpError::Io(format!("{path}: {e}")));
@@ -212,13 +220,14 @@ async fn read_on(c: &mut Client, path: &str) -> Result<String, FtpError> {
             c.broken = true;
             return Err(FtpError::Io(format!("{path}: the server stopped sending")));
         }
-    }
+    };
     if out.len() as u64 > MAX_EDIT_SIZE {
         // Cut short: the server's answer is not worth waiting for.
         c.broken = true;
         return Err(too_large(out.len() as u64));
     }
     c.finish().await?;
+    complete_size(size, out.len() as u64, unclean_eof)?;
     String::from_utf8(out).map_err(|_| FtpError::Other("File is not valid UTF-8 text".into()))
 }
 
@@ -235,16 +244,17 @@ pub async fn write_text(conn: &FtpConn, path: &str, content: &str) -> Result<(),
 async fn download_on(
     c: &mut Client,
     remote: &str,
-    local: &str,
+    local: &DownloadTarget,
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<u64, FtpError> {
     let size = size_of(c, remote).await?;
-    let mut file = LocalDownload::new(Path::new(local)).map_err(|e| FtpError::Other(e.to_string()))?;
+    let mut file = LocalDownload::for_target(local).map_err(|e| FtpError::Other(e.to_string()))?;
     let mut s = c.data(&format!("RETR {remote}")).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut done: u64 = 0;
     let mut shown: u64 = 0;
+    let mut unclean_eof = false;
     progress(0, size.unwrap_or(0));
     loop {
         let n = tokio::select! {
@@ -255,7 +265,10 @@ async fn download_on(
             }
             r = tokio::time::timeout(DATA_IDLE, s.read(&mut buf)) => match r {
                 Ok(Ok(n)) => n,
-                Ok(Err(e)) if ended(&e) => 0,
+                Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    unclean_eof = true;
+                    0
+                }
                 Ok(Err(e)) => {
                     c.broken = true;
                     return Err(FtpError::Io(format!("{remote}: {e}")));
@@ -269,7 +282,10 @@ async fn download_on(
         if n == 0 {
             break;
         }
-        std::io::Write::write_all(&mut file.writer, &buf[..n]).map_err(|e| FtpError::Other(format!("Write error: {e}")))?;
+        std::io::Write::write_all(&mut file.writer, &buf[..n]).map_err(|e| {
+            c.broken = true;
+            FtpError::Other(format!("Write error: {e}"))
+        })?;
         done += n as u64;
         if done - shown >= CHUNK as u64 {
             shown = done;
@@ -278,16 +294,17 @@ async fn download_on(
     }
     drop(s);
     c.finish().await?;
+    complete_size(size, done, unclean_eof)?;
     file.commit(cancel).map_err(|e| FtpError::Other(e.to_string()))?;
     progress(done, done);
     tracing::info!("FTP download complete: {remote} ({done} bytes)");
     Ok(done)
 }
 
-pub async fn download(
+pub(crate) async fn download(
     conn: &FtpConn,
     remote: &str,
-    local: &str,
+    local: &DownloadTarget,
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<u64, FtpError> {
@@ -305,35 +322,29 @@ async fn send_file(
     let mut file = tokio::fs::File::open(local)
         .await
         .map_err(|e| FtpError::Other(format!("Failed to read local file {}: {e}", local.display())))?;
+    // STOR may truncate an existing file. Once started, finish this file
+    // before honoring cancellation at the next file boundary.
+    if cancel.is_cancelled() {
+        return Err(FtpError::Cancelled);
+    }
     let mut s = c.data(&format!("STOR {remote}")).await?;
     let mut buf = vec![0u8; CHUNK];
     let mut sent: u64 = 0;
     loop {
-        if cancel.is_cancelled() {
-            drop(s);
+        let n = file.read(&mut buf).await.map_err(|e| {
             c.broken = true;
-            return Err(FtpError::Cancelled);
-        }
-        let n = file.read(&mut buf).await.map_err(|e| FtpError::Other(format!("Failed to read local file {}: {e}", local.display())))?;
+            FtpError::Other(format!("Failed to read local file {}: {e}", local.display()))
+        })?;
         if n == 0 {
             break;
         }
-        let wrote = tokio::select! {
-            _ = cancel.cancelled() => None,
-            r = tokio::time::timeout(DATA_IDLE, s.write_all(&buf[..n])) => Some(r),
-        };
-        match wrote {
-            None => {
-                drop(s);
-                c.broken = true;
-                return Err(FtpError::Cancelled);
-            }
-            Some(Ok(Ok(()))) => {}
-            Some(Ok(Err(e))) => {
+        match tokio::time::timeout(DATA_IDLE, s.write_all(&buf[..n])).await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => {
                 c.broken = true;
                 return Err(FtpError::Io(format!("{remote}: {e}")));
             }
-            Some(Err(_)) => {
+            Err(_) => {
                 c.broken = true;
                 return Err(FtpError::Io(format!("{remote}: the server stopped taking the data")));
             }
@@ -399,8 +410,7 @@ async fn upload_on(
     Ok(())
 }
 
-/// Upload a file, or a folder and all in it. A cancelled file is removed
-/// from the server, as the SFTP upload does.
+/// Upload a file, or a folder and all in it. Cancellation stops between files.
 pub async fn upload(
     conn: &FtpConn,
     local: &str,
@@ -408,11 +418,21 @@ pub async fn upload(
     cancel: &CancellationToken,
     progress: Progress<'_>,
 ) -> Result<(), FtpError> {
-    let result = with_client!(conn, |c| upload_on(c, local, remote, cancel, progress));
-    if matches!(result, Err(FtpError::Cancelled)) && !Path::new(local).is_dir() {
-        let _ = with_client!(conn, |c| async { c.cmd(&format!("DELE {remote}")).await.map(|_| ()) });
+    with_client!(conn, |c| upload_on(c, local, remote, cancel, progress))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn size_validation_accepts_only_complete_downloads() {
+        assert!(complete_size(Some(12), 12, true).is_ok());
+        assert!(complete_size(Some(12), 11, false).is_err());
+        assert!(complete_size(Some(12), 13, false).is_err());
+        assert!(complete_size(None, 12, false).is_ok());
+        assert!(complete_size(None, 12, true).is_err());
     }
-    result
 }
 
 #[cfg(test)]

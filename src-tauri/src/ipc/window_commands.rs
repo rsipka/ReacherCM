@@ -80,12 +80,14 @@ pub async fn float_window_open(
         .visible(false);
     // As the main window (tauri.macos.conf.json): the Mac's own traffic
     // lights over the app's title bar; elsewhere the app draws its own.
+    // y = 22 centres the buttons on the 38px title bar: tao sizes the button
+    // strip to button height (16) + y and centres them in it.
     #[cfg(target_os = "macos")]
     let builder = builder
         .decorations(true)
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true)
-        .traffic_light_position(tauri::LogicalPosition::new(14.0, 12.0));
+        .traffic_light_position(tauri::LogicalPosition::new(14.0, 22.0));
     #[cfg(not(target_os = "macos"))]
     let builder = builder.decorations(false);
 

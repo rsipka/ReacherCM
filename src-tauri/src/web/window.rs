@@ -337,7 +337,7 @@ fn popup(app: &AppHandle, opener: &str, url: url::Url, features: NewWindowFeatur
 /// A page finished loading: the login script, if it is the session's own
 /// origin and there is a login to type.
 fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
-    if p.event() != PageLoadEvent::Finished {
+    if p.event() != PageLoadEvent::Finished || !matches!(p.url().scheme(), "http" | "https") {
         return;
     }
     let Some(e) = entry(w.label()) else { return };

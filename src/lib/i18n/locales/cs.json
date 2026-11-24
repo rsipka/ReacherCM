@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Vymazat dokončené",
   "files.queue_remove": "Odebrat ze seznamu",
   "files.upload": "Nahrání",
+  "files.stop_upload": "Zastavit po dokončení aktuálního souboru",
   "files.download": "Stažení",
   "files.job_queued": "Čeká",
   "files.job_running": "Probíhá",

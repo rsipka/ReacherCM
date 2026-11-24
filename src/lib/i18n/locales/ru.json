@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Убрать завершённые",
   "files.queue_remove": "Убрать из списка",
   "files.upload": "Загрузка на сервер",
+  "files.stop_upload": "Остановить после текущего файла",
   "files.download": "Скачивание",
   "files.job_queued": "Ожидает",
   "files.job_running": "Выполняется",

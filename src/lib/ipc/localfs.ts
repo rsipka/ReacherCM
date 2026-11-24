@@ -39,6 +39,11 @@ export async function localRoots(): Promise<string[]> {
 	return invoke<string[]>('local_roots');
 }
 
+/** Create a tree beneath the local pane's selected folder without following links. */
+export async function localPrepareDownloadDir(root: string, names: string[]): Promise<void> {
+	return invoke('local_prepare_download_dir', { root, names });
+}
+
 /** A local file as text (UTF-8, up to 5 MB), for the viewer and Compare. */
 export async function localReadText(path: string): Promise<string> {
 	return invoke<string>('local_read_text', { path });

@@ -107,11 +107,7 @@ fn display_path(p: &Path) -> String {
 /// A plain file or folder name: no separators, not `.` or `..`, so a name
 /// typed into New folder or Rename can only land in the folder shown.
 fn plain_name(name: &str) -> Result<&str, String> {
-    let bad = name.is_empty() || name == "." || name == ".." || name.contains('/') || (cfg!(windows) && name.contains('\\'));
-    if bad || name.contains('\0') {
-        return Err(format!("Not a valid name: {name}"));
-    }
-    Ok(name)
+    crate::local_paths::plain_name(name).map_err(|_| format!("Not a valid name: {name}"))
 }
 
 /// Make a folder. With `exist_ok`, a folder already there is fine (a copy
@@ -218,11 +214,16 @@ pub(crate) fn stat(path: &str) -> Result<LocalStat, String> {
 /// folder of its own under the temporary folder, so two files of the same
 /// name never meet and the program shows the real name.
 pub(crate) fn edit_copy_path(name: &str) -> Result<String, String> {
-    let dir = std::env::temp_dir()
-        .join("reachercm-edit")
-        .join(uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", path_string(&dir)))?;
-    Ok(path_string(&dir.join(plain_name(name)?)))
+    let name = plain_name(name)?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("reachercm-edit-");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o700));
+    }
+    let dir = builder.tempdir().map_err(|e| format!("Cannot create editor folder: {e}"))?.keep();
+    Ok(path_string(&dir.join(name)))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -238,6 +239,15 @@ pub async fn local_list_dir(path: String) -> Result<LocalListing, String> {
 #[tauri::command]
 pub async fn local_mkdir(dir: String, name: String, exist_ok: Option<bool>) -> Result<String, String> {
     blocking(move || mkdir(&dir, &name, exist_ok.unwrap_or(false))).await
+}
+
+/// Create a server folder tree beneath the local pane's selected directory.
+#[tauri::command]
+pub async fn local_prepare_download_dir(root: String, names: Vec<String>) -> Result<(), String> {
+    blocking(move || {
+        let root = crate::local_paths::open_root(Path::new(&root)).map_err(|e| e.to_string())?;
+        crate::local_paths::download_subdir(&root, &names).map(|_| ()).map_err(|e| e.to_string())
+    }).await
 }
 
 /// Rename in place; refuses a name that is already taken.

@@ -2,8 +2,8 @@
 //!
 //! OpenTofu is one static binary per platform, so the honest way to run it
 //! is the way tenv does: download the release for this OS and CPU into a
-//! directory Reach controls, verify it against the checksums the project
-//! publishes, and run it by absolute path. No PATH, no "restart the app",
+//! directory Reach controls, verify it against the publisher-signed checksum
+//! manifest, and run it by absolute path. No "restart the app",
 //! and the version that ran is a fact, not a guess.
 //!
 //! Which version runs is the project's decision. A `.opentofu-version` file
@@ -11,8 +11,9 @@
 //! HCL does the same. Without a pin the newest managed version is used, and
 //! only when nothing is managed at all does a `tofu` on PATH get a turn.
 
-use std::io::{Cursor, Read};
+use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -20,6 +21,8 @@ use sha2::{Digest, Sha256};
 const RELEASES: &str = "https://github.com/opentofu/opentofu/releases/download";
 const LATEST_API: &str = "https://api.github.com/repos/opentofu/opentofu/releases/latest";
 const PIN_FILE: &str = ".opentofu-version";
+const SIGNING_WORKFLOW: &str = "https://github.com/opentofu/opentofu/.github/workflows/release.yml@refs/heads";
+const SIGNING_ISSUER: &str = "https://token.actions.githubusercontent.com";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -71,8 +74,23 @@ fn exe_name() -> &'static str {
     }
 }
 
-pub fn managed_binary(version: &str) -> PathBuf {
+fn managed_binary(version: &str) -> PathBuf {
     managed_root().join(version).join(exe_name())
+}
+
+fn parse_version(version: &str) -> Result<semver::Version, String> {
+    let version = version.trim();
+    version.strip_prefix('v').unwrap_or(version).parse().map_err(|_| "Invalid OpenTofu release version".into())
+}
+
+fn signing_identity(version: &semver::Version) -> String {
+    let prerelease = version.pre.as_str();
+    let branch = if prerelease.starts_with("alpha") || prerelease.starts_with("beta") {
+        "main".to_string()
+    } else {
+        format!("v{}.{}", version.major, version.minor)
+    };
+    format!("{SIGNING_WORKFLOW}/{branch}")
 }
 
 /// `1.11.4` → `[1, 11, 4]`, for ordering. Pre-release suffixes sort last.
@@ -91,6 +109,7 @@ pub fn installed_versions() -> Vec<String> {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().join(exe_name()).is_file())
             .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|v| v.parse::<semver::Version>().is_ok())
             .collect(),
         Err(_) => Vec::new(),
     };
@@ -163,6 +182,9 @@ fn path_binary() -> Option<ResolvedBinary> {
 /// The binary a project should run.
 pub fn resolve(project_dir: Option<&Path>) -> Result<ResolvedBinary, ResolveError> {
     if let Some((v, _)) = project_dir.and_then(pinned_version) {
+        if v.parse::<semver::Version>().is_err() {
+            return Err(ResolveError::PinnedNotInstalled(v));
+        }
         let p = managed_binary(&v);
         if p.is_file() {
             return Ok(ResolvedBinary { path: p, version: Some(v), source: BinarySource::Managed });
@@ -202,7 +224,7 @@ pub fn status(project_dir: Option<&Path>) -> BinaryStatus {
 pub fn write_pin(project_dir: &Path, version: Option<&str>) -> Result<(), String> {
     let file = project_dir.join(PIN_FILE);
     match version {
-        Some(v) => std::fs::write(&file, format!("{}\n", v.trim())).map_err(|e| e.to_string()),
+        Some(v) => std::fs::write(&file, format!("{}\n", parse_version(v)?)).map_err(|e| e.to_string()),
         None => match std::fs::remove_file(&file) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -212,7 +234,8 @@ pub fn write_pin(project_dir: &Path, version: Option<&str>) -> Result<(), String
 }
 
 pub fn remove(version: &str) -> Result<(), String> {
-    let dir = managed_root().join(version);
+    let version = parse_version(version)?.to_string();
+    let dir = managed_root().join(&version);
     if !dir.join(exe_name()).is_file() {
         return Err(format!("OpenTofu {} is not installed", version));
     }
@@ -271,10 +294,51 @@ pub async fn latest_version() -> Result<String, String> {
         .json()
         .await
         .map_err(|e| e.to_string())?;
-    v.get("tag_name")
+    let tag = v.get("tag_name")
         .and_then(|t| t.as_str())
-        .map(|t| t.trim_start_matches('v').to_string())
-        .ok_or_else(|| "GitHub's latest release has no tag".to_string())
+        .ok_or_else(|| "GitHub's latest release has no tag".to_string())?;
+    Ok(parse_version(tag)?.to_string())
+}
+
+async fn download_release(c: &reqwest::Client, version: &str, asset: &str) -> Result<reqwest::Response, String> {
+    c.get(format!("{RELEASES}/v{version}/{asset}"))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|e| format!("Could not download {asset}: {e}"))
+}
+
+async fn signed_checksums(c: &reqwest::Client, version: &semver::Version) -> Result<String, String> {
+    let cosign = which::which(if cfg!(windows) { "cosign.exe" } else { "cosign" }).map_err(|_| {
+        "Install Sigstore Cosign and add it to PATH to verify OpenTofu, or use a system OpenTofu installation.".to_string()
+    })?;
+    let cosign = std::path::absolute(cosign).map_err(|e| e.to_string())?;
+    let scratch = crate::private_tmp_dir("opentofu").map_err(|e| e.to_string())?;
+    let dir = tempfile::tempdir_in(scratch).map_err(|e| e.to_string())?;
+    let release = version.to_string();
+    let base = format!("tofu_{version}_SHA256SUMS");
+    for suffix in ["", ".sig", ".pem"] {
+        let asset = format!("{base}{suffix}");
+        let bytes = download_release(c, &release, &asset).await?.bytes().await.map_err(|e| e.to_string())?;
+        std::fs::write(dir.path().join(asset), bytes).map_err(|e| e.to_string())?;
+    }
+
+    // Match the exact release workflow and GitHub Actions OIDC issuer
+    // documented by OpenTofu. Cosign verifies the signature and trust chain.
+    let mut verify = super::runner::silent_async_command(cosign);
+    verify.current_dir(dir.path()).kill_on_drop(true).args([
+        "verify-blob", "--certificate-identity", &signing_identity(version),
+        "--certificate-oidc-issuer", SIGNING_ISSUER,
+        "--signature", &format!("{base}.sig"), "--certificate", &format!("{base}.pem"), &base,
+    ]);
+    let result = tokio::time::timeout(Duration::from_secs(60), verify.output())
+        .await
+        .map_err(|_| "Cosign timed out verifying OpenTofu".to_string())?
+        .map_err(|e| format!("Could not run Cosign: {e}"))?;
+    if !result.status.success() {
+        return Err(format!("OpenTofu signature verification failed: {}", String::from_utf8_lossy(&result.stderr).trim()));
+    }
+    std::fs::read_to_string(dir.path().join(base)).map_err(|e| e.to_string())
 }
 
 /// Download, verify and unpack one version. Says what it is doing through
@@ -283,13 +347,14 @@ pub async fn install(
     version: Option<String>,
     progress: impl Fn(&str),
 ) -> Result<String, String> {
-    let version = match version {
-        Some(v) => v.trim_start_matches('v').to_string(),
+    let release = match version {
+        Some(v) => parse_version(&v)?,
         None => {
             progress("Asking GitHub for the latest release…");
-            latest_version().await?
+            parse_version(&latest_version().await?)?
         }
     };
+    let version = release.to_string();
     if managed_binary(&version).is_file() {
         progress(&format!("OpenTofu {} is already installed.", version));
         return Ok(version);
@@ -298,30 +363,14 @@ pub async fn install(
         .ok_or_else(|| format!("No OpenTofu build for {} {}", std::env::consts::OS, std::env::consts::ARCH))?;
     let c = client().await?;
 
+    progress("Verifying OpenTofu's signature on SHA256SUMS…");
+    let sums = signed_checksums(&c, &release).await?;
+    let want = sum_for(&sums, &asset).ok_or_else(|| format!("{} is not listed in SHA256SUMS", asset))?;
     progress(&format!("Downloading {}…", asset));
-    let bytes = c
-        .get(format!("{}/v{}/{}", RELEASES, version, asset))
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {}", e))?
-        .error_for_status()
-        .map_err(|e| format!("No such release asset ({})", e))?
+    let bytes = download_release(&c, &version, &asset).await?
         .bytes()
         .await
         .map_err(|e| e.to_string())?;
-
-    progress("Verifying against the published SHA256SUMS…");
-    let sums = c
-        .get(format!("{}/v{}/tofu_{}_SHA256SUMS", RELEASES, version, version))
-        .send()
-        .await
-        .map_err(|e| format!("Could not fetch checksums: {}", e))?
-        .error_for_status()
-        .map_err(|e| format!("No checksums for this release ({})", e))?
-        .text()
-        .await
-        .map_err(|e| e.to_string())?;
-    let want = sum_for(&sums, &asset).ok_or_else(|| format!("{} is not listed in SHA256SUMS", asset))?;
     let got = hex(&Sha256::digest(&bytes));
     if got != want {
         return Err(format!(
@@ -335,12 +384,18 @@ pub async fn install(
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let target = dir.join(exe_name());
     let data = extract_tofu(&bytes, asset.ends_with(".zip"))?;
-    std::fs::write(&target, data).map_err(|e| e.to_string())?;
+    let mut staged = tempfile::NamedTempFile::new_in(&dir).map_err(|e| e.to_string())?;
+    staged.write_all(&data).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
+        staged.as_file().set_permissions(std::fs::Permissions::from_mode(0o755))
             .map_err(|e| e.to_string())?;
+    }
+    match staged.persist_noclobber(&target) {
+        Ok(_) => {}
+        Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists && target.is_file() => {}
+        Err(e) => return Err(e.to_string()),
     }
     progress(&format!("OpenTofu {} installed at {}", version, target.display()));
     Ok(version)
@@ -395,6 +450,14 @@ mod tests {
     }
 
     #[test]
+    fn signing_identity_is_bound_to_the_release_workflow_and_branch() {
+        let workflow = "https://github.com/opentofu/opentofu/.github/workflows/release.yml@refs/heads";
+        assert_eq!(signing_identity(&parse_version("v1.13.10").unwrap()), format!("{workflow}/v1.13"));
+        assert_eq!(signing_identity(&parse_version("1.14.0-beta1").unwrap()), format!("{workflow}/main"));
+        assert!(parse_version("../../tofu").is_err());
+    }
+
+    #[test]
     fn checksum_lookup_tolerates_binary_mode_markers() {
         let sums = "abc123  tofu_1.11.4_linux_amd64.tar.gz\nDEF456 *tofu_1.11.4_windows_amd64.zip\n";
         assert_eq!(sum_for(sums, "tofu_1.11.4_linux_amd64.tar.gz").as_deref(), Some("abc123"));
@@ -433,11 +496,12 @@ mod tests {
     }
 
     /// The real thing: GitHub, the release asset, the checksums, the unpack.
-    /// Ignored by default because it needs the network and ~30 MB; run with
+    /// Ignored by default because it needs Cosign, the network and ~30 MB; run with
     /// `cargo test -- --ignored downloads_and_verifies`.
     #[tokio::test]
     #[ignore]
     async fn downloads_and_verifies_the_latest_release() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let log = std::sync::Mutex::new(Vec::new());
         let v = install(None, |m| log.lock().unwrap().push(m.to_string())).await.expect("install");
         assert!(managed_binary(&v).is_file(), "binary at {}", managed_binary(&v).display());

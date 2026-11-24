@@ -3922,6 +3922,7 @@
   "files.queue_clear": "清除已完成",
   "files.queue_remove": "从列表中移除",
   "files.upload": "上传",
+  "files.stop_upload": "上传完当前文件后停止",
   "files.download": "下载",
   "files.job_queued": "等待中",
   "files.job_running": "进行中",

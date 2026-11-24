@@ -141,6 +141,8 @@ check('missing ones are defaults', old.terminalCursorStyle === defaults.terminal
 check('an older install counts as set up', old.setupComplete === true);
 check('an older install keeps Ansible and OpenTofu', same(old.devopsTools, ['ansible', 'tofu']));
 check('an empty theme id is no theme', readStoredSettings({ themeId: '' }).themeId === undefined);
+check('WinBox starts without sharing passwords', old.winboxPassword === 'none');
+check('WinBox keeps saved command-line login', restart({ ...defaults, winboxPassword: 'argument' }).winboxPassword === 'argument');
 
 check('an unknown shortcut action is dropped', same(readStoredSettings({ keyboardShortcuts: { nope: ['Mod+X'], 'tab.new': ['Mod+Y', 3] } }).keyboardShortcuts, { 'tab.new': ['Mod+Y'] }));
 

@@ -66,19 +66,35 @@ async fn live_ftp_operations() {
     upload(&conn, up.to_str().unwrap(), &format!("{base}/up"), &never, &progress).await.unwrap();
     let down = tmp.path().join("big.down");
     let (big_path, sub_path) = (format!("{base}/up/big.bin"), format!("{base}/up/sub"));
+    let destination = DownloadTarget::Chosen(down.clone());
     let (a, b) = tokio::join!(
-        download(&conn, &big_path, down.to_str().unwrap(), &never, &progress),
+        download(&conn, &big_path, &destination, &never, &progress),
         list_dir(&conn, &sub_path),
     );
     assert_eq!(a.unwrap(), big.len() as u64);
     assert_eq!(b.unwrap()[0].name, "small.txt");
     assert_eq!(std::fs::read(&down).unwrap(), big);
 
+    let replacement = tmp.path().join("replacement.bin");
+    let contents = vec![0xAB; CHUNK * 3];
+    std::fs::write(&replacement, &contents).unwrap();
+    let stop = CancellationToken::new();
+    let stop_on_progress = |sent, _| {
+        if sent >= CHUNK as u64 {
+            stop.cancel();
+        }
+    };
+    upload(&conn, replacement.to_str().unwrap(), &big_path, &stop, &stop_on_progress).await.unwrap();
+    assert!(stop.is_cancelled());
+    assert!(matches!(upload(&conn, up.join("big.bin").to_str().unwrap(), &big_path, &stop, &progress).await, Err(FtpError::Cancelled)));
+    download(&conn, &big_path, &destination, &never, &progress).await.unwrap();
+    assert_eq!(std::fs::read(&down).unwrap(), contents);
+
     // A cancelled download leaves nothing behind.
     let stop = CancellationToken::new();
     stop.cancel();
     let gone = tmp.path().join("cancelled");
-    assert!(matches!(download(&conn, &format!("{base}/up/big.bin"), gone.to_str().unwrap(), &stop, &progress).await, Err(FtpError::Cancelled)));
+    assert!(matches!(download(&conn, &format!("{base}/up/big.bin"), &DownloadTarget::Chosen(gone.clone()), &stop, &progress).await, Err(FtpError::Cancelled)));
     assert!(!gone.exists());
 
     delete(&conn, &base).await.unwrap();

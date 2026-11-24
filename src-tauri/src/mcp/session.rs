@@ -45,6 +45,8 @@ pub enum SessionKind {
 /// A terminal the user has explicitly offered to the AI.
 #[derive(Debug)]
 pub struct SharedSession {
+    /// An approval belongs to one share, even if the same terminal is shared again.
+    pub(crate) share_id: uuid::Uuid,
     pub id: String,
     pub kind: SessionKind,
     pub host: String,
@@ -79,6 +81,7 @@ pub struct SharedSession {
 impl SharedSession {
     pub fn new(id: String, kind: SessionKind, host: String, username: String) -> Self {
         Self {
+            share_id: uuid::Uuid::new_v4(),
             id,
             kind,
             host,

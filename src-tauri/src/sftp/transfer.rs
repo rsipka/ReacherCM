@@ -7,7 +7,7 @@ use base64::Engine;
 pub use tokio_util::sync::CancellationToken;
 use super::backend::{RemoteFs, SftpProtocol};
 use super::pipeline;
-use super::local_download::LocalDownload;
+use super::local_download::{DownloadTarget, LocalDownload};
 
 #[derive(Debug, Error)]
 pub enum TransferError {
@@ -36,10 +36,10 @@ pub struct TransferProgress {
 }
 
 /// Download to a sibling staging file and publish it after the transfer succeeds.
-pub async fn download_file(
+pub(crate) async fn download_file(
     fs: &RemoteFs,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
@@ -72,12 +72,12 @@ async fn download_file_sftp(
     fs: &RemoteFs,
     proto: &SftpProtocol,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
 ) -> Result<(), TransferError> {
-    tracing::info!("Downloading {} to {} (sftp)", remote_path, local_path);
+    tracing::info!("Downloading {} to {} (sftp)", remote_path, local_path.path().display());
     let filename = file_name_of(remote_path);
 
     let total_bytes = match proto.session.stat(remote_path).await {
@@ -97,7 +97,7 @@ async fn download_file_sftp(
         }
     };
     emit(0);
-    let bytes = download_sftp_contents(proto, remote_path, Path::new(local_path), total_bytes, cancel, emit).await?;
+    let bytes = download_sftp_contents(proto, remote_path, local_path, total_bytes, cancel, emit).await?;
 
     // The file may have shrunk while it was read; it is whole as it is now.
     emit_progress(app_handle, transfer_id, &filename, bytes, bytes);
@@ -109,13 +109,13 @@ async fn download_file_sftp(
 pub(super) async fn download_sftp_contents(
     proto: &SftpProtocol,
     remote_path: &str,
-    destination: &Path,
+    destination: &DownloadTarget,
     size: Option<u64>,
     cancel: &CancellationToken,
     mut progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
     use std::io::Write;
-    let mut file = LocalDownload::new(destination)?;
+    let mut file = LocalDownload::for_target(destination)?;
     let mut last = 0;
     // With no size attribute, EOF is the only available end marker.
     let bytes = pipeline::read_file(proto, remote_path, size.unwrap_or(u64::MAX), cancel,
@@ -134,12 +134,12 @@ pub(super) async fn download_sftp_contents(
 async fn download_file_exec(
     handle: &SharedHandle,
     remote_path: &str,
-    local_path: &str,
+    local_path: &DownloadTarget,
     transfer_id: &str,
     app_handle: &tauri::AppHandle,
     cancel: &CancellationToken,
 ) -> Result<(), TransferError> {
-    tracing::info!("Downloading {} to {}", remote_path, local_path);
+    tracing::info!("Downloading {} to {}", remote_path, local_path.path().display());
 
     let filename = Path::new(remote_path)
         .file_name()
@@ -177,7 +177,7 @@ async fn download_file_exec(
         }
     };
     progress(0);
-    let received = download_exec_contents(&mut channel, Path::new(local_path), cancel, progress).await;
+    let received = download_exec_contents(&mut channel, local_path, cancel, progress).await;
     if matches!(received, Err(TransferError::Cancelled)) {
         let _ = channel.close().await;
     }
@@ -191,11 +191,11 @@ async fn download_file_exec(
 
 async fn download_exec_contents(
     channel: &mut impl ChannelMessages,
-    destination: &Path,
+    destination: &DownloadTarget,
     cancel: &CancellationToken,
     progress: impl FnMut(u64),
 ) -> Result<u64, TransferError> {
-    let mut file = LocalDownload::new(destination)?;
+    let mut file = LocalDownload::for_target(destination)?;
     let bytes = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err(TransferError::Cancelled),
@@ -463,12 +463,7 @@ async fn send_file(
 ) -> Result<u64, TransferError> {
     let Some(proto) = sftp else {
         if fs.is_scp().await {
-            let sent = super::scp::send_file(&fs.handle, local, remote_path, cancel, on_progress).await;
-            if matches!(sent, Err(TransferError::Cancelled)) {
-                // Half a file is no use: removed, as the other ways do.
-                let _ = exec_on_connection_with_exit_code(&fs.handle, &format!("rm -f -- {}", shell_escape(remote_path))).await;
-            }
-            return sent;
+            return super::scp::send_file(&fs.handle, local, remote_path, cancel, on_progress).await;
         }
         let data = read_local(local)?;
         send_bytes(&fs.handle, &data, remote_path, cancel, on_progress).await?;
@@ -479,6 +474,11 @@ async fn send_file(
     let mut file = std::fs::File::open(local).map_err(|e| {
         TransferError::IoError(format!("Failed to read local file {}: {}", local.display(), e))
     })?;
+    // Opening the remote file can truncate it. Finish a file once the
+    // write has started, and honor cancellation before the next one.
+    if cancel.is_cancelled() {
+        return Err(TransferError::Cancelled);
+    }
     let next = |max: usize| -> Result<Option<Vec<u8>>, TransferError> {
         let mut buf = vec![0u8; max];
         let mut filled = 0;
@@ -500,20 +500,13 @@ async fn send_file(
         Ok((filled > 0).then_some(buf))
     };
     let mut last = 0u64;
-    let sent = pipeline::write_file(proto, remote_path, cancel, next, |done| {
+    let sent = pipeline::write_file(proto, remote_path, next, |done| {
         if done - last >= 256 * 1024 {
             last = done;
             on_progress(done);
         }
     })
-    .await;
-    if matches!(sent, Err(TransferError::Cancelled)) {
-        // TRUNCATE has already emptied whatever was there.
-        if let Err(e) = proto.session.remove(remote_path).await {
-            tracing::warn!("Could not remove the cancelled upload {}: {}", remote_path, e);
-        }
-    }
-    let sent = sent?;
+    .await?;
     on_progress(sent);
     Ok(sent)
 }
@@ -536,9 +529,8 @@ pub(crate) struct PlannedFile {
 /// Walk `local` and map it onto `remote`.
 ///
 /// Remote paths are joined with `/` whatever the local separator is. A
-/// symbolic link to a file is uploaded as the file it points to; a link to a
-/// directory is left out, since following it could walk in a circle, and so
-/// is a link that points nowhere. Entries are taken in name order.
+/// folder containing a link is refused before transfer. Otherwise a move
+/// could delete a link it never copied. Entries are taken in name order.
 pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<DirectoryPlan> {
     let mut plan = DirectoryPlan::default();
     let mut pending = vec![(local.to_path_buf(), remote.to_string())];
@@ -555,19 +547,13 @@ pub(crate) fn plan_directory(local: &Path, remote: &str) -> std::io::Result<Dire
                 remote_dir.trim_end_matches('/'),
                 entry.file_name().to_string_lossy()
             );
-            let file_type = entry.file_type()?;
-            if file_type.is_dir() {
+            let metadata = entry.metadata()?;
+            crate::local_paths::reject_upload_link(&path, &metadata)?;
+            if metadata.is_dir() {
                 subdirs.push((path, remote_child));
-                continue;
-            }
-            match std::fs::metadata(&path) {
-                Ok(meta) if meta.is_file() => {
-                    plan.total_bytes += meta.len();
-                    plan.files.push(PlannedFile { local: path, remote: remote_child });
-                }
-                Ok(_) => {}
-                Err(_) if file_type.is_symlink() => {}
-                Err(e) => return Err(e),
+            } else if metadata.is_file() {
+                plan.total_bytes += metadata.len();
+                plan.files.push(PlannedFile { local: path, remote: remote_child });
             }
         }
 
@@ -659,8 +645,7 @@ pub(crate) fn emit_progress(
 /// the channel's window and then waited for room that never came. Now its
 /// exit and its message end the upload there and then.
 ///
-/// `cancel` stops the upload: the channel is closed and the partial file
-/// removed, since `>` has already emptied whatever was there.
+/// Honor cancellation before issuing the command that opens the destination.
 async fn send_bytes(
     handle: &SharedHandle,
     data: &[u8],
@@ -669,8 +654,12 @@ async fn send_bytes(
     mut on_progress: impl FnMut(u64),
 ) -> Result<(), TransferError> {
     use russh::ChannelMsg;
+    const WRITE_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
 
     if data.is_empty() {
+        if cancel.is_cancelled() {
+            return Err(TransferError::Cancelled);
+        }
         let command = format!(": > {}", shell_escape(remote_path));
         let (_, stderr, code) = exec_on_connection_with_exit_code(handle, &command).await?;
         return remote_outcome(i64::from(code), &stderr);
@@ -683,6 +672,10 @@ async fn send_bytes(
         guard.channel_open_session().await
             .map_err(|e| SshError::ChannelError(format!("{}", e)))?
     };
+    if cancel.is_cancelled() {
+        let _ = channel.close().await;
+        return Err(TransferError::Cancelled);
+    }
     channel.exec(true, format!("base64 -d > {}", shell_escape(remote_path))).await
         .map_err(|e| SshError::ChannelError(format!("{}", e)))?;
     let (mut rx, tx) = channel.split();
@@ -700,7 +693,8 @@ async fn send_bytes(
             for chunk in data.chunks(48 * 1024) {
                 let mut b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
                 b64.push('\n');
-                tx.data_bytes(b64.into_bytes()).await
+                tokio::time::timeout(WRITE_IDLE, tx.data_bytes(b64.into_bytes())).await
+                    .map_err(|_| TransferError::IoError("The server stopped taking the upload data".into()))?
                     .map_err(|e| TransferError::IoError(format!("Channel write error: {}", e)))?;
                 bytes_sent += chunk.len() as u64;
                 if bytes_sent - last_progress_bytes >= 65536 || bytes_sent == total_bytes {
@@ -709,7 +703,8 @@ async fn send_bytes(
                 }
             }
             // Close stdin so base64 -d finishes.
-            tx.eof().await
+            tokio::time::timeout(WRITE_IDLE, tx.eof()).await
+                .map_err(|_| TransferError::IoError("The server stopped answering before the upload finished".into()))?
                 .map_err(|e| TransferError::IoError(format!("EOF signal error: {}", e)))
         };
         tokio::pin!(send);
@@ -721,7 +716,6 @@ async fn send_bytes(
             // before the last of stderr), so the replies are read to the end.
             let failed = exit_code.is_some_and(|c| c != 0);
             tokio::select! {
-                _ = cancel.cancelled() => break Err(TransferError::Cancelled),
                 result = &mut send, if !sent && !failed => {
                     if let Err(e) = result {
                         break Err(e);
@@ -762,22 +756,16 @@ async fn send_bytes(
             _ if !sent => Err(TransferError::IoError(
                 "The server closed the upload before it finished".to_string(),
             )),
-            _ => return Ok(()),
+            None => Err(TransferError::IoError("The server did not confirm the upload finished".into())),
+            Some(_) => return Ok(()),
         },
     };
     let _ = tx.close().await;
-    if matches!(failed, Err(TransferError::Cancelled)) {
-        let command = format!("rm -f -- {}", shell_escape(remote_path));
-        if let Err(e) = exec_on_connection_with_exit_code(handle, &command).await {
-            tracing::warn!("Could not remove the cancelled upload {}: {}", remote_path, e);
-        }
-    }
     failed
 }
 
-/// The next message from the server. While data is still going out there is
-/// no limit, since a slow link may keep the window shut for a long time;
-/// once all is sent, a server silent for 30 seconds counts as gone.
+/// The next message from the server. The writer enforces its own idle
+/// timeout; once it finishes, wait up to 30 seconds for the server's reply.
 async fn next_reply(rx: &mut russh::ChannelReadHalf, sent: bool) -> Option<russh::ChannelMsg> {
     if sent {
         tokio::time::timeout(std::time::Duration::from_secs(30), rx.wait()).await.ok().flatten()
@@ -902,6 +890,19 @@ mod tests {
     use std::collections::VecDeque;
     use std::time::Duration;
 
+    #[cfg(unix)]
+    #[test]
+    fn folder_upload_rejects_links_during_planning() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("selected");
+        std::fs::create_dir(&root).unwrap();
+        let sibling = temp.path().join("other");
+        std::fs::write(&sibling, b"example").unwrap();
+        std::os::unix::fs::symlink(&sibling, root.join("shortcut")).unwrap();
+        let error = plan_directory(&root, "/upload").unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
     #[test]
     fn a_path_is_never_read_as_an_option() {
         assert_eq!(shell_path("/tmp/a b"), "'/tmp/a b'");
@@ -955,7 +956,7 @@ mod tests {
         let path = dir.path().join("report");
         std::fs::write(&path, b"original").unwrap();
         let mut channel = Sends(VecDeque::from([stdout(HELLO_B64), exit(1), ChannelMsg::Eof]));
-        assert!(download_exec_contents(&mut channel, &path, &CancellationToken::new(), |_| {}).await.is_err());
+        assert!(download_exec_contents(&mut channel, &DownloadTarget::Chosen(path.clone()), &CancellationToken::new(), |_| {}).await.is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"original");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
@@ -966,7 +967,7 @@ mod tests {
         let path = dir.path().join("new-folder").join("report");
         for content in [HELLO_B64, ""] {
             let mut channel = Sends(VecDeque::from([stdout(content), exit(0), ChannelMsg::Eof]));
-            download_exec_contents(&mut channel, &path, &CancellationToken::new(), |_| {}).await.unwrap();
+            download_exec_contents(&mut channel, &DownloadTarget::Chosen(path.clone()), &CancellationToken::new(), |_| {}).await.unwrap();
             let expected: &[u8] = if content.is_empty() { b"" } else { b"hello world\n" };
             assert_eq!(std::fs::read(&path).unwrap(), expected);
         }

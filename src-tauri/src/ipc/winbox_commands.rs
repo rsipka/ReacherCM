@@ -27,11 +27,11 @@ const CLIPBOARD_FOR: Duration = Duration::from_secs(45);
 #[serde(rename_all = "lowercase")]
 pub enum PasswordMode {
     /// On WinBox's command line: logs in by itself.
-    #[default]
     Argument,
     /// Copied to the clipboard, cleared after a short while; pasted by hand.
     Clipboard,
     /// Not passed: typed in WinBox.
+    #[default]
     None,
 }
 
@@ -328,7 +328,7 @@ mod tests {
             serde_json::from_str(r#"{"host":"192.0.2.1","port":8291,"passwordMode":"clipboard"}"#).unwrap();
         assert_eq!(p.password_mode, PasswordMode::Clipboard);
         let p: WinboxLaunchParams = serde_json::from_str(r#"{"host":"192.0.2.1","port":8291}"#).unwrap();
-        assert_eq!(p.password_mode, PasswordMode::Argument);
+        assert_eq!(p.password_mode, PasswordMode::None);
     }
 
     #[cfg(unix)]

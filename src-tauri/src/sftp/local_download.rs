@@ -1,65 +1,124 @@
 use super::transfer::{CancellationToken, TransferError};
+use crate::local_paths::{download_subdir, open_root, plain_name, PendingFile};
+#[cfg(unix)]
+use cap_fs_ext::OpenOptionsSyncExt;
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt};
+use cap_std::fs::{Dir, OpenOptions, OpenOptionsExt};
+use std::ffi::OsString;
+use std::io;
 use std::path::{Path, PathBuf};
+
+/// An explicit Save As path or a series of remote names under a locally selected folder.
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+pub(crate) enum DownloadTarget {
+    Chosen(PathBuf),
+    InFolder { root: PathBuf, names: Vec<String> },
+}
+
+impl DownloadTarget {
+    pub(crate) fn path(&self) -> PathBuf {
+        match self {
+            Self::Chosen(path) => path.clone(),
+            Self::InFolder { root, names } => root.join(names.iter().collect::<PathBuf>()),
+        }
+    }
+
+    fn open_parent(&self) -> io::Result<(Dir, OsString)> {
+        let (dir, name) = match self {
+            Self::Chosen(path) => {
+                // An explicit Save As path can intentionally point through a link.
+                let path = match std::fs::symlink_metadata(path) {
+                    Ok(meta) if meta.is_symlink() => path.canonicalize()?,
+                    Ok(_) => path.clone(),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => path.clone(),
+                    Err(e) => return Err(e),
+                };
+                let parent = path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                let name = path.file_name().ok_or_else(invalid_destination)?;
+                std::fs::create_dir_all(parent)?;
+                (open_root(parent)?, name.to_owned())
+            }
+            Self::InFolder { root, names } => {
+                let (name, parents) = names.split_last().ok_or_else(invalid_destination)?;
+                let name = plain_name(name)?;
+                (download_subdir(&open_root(root)?, parents)?, name.into())
+            }
+        };
+        Ok((dir, name))
+    }
+}
+
+fn invalid_destination() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, "Download needs a file name")
+}
 
 /// Keep partial downloads in their own sibling file. Dropping the writer on
 /// any error (including task cancellation) removes just that staging file.
 pub(crate) struct LocalDownload {
     pub(crate) writer: std::io::BufWriter<std::fs::File>,
-    staging: tempfile::TempPath,
-    destination: PathBuf,
+    staging: PendingFile,
+    destination: OsString,
+    display: PathBuf,
 }
 
 impl LocalDownload {
+    #[cfg(test)]
     pub(crate) fn new(path: &Path) -> Result<Self, TransferError> {
-        let prepare = || -> std::io::Result<Self> {
-            // Keep the previous behavior of writing through a selected symlink.
-            let destination = match std::fs::symlink_metadata(path) {
-                Ok(meta) if meta.is_symlink() => path.canonicalize()?,
-                Ok(_) => path.to_owned(),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => path.to_owned(),
-                Err(e) => return Err(e),
-            };
-            let parent = destination
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or(Path::new("."));
-            std::fs::create_dir_all(parent)?;
-            let mut builder = tempfile::Builder::new();
-            builder.prefix(".reach-download-");
-            #[cfg(not(windows))]
-            let temp = builder.tempfile_in(parent)?;
+        Self::for_target(&DownloadTarget::Chosen(path.to_owned()))
+    }
+
+    pub(crate) fn for_target(target: &DownloadTarget) -> Result<Self, TransferError> {
+        let display = target.path();
+        let prepare = || -> io::Result<Self> {
+            let (dir, destination) = target.open_parent()?;
+            // Check the destination before creating the staging file. Check it
+            // again at commit, since a transfer can take minutes.
+            let original = existing_file(&dir, &destination)?;
+            let name = format!(".reach-download-{}", uuid::Uuid::new_v4());
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            options.mode(0o600);
             #[cfg(windows)]
-            let temp = windows_staging(&builder, parent)?;
-            let (file, staging) = temp.into_parts();
+            {
+                use windows::Win32::{Foundation::GENERIC_WRITE, Storage::FileSystem::WRITE_DAC};
+                options
+                    .share_mode(0)
+                    .access_mode(GENERIC_WRITE.0 | WRITE_DAC.0);
+            }
+            let file = dir.open_with(&name, &options)?.into_std();
             let download = Self {
                 writer: std::io::BufWriter::with_capacity(1024 * 1024, file),
-                staging,
+                staging: PendingFile::new(dir, name),
                 destination,
+                display: display.clone(),
             };
             #[cfg(windows)]
-            match std::fs::metadata(&download.destination) {
-                Ok(meta) if meta.is_file() => {
-                    copy_windows_dacl(&download.destination, download.writer.get_ref())?
-                }
-                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-                _ => {}
+            if let Some(original) = original {
+                copy_windows_dacl(&original, download.writer.get_ref())?;
             }
+            #[cfg(not(windows))]
+            drop(original);
             Ok(download)
         };
         prepare().map_err(|e| {
             TransferError::IoError(format!(
                 "Cannot prepare download to {}: {e}",
-                path.display()
+                display.display()
             ))
         })
     }
 
     pub(crate) fn commit(mut self, cancel: &CancellationToken) -> Result<(), TransferError> {
         use std::io::Write;
-        let io_error = |e: std::io::Error| {
+        let io_error = |e: io::Error| {
             TransferError::IoError(format!(
                 "Cannot finish download to {}: {e}",
-                self.destination.display()
+                self.display.display()
             ))
         };
         if cancel.is_cancelled() {
@@ -67,40 +126,57 @@ impl LocalDownload {
         }
         self.writer.flush().map_err(io_error)?;
         self.writer.get_ref().sync_all().map_err(io_error)?;
-        // Atomic replacement requires write access to the directory. Also
-        // respect restrictions on the original file, as an in-place write did.
-        match std::fs::symlink_metadata(&self.destination) {
-            Ok(meta) if meta.is_file() => {
-                let original = std::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&self.destination)
-                    .map_err(io_error)?;
-                #[cfg(windows)]
-                {
-                    drop(original);
-                    copy_windows_dacl(&self.destination, self.writer.get_ref())
-                        .map_err(io_error)?;
-                }
-                #[cfg(unix)]
-                copy_unix_access(&original, self.writer.get_ref()).map_err(io_error)?;
-            }
-            Ok(_) => {
-                return Err(TransferError::IoError(format!(
-                    "{} is not a regular file",
-                    self.destination.display()
-                )))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(io_error(e)),
+        // Respect the original file's write permissions and copy its access
+        // metadata. The original is opened without following links.
+        if let Some(original) =
+            existing_file(&self.staging.dir, &self.destination).map_err(io_error)?
+        {
+            #[cfg(windows)]
+            copy_windows_dacl(&original, self.writer.get_ref()).map_err(io_error)?;
+            #[cfg(unix)]
+            copy_unix_access(&original, self.writer.get_ref()).map_err(io_error)?;
         }
         drop(self.writer);
         if cancel.is_cancelled() {
             return Err(TransferError::Cancelled);
         }
-        self.staging
-            .persist(&self.destination)
-            .map_err(|e| io_error(e.error))
+        self.staging.replace(&self.destination).map_err(io_error)
     }
+}
+
+fn existing_file(dir: &Dir, name: &std::ffi::OsStr) -> io::Result<Option<std::fs::File>> {
+    let not_regular = || {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Destination is not a regular file",
+        )
+    };
+    match dir.symlink_metadata(name) {
+        Ok(metadata) if metadata.is_file() => {
+            #[cfg(windows)]
+            crate::local_paths::reject_reparse_point(&metadata)?;
+        }
+        Ok(_) => return Err(not_regular()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    }
+    let mut options = OpenOptions::new();
+    options.write(true).follow(FollowSymlinks::No);
+    #[cfg(unix)]
+    options.nonblock(true);
+    #[cfg(windows)]
+    {
+        use windows::Win32::{Foundation::GENERIC_WRITE, Storage::FileSystem::READ_CONTROL};
+        options.access_mode(GENERIC_WRITE.0 | READ_CONTROL.0);
+    }
+    let file = dir.open_with(name, &options)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(not_regular());
+    }
+    #[cfg(windows)]
+    crate::local_paths::reject_reparse_point(&metadata)?;
+    Ok(Some(file.into_std()))
 }
 
 #[cfg(unix)]
@@ -146,30 +222,10 @@ fn copy_unix_access(original: &std::fs::File, replacement: &std::fs::File) -> st
 }
 
 #[cfg(windows)]
-fn windows_staging(
-    builder: &tempfile::Builder<'_, '_>,
-    parent: &Path,
-) -> std::io::Result<tempfile::NamedTempFile> {
-    use std::os::windows::fs::OpenOptionsExt;
-    use windows::Win32::{Foundation::GENERIC_WRITE, Storage::FileSystem::WRITE_DAC};
-    // Keep other processes out while receiving, including on shared folders.
-    // WRITE_DAC lets us give the replacement the selected file's access list.
-    builder.make_in(parent, |path| {
-        std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .share_mode(0)
-            .access_mode(GENERIC_WRITE.0 | WRITE_DAC.0)
-            .open(path)
-    })
-}
-
-#[cfg(windows)]
-fn copy_windows_dacl(source: &Path, file: &std::fs::File) -> std::io::Result<()> {
+fn copy_windows_dacl(source: &std::fs::File, file: &std::fs::File) -> std::io::Result<()> {
     use std::os::windows::io::AsRawHandle;
-    use windows::core::HSTRING;
     use windows::Win32::Foundation::{LocalFree, HANDLE, HLOCAL};
-    use windows::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
+    use windows::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
     use windows::Win32::Security::{
         SetKernelObjectSecurity, DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
     };
@@ -178,15 +234,15 @@ fn copy_windows_dacl(source: &Path, file: &std::fs::File) -> std::io::Result<()>
     // SAFETY: the descriptor returned by Windows stays live through the set
     // call. The borrowed file owns the handle and we free the descriptor once.
     unsafe {
-        let status = GetNamedSecurityInfoW(
-            &HSTRING::from(source.as_os_str()),
+        let status = GetSecurityInfo(
+            HANDLE(source.as_raw_handle()),
             SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION,
             None,
             None,
             None,
             None,
-            &mut descriptor,
+            Some(&mut descriptor),
         );
         if status.is_err() {
             return Err(std::io::Error::from_raw_os_error(status.0 as i32));
@@ -218,6 +274,32 @@ mod tests {
         drop(abandoned);
         assert_eq!(std::fs::read(path).unwrap(), b"finished");
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_download_refuses_a_destination_link_at_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = DownloadTarget::InFolder {
+            root: dir.path().to_owned(),
+            names: vec!["folder".into(), "report".into()],
+        };
+        let mut download = LocalDownload::for_target(&target).unwrap();
+        download.writer.write_all(b"new").unwrap();
+
+        let original = dir.path().join("original");
+        std::fs::write(&original, b"original").unwrap();
+        std::os::unix::fs::symlink(&original, target.path()).unwrap();
+        assert!(download.commit(&CancellationToken::new()).is_err());
+        assert!(target.path().is_symlink());
+        assert_eq!(std::fs::read(original).unwrap(), b"original");
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("folder"))
+                .unwrap()
+                .count(),
+            1
+        );
+        assert!(LocalDownload::for_target(&target).is_err());
     }
 
     #[cfg(target_os = "linux")]

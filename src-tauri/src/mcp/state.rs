@@ -383,15 +383,11 @@ impl McpState {
         // The session is named in the arguments, so the per-session agent can
         // only be resolved here rather than up front. tools/list still answers
         // with the global agent, which is why an override may only narrow.
-        let named_session = args.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
-        let (session_agent_id, session_mode) = {
-            let sessions = self.sessions.read().await;
-            sessions
-                .get(named_session)
-                .map(|s| (s.agent_id.clone(), s.mode))
-                .unwrap_or((None, None))
-        };
-        let agent = self.agent_for(session_agent_id.as_deref());
+        let session_id = args.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+        let sessions = self.sessions.read().await;
+        let session = sessions.get(session_id);
+        let agent = self.agent_for(session.and_then(|s| s.agent_id.as_deref()));
+        let session_mode = session.and_then(|s| s.mode);
 
         // A tool the agent was not granted is not in `tools/list`, so calling it
         // is a mistake worth an explicit refusal rather than silence.
@@ -402,11 +398,8 @@ impl McpState {
             return Ok(protocol::tool_refusal(refusal.message()));
         }
 
-        let sessions = self.sessions.read().await;
         let mut clients = self.clients.write().await;
         let client = clients.entry(client_key.to_string()).or_default();
-
-        let session_id = args.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
 
         match tool {
             crate::mcp::agents::ToolName::ListSessions => {
@@ -456,10 +449,10 @@ impl McpState {
                         }
                     };
 
-                let (host, kind) = sessions
-                    .get(session_id)
-                    .map(|s| (s.host.clone(), s.kind))
-                    .unwrap_or_else(|| (String::new(), SessionKind::Ssh));
+                let Some(session) = session else {
+                    return Ok(protocol::tool_refusal("This terminal is no longer shared.".into()));
+                };
+                let (host, kind, share_id) = (session.host.clone(), session.kind, session.share_id);
 
                 // Locks are released before awaiting the human: a confirm
                 // dialog can sit open for minutes, and holding the session lock
@@ -512,11 +505,6 @@ impl McpState {
                     ));
                 }
 
-                // The write itself. This is what was missing: the gate
-                // passed, the user approved, and the tool reported "sent"
-                // without a byte reaching the terminal. Every test asserted
-                // the gate; none asserted the act, because a unit test has
-                // no terminal to assert on.
                 let sender = self.sender.lock().await.clone();
                 let Some(sender) = sender else {
                     return Ok(protocol::tool_refusal(
@@ -525,6 +513,19 @@ impl McpState {
                             .into(),
                     ));
                 };
+                // Hold a shared lock through dispatch so unshare and dispatch
+                // have a definite order, including after a long confirmation.
+                let sessions = self.sessions.read().await;
+                let Some(current) = sessions.get(session_id).filter(|current| current.share_id == share_id) else {
+                    return Ok(protocol::tool_refusal("This terminal's share ended before dispatch.".into()));
+                };
+                let current_agent = self.agent_for(current.agent_id.as_deref());
+                if current_agent.id != agent.id
+                    || !current_agent.grants(tool)
+                    || (auto && !self.mode_for(current.mode).auto_approves(approved.danger))
+                {
+                    return Ok(protocol::tool_refusal("The terminal's permissions changed before dispatch.".into()));
+                }
 
                 let send = SendRequest {
                     session_id: session_id.to_string(),
@@ -533,7 +534,9 @@ impl McpState {
                     agent_name: agent.name.clone(),
                 };
 
-                if let Err(e) = sender(send).await {
+                let sent = sender(send).await;
+                drop(sessions);
+                if let Err(e) = sent {
                     return Ok(protocol::tool_refusal(format!(
                         "The user approved this, but writing to the session failed: {e}. \
                          Nothing ran — check the session is still connected."
@@ -773,6 +776,33 @@ mod tests {
         }))).await.unwrap();
 
         assert_eq!(typed.lock().unwrap().as_slice(), ["uptime"], "the command must reach the terminal");
+    }
+
+    #[tokio::test]
+    async fn a_new_share_does_not_inherit_an_older_approval() {
+        let s = Arc::new(McpState::default());
+        s.set_agent("linux-administrator").unwrap();
+        s.share("s1".into(), SessionKind::Ssh, "example.com".into(), "example".into()).await;
+        let during_confirmation = Arc::downgrade(&s);
+        s.set_confirmer(Some(Arc::new(move |_| {
+            let s = during_confirmation.upgrade().unwrap();
+            Box::pin(async move {
+                s.unshare("s1").await;
+                s.share("s1".into(), SessionKind::Ssh, "example.com".into(), "example".into()).await;
+                true
+            })
+        }))).await;
+        let (sender, typed) = recording_sender();
+        s.set_sender(Some(sender)).await;
+        s.handle(req("tools/call", json!({
+            "name": "describe_session", "arguments": { "sessionId": "s1" }
+        }))).await.unwrap();
+        let result = s.handle(req("tools/call", json!({
+            "name": "send_input",
+            "arguments": { "sessionId": "s1", "command": "uptime", "rationale": "check system uptime" }
+        }))).await.unwrap();
+        assert!(result.to_string().contains("share ended"));
+        assert!(typed.lock().unwrap().is_empty());
     }
 
     /// A rejected command must not be typed. The reply already said so; now the

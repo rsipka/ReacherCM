@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Απαλοιφή ολοκληρωμένων",
   "files.queue_remove": "Αφαίρεση από τη λίστα",
   "files.upload": "Αποστολή",
+  "files.stop_upload": "Διακοπή μετά το τρέχον αρχείο",
   "files.download": "Λήψη",
   "files.job_queued": "Σε αναμονή",
   "files.job_running": "Σε εξέλιξη",

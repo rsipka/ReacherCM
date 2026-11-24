@@ -12,6 +12,9 @@ use super::tls::Tls;
 
 /// How long the server may take to answer a command.
 const REPLY_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_REPLY_LINE: usize = 64 * 1024;
+const MAX_REPLY_BYTES: usize = 256 * 1024;
+const MAX_LISTING_BYTES: u64 = 16 * 1024 * 1024;
 /// How long connecting, and each TLS handshake, may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// A data connection with no bytes for this long is given up.
@@ -110,14 +113,24 @@ impl std::fmt::Debug for Params {
 
 /// Read a reply: one line `123 text`, or several from `123-` to `123 `.
 pub async fn read_reply<S: AsyncRead + Unpin>(s: &mut S, buf: &mut Vec<u8>) -> Result<Reply, FtpError> {
+    tokio::time::timeout(REPLY_TIMEOUT, read_reply_inner(s, buf))
+        .await
+        .map_err(|_| FtpError::Io("The FTP server did not complete its reply in time".into()))?
+}
+
+async fn read_reply_inner<S: AsyncRead + Unpin>(s: &mut S, buf: &mut Vec<u8>) -> Result<Reply, FtpError> {
     let first = read_line(s, buf).await?;
     let code = reply_code(&first).ok_or_else(|| FtpError::Io(format!("Not an FTP server: \"{}\"", first.trim())))?;
     let mut text = first.get(4..).unwrap_or("").to_string();
     if first.as_bytes().get(3) == Some(&b'-') {
-        let end = format!("{code} ");
+        let end_code = code.to_string();
+        let end = format!("{end_code} ");
         loop {
             let line = read_line(s, buf).await?;
-            if line.starts_with(&end) || line == code.to_string() {
+            if text.len() + line.len() + 1 > MAX_REPLY_BYTES {
+                return Err(FtpError::Io("The FTP server sent a reply that exceeds the size limit".into()));
+            }
+            if line.starts_with(&end) || line == end_code {
                 text.push('\n');
                 text.push_str(line.get(4..).unwrap_or(""));
                 break;
@@ -143,18 +156,18 @@ fn reply_code(line: &str) -> Option<u16> {
 async fn read_line<S: AsyncRead + Unpin>(s: &mut S, buf: &mut Vec<u8>) -> Result<String, FtpError> {
     loop {
         if let Some(i) = buf.iter().position(|&b| b == b'\n') {
+            if i > MAX_REPLY_LINE {
+                return Err(FtpError::Io("The server sent a line too long to be FTP".into()));
+            }
             let line: Vec<u8> = buf.drain(..=i).collect();
             let text = String::from_utf8_lossy(&line);
             return Ok(text.trim_end_matches(['\r', '\n']).to_string());
         }
-        if buf.len() > 64 * 1024 {
+        if buf.len() > MAX_REPLY_LINE {
             return Err(FtpError::Io("The server sent a line too long to be FTP".into()));
         }
         let mut chunk = [0u8; 4096];
-        let n = tokio::time::timeout(REPLY_TIMEOUT, s.read(&mut chunk))
-            .await
-            .map_err(|_| FtpError::Io("The FTP server stopped answering".into()))?
-            .map_err(io)?;
+        let n = s.read(&mut chunk).await.map_err(io)?;
         if n == 0 {
             return Err(FtpError::Io("The FTP server closed the connection".into()));
         }
@@ -208,12 +221,11 @@ pub fn parse_pwd(text: &str) -> Option<String> {
     None
 }
 
-/// A path as it goes in a command: no line breaks, which would end it.
-fn arg(path: &str) -> Result<&str, FtpError> {
-    if path.contains(['\r', '\n']) {
-        return Err(FtpError::Other(format!("{path}: a name with a line break cannot be sent over FTP")));
+fn validate_command(line: &str) -> Result<(), FtpError> {
+    if line.contains(['\r', '\n', '\0']) {
+        return Err(FtpError::Other("An FTP command argument contains a line break or NUL".into()));
     }
-    Ok(path)
+    Ok(())
 }
 
 pub struct Client {
@@ -221,8 +233,6 @@ pub struct Client {
     buf: Vec<u8>,
     peer: IpAddr,
     tls: Option<Tls>,
-    /// Data connections in TLS too (PROT P).
-    protect: bool,
     pub mlsd: bool,
     epsv: bool,
     pub home: String,
@@ -276,7 +286,7 @@ impl Client {
                 Box::new(tcp)
             }
         };
-        let mut c = Client { ctrl, buf, peer, protect: false, tls, mlsd: false, epsv: true, home: "/".into(), broken: false };
+        let mut c = Client { ctrl, buf, peer, tls, mlsd: false, epsv: true, home: "/".into(), broken: false };
         c.login(p).await?;
         Ok(c)
     }
@@ -287,15 +297,17 @@ impl Client {
         } else {
             (p.username.clone(), p.password.clone())
         };
-        let r = self.cmd(&format!("USER {}", arg(&user)?)).await?;
+        let r = self.cmd(&format!("USER {user}")).await?;
         let r = if r.code == 331 { self.cmd_secret("PASS", &pass).await? } else { r };
         if r.code == 332 {
             return Err(FtpError::Other("The server asks for an account (ACCT), which is not supported".into()));
         }
         r.ok(&[230, 202])?;
         if self.tls.is_some() {
-            let _ = self.cmd("PBSZ 0").await?;
-            self.protect = self.cmd("PROT P").await?.code == 200;
+            self.ok("PBSZ 0", &[200]).await?;
+            self.ok("PROT P", &[200]).await.map_err(|e| {
+                FtpError::Other(format!("The server refused encrypted FTP data connections: {e}"))
+            })?;
         }
         let feat = self.cmd("FEAT").await?;
         if feat.code == 211 {
@@ -346,14 +358,17 @@ impl Client {
     }
 
     pub async fn cmd(&mut self, line: &str) -> Result<Reply, FtpError> {
+        validate_command(line)?;
         tracing::debug!("FTP > {line}");
         self.send(line).await?;
         self.reply().await
     }
 
     async fn cmd_secret(&mut self, verb: &str, secret: &str) -> Result<Reply, FtpError> {
+        let line = format!("{verb} {secret}");
+        validate_command(&line)?;
         tracing::debug!("FTP > {verb} ****");
-        self.send(&format!("{verb} {}", arg(secret)?)).await?;
+        self.send(&line).await?;
         self.reply().await
     }
 
@@ -394,11 +409,11 @@ impl Client {
     /// Open a data connection for `line` (RETR, STOR, LIST...). The caller
     /// reads or writes it to the end, drops it, then calls [`finish`].
     pub async fn data(&mut self, line: &str) -> Result<Box<dyn Stream>, FtpError> {
+        validate_command(line)?;
         let tcp = self.passive().await?;
         let r = self.cmd(line).await?;
         r.ok(&[125, 150])?;
-        if self.protect {
-            let tls = self.tls.as_ref().expect("PROT P only with TLS");
+        if let Some(tls) = &self.tls {
             match tls_wrap(tls, tcp).await {
                 Ok(s) => Ok(s),
                 Err(e) => {
@@ -418,7 +433,6 @@ impl Client {
 
     /// A whole listing's text.
     pub async fn list_text(&mut self, path: &str) -> Result<(String, bool), FtpError> {
-        let path = arg(path)?;
         if self.mlsd {
             match self.data(&format!("MLSD {path}")).await {
                 Ok(s) => return Ok((self.read_all(s).await?, true)),
@@ -434,9 +448,13 @@ impl Client {
 
     async fn read_all(&mut self, mut s: Box<dyn Stream>) -> Result<String, FtpError> {
         let mut out = Vec::new();
-        let read = tokio::time::timeout(DATA_IDLE, s.read_to_end(&mut out)).await;
+        let read = tokio::time::timeout(DATA_IDLE, (&mut s).take(MAX_LISTING_BYTES + 1).read_to_end(&mut out)).await;
         drop(s);
         match read {
+            Ok(Ok(n)) if n as u64 > MAX_LISTING_BYTES => {
+                self.broken = true;
+                return Err(FtpError::Other("FTP listing exceeds the size limit".into()));
+            }
             Ok(Ok(_)) => {}
             Ok(Err(e)) => {
                 self.broken = true;
@@ -459,6 +477,63 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_multiline_reply_has_a_total_size_limit() {
+        let line = "x".repeat(MAX_REPLY_LINE / 2);
+        let response = format!("211-Status\r\n{}211 End\r\n", format!("{line}\r\n").repeat(9));
+        let mut bytes = response.as_bytes();
+        let error = read_reply(&mut bytes, &mut Vec::new()).await.unwrap_err();
+        assert!(error.to_string().contains("size limit"));
+    }
+
+    #[test]
+    fn command_validation_errors_do_not_include_arguments() {
+        assert!(validate_command("CWD ordinary folder").is_ok());
+        let error = validate_command("PASS example\n").unwrap_err().to_string();
+        assert!(error.contains("line break"));
+        assert!(!error.contains("example"));
+    }
+
+    #[tokio::test]
+    async fn ftps_requires_protection_before_continuing_login() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let (ctrl, peer) = tokio::io::duplex(1024);
+        let mut client = Client {
+            ctrl: Box::new(ctrl),
+            buf: Vec::new(),
+            peer: "127.0.0.1".parse().unwrap(),
+            tls: Some(Tls::new("localhost", &[]).unwrap()),
+            mlsd: false,
+            epsv: true,
+            home: "/".into(),
+            broken: false,
+        };
+        let params = Params {
+            host: "localhost".into(),
+            port: 21,
+            username: "example".into(),
+            password: String::new(),
+            security: Security::Explicit,
+            trusted: Vec::new(),
+        };
+        let server = async {
+            let mut peer = BufReader::new(peer);
+            for (expected, reply) in [
+                ("USER example\r\n", "230 Logged in\r\n"),
+                ("PBSZ 0\r\n", "200 Buffer size accepted\r\n"),
+                ("PROT P\r\n", "536 Private data protection unavailable\r\n"),
+            ] {
+                let mut line = String::new();
+                peer.read_line(&mut line).await.unwrap();
+                assert_eq!(line, expected);
+                peer.write_all(reply.as_bytes()).await.unwrap();
+            }
+        };
+        let (result, ()) = tokio::join!(client.login(&params), server);
+        assert!(matches!(result, Err(FtpError::Other(message)) if message.contains("refused encrypted")));
+    }
 
     #[test]
     fn passive_replies() {
@@ -484,11 +559,5 @@ mod tests {
         assert!(r.text.contains("MLST") && r.text.contains("UTF8"));
         let r = read_reply(&mut input, &mut buf).await.unwrap();
         assert_eq!(r, Reply { code: 220, text: "next".into() });
-    }
-
-    #[test]
-    fn line_breaks_are_refused() {
-        assert!(arg("a\r\nDELE b").is_err());
-        assert!(arg("/a b").is_ok());
     }
 }

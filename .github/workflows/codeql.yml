@@ -20,7 +20,7 @@ jobs:
     outputs:
       list: ${{ steps.pick.outputs.list }}
     steps:
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
         if: github.event_name == 'pull_request'
         with:
@@ -68,10 +68,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: none
@@ -92,6 +92,6 @@ jobs:
               - scripts/script-tests.mjs
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           category: "/language:${{ matrix.language }}"

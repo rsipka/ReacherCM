@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Изчистване на завършените",
   "files.queue_remove": "Премахване от списъка",
   "files.upload": "Качване",
+  "files.stop_upload": "Спиране след текущия файл",
   "files.download": "Изтегляне",
   "files.job_queued": "Чака",
   "files.job_running": "Изпълнява се",

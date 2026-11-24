@@ -3922,6 +3922,7 @@
   "files.queue_clear": "Erledigte entfernen",
   "files.queue_remove": "Aus der Liste entfernen",
   "files.upload": "Hochladen",
+  "files.stop_upload": "Nach der aktuellen Datei stoppen",
   "files.download": "Herunterladen",
   "files.job_queued": "Wartet",
   "files.job_running": "Läuft",

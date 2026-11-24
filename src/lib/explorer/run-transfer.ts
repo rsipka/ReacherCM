@@ -67,7 +67,8 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 			addTransfer(id, run.filename, run.totalBytes, run.kind, () => {
 				if (cancelled) return;
 				cancelled = true;
-				removeTransfer(id);
+				// An upload already writing a file finishes it before stopping.
+				if (run.kind === 'downloading') removeTransfer(id);
 				void sftpTransferCancel(id);
 				run.onCancel?.();
 			}, run.connectionId);
@@ -79,7 +80,10 @@ export async function runTransfer(run: TransferRun): Promise<boolean> {
 			settle(String(err));
 		}
 		const error = await ended;
-		if (cancelled) return false;
+		if (cancelled) {
+			if (visible) removeTransfer(id);
+			return false;
+		}
 		if (error !== undefined) {
 			if (visible) failTransfer(id, error);
 			throw new Error(error);
