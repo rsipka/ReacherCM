@@ -150,7 +150,7 @@ async fn shout_once(server: &Tunnel, port: u16) {
 async fn local_port_forward_and_socks() {
     let (s, c) = pair(free_udp_port());
     let server = Tunnel::start(&s).await.unwrap();
-    super::manager::up("test-forward", &c).await.unwrap();
+    super::manager::up("test-forward", &c, false).await.unwrap();
 
     // A plain local port into the tunnel, the same one when asked again.
     let local = super::manager::forward("test-forward", "10.66.0.1", 5900).await.unwrap();
@@ -190,4 +190,47 @@ async fn local_port_forward_and_socks() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(tokio::net::TcpStream::connect(("127.0.0.1", local)).await.is_err());
     assert!(super::manager::forward("test-forward", "10.66.0.1", 5900).await.is_err());
+}
+
+#[tokio::test]
+async fn a_tunnel_a_connection_turned_on_goes_off_when_unused() {
+    use super::manager;
+    let (s, c) = pair(free_udp_port());
+    let server = Tunnel::start(&s).await.unwrap();
+    manager::up("test-idle", &c, true).await.unwrap();
+    assert!(manager::state("test-idle").await.auto);
+
+    // In use: a connection, then a hold, keep it on.
+    let (srv, cli) = tokio::join!(server.accept(22), manager::dial("test-idle", "10.66.0.1", 22));
+    let (srv, cli) = (srv.unwrap(), cli.unwrap());
+    manager::reap_idle_now().await;
+    manager::reap_idle_now().await;
+    assert!(manager::is_up("test-idle").await);
+    let hold = manager::hold("test-idle").await.expect("up");
+    drop((srv, cli));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while manager::state("test-idle").await.connections > 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the connection goes");
+    manager::reap_idle_now().await;
+    manager::reap_idle_now().await;
+    assert!(manager::is_up("test-idle").await, "held");
+
+    // Unused: off at the second look (the first one starts the clock).
+    drop(hold);
+    manager::reap_idle_now().await;
+    assert!(manager::is_up("test-idle").await);
+    manager::reap_idle_now().await;
+    assert!(!manager::is_up("test-idle").await);
+
+    // Turned on by hand: stays on, also after a connection asked for it.
+    manager::up("test-idle", &c, false).await.unwrap();
+    manager::up("test-idle", &c, true).await.unwrap();
+    manager::reap_idle_now().await;
+    manager::reap_idle_now().await;
+    assert!(manager::is_up("test-idle").await);
+    manager::down("test-idle").await;
 }

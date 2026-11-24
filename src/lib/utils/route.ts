@@ -22,10 +22,13 @@ export function formatProxyAddress(p: ProxyLike): string {
 	return `${p.host}:${p.port}`;
 }
 
-/** SVG paths of the two marks: a route for jump hosts, a globe for a proxy. */
+/** SVG paths of the marks: a route for jump hosts, a globe for a proxy, a
+ *  shield for a WireGuard tunnel. */
 export const ROUTE_ICON = {
 	jump: 'M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15M6 16a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
-	proxy: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18'
+	proxy: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18',
+	/** A shield with a lock's keyhole: a WireGuard tunnel. */
+	wireguard: 'M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6zM12 10v4'
 };
 
 /** The jump chain a session editor saves: none for a desktop session, when
