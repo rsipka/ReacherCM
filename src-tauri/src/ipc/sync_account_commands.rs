@@ -601,25 +601,42 @@ async fn account_request(
 
 #[cfg(test)]
 pub(crate) async fn seed_vault_test_account(server: &str, username: &str) -> AccountView {
+    seed_vault_test_tokens(
+        server,
+        username,
+        random_token(),
+        random_token(),
+        random_token(),
+    )
+    .await
+}
+
+#[cfg(test)]
+pub(crate) async fn seed_vault_test_tokens(
+    server: &str,
+    username: &str,
+    access_token: String,
+    refresh_token: String,
+    device_id: String,
+) -> AccountView {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let server = origin(server).unwrap();
     let account = AccountView {
         server: server.to_string(),
         username: username.into(),
-        device_id: random_token(),
+        device_id: device_id.clone(),
     };
-    let refresh = random_token();
     save(&StoredAccount {
         account: account.clone(),
-        refresh: refresh.clone(),
+        refresh: refresh_token.clone(),
     })
     .unwrap();
     remember_access(
         &server,
         Tokens {
-            access_token: random_token(),
-            refresh_token: refresh,
-            device_id: account.device_id.clone(),
+            access_token,
+            refresh_token,
+            device_id,
             expires_in: 900,
         },
     )

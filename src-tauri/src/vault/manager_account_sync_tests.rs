@@ -457,3 +457,309 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
         b"editor edit"
     );
 }
+
+#[derive(Deserialize)]
+struct NativeSyncFixture {
+    server: String,
+    organization: uuid::Uuid,
+    devices: [NativeSyncDevice; 3],
+}
+
+#[derive(Deserialize)]
+struct NativeSyncDevice {
+    username: String,
+    access_token: String,
+    refresh_token: String,
+    device_id: String,
+}
+
+impl NativeSyncDevice {
+    async fn activate(&self, server: &str) -> crate::ipc::sync_account_commands::AccountView {
+        crate::ipc::sync_account_commands::seed_vault_test_tokens(
+            server,
+            &self.username,
+            self.access_token.clone(),
+            self.refresh_token.clone(),
+            self.device_id.clone(),
+        )
+        .await
+    }
+}
+
+async fn native_sync(
+    manager: &Mutex<VaultManager>,
+    device: &NativeSyncDevice,
+    server: &str,
+    vault: &str,
+) {
+    device.activate(server).await;
+    let (_, failed) = sync_vaults(manager, Some(vault), false).await;
+    assert!(failed.is_empty(), "{}: {failed:?}", device.username);
+}
+
+async fn native_snapshot(manager: &Mutex<VaultManager>, vault: &str) -> Vec<(String, Vec<u8>)> {
+    let manager = manager.lock().await;
+    let mut records = Vec::new();
+    for item in manager.list_secrets(vault).await.unwrap() {
+        let value = manager.read_secret(vault, &item.id).await.unwrap();
+        records.push((item.id, value.expose_secret().to_vec()));
+    }
+    records.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    records
+}
+
+#[tokio::test]
+#[ignore = "requires the Go loopback portal and disposable PostgreSQL fixture on stdin"]
+async fn three_native_clients_sync_through_postgres() {
+    use crate::ipc::sync_account_commands::clear_vault_test_account;
+    use crate::vault::sync_account_store::AccountTarget;
+    use uuid::Uuid;
+
+    let _account_guard = TEST_ACCOUNT.lock().await;
+    let fixture: NativeSyncFixture = serde_json::from_reader(std::io::stdin().lock()).unwrap();
+    let [owner_device, editor_device, third_device] = &fixture.devices;
+    let server = &fixture.server;
+    let org = fixture.organization;
+    let dir = tempfile::tempdir().unwrap();
+    let owner = Mutex::new(VaultManager::new(dir.path().join("owner")));
+    let editor = Mutex::new(VaultManager::new(dir.path().join("editor")));
+    let third = Mutex::new(VaultManager::new(dir.path().join("third")));
+    for (manager, password) in [
+        (&owner, "synthetic owner password"),
+        (&editor, "synthetic editor password"),
+        (&third, "synthetic third password"),
+    ] {
+        manager.lock().await.init_identity(password).await.unwrap();
+    }
+
+    let account = owner_device.activate(server).await;
+    let (vault, common, to_delete) = {
+        let mut manager = owner.lock().await;
+        let vault = manager
+            .create_organization_vault(&account, org, "Synthetic shared vault")
+            .await
+            .unwrap()
+            .id;
+        let common = manager
+            .create_secret(
+                &vault,
+                "Common session",
+                SecretCategory::Session,
+                value("initial"),
+            )
+            .await
+            .unwrap();
+        let to_delete = manager
+            .create_secret(
+                &vault,
+                "Unused session",
+                SecretCategory::Session,
+                value("delete me"),
+            )
+            .await
+            .unwrap();
+        (vault, common, to_delete)
+    };
+    let id = Uuid::parse_str(&vault).unwrap();
+    native_sync(&owner, owner_device, server, &vault).await;
+    let account = third_device.activate(server).await;
+    assert!(third
+        .lock()
+        .await
+        .organization_vaults(&account, org)
+        .await
+        .unwrap()
+        .is_empty());
+
+    owner_device.activate(server).await;
+    let editor_key = BASE64.encode(
+        editor
+            .lock()
+            .await
+            .identity
+            .as_ref()
+            .unwrap()
+            .public_key
+            .as_bytes(),
+    );
+    let third_key = BASE64.encode(
+        third
+            .lock()
+            .await
+            .identity
+            .as_ref()
+            .unwrap()
+            .public_key
+            .as_bytes(),
+    );
+    owner
+        .lock()
+        .await
+        .change_organization_grant(&vault, &editor_device.username, Some("editor"), &editor_key)
+        .await
+        .unwrap();
+    owner
+        .lock()
+        .await
+        .change_organization_grant(&vault, &third_device.username, Some("viewer"), &third_key)
+        .await
+        .unwrap();
+
+    for (manager, device) in [(&editor, editor_device), (&third, third_device)] {
+        let account = device.activate(server).await;
+        manager
+            .lock()
+            .await
+            .open_organization_vault(&account, org, id)
+            .await
+            .unwrap();
+    }
+    let baseline = native_snapshot(&owner, &vault).await;
+    assert_eq!(baseline, native_snapshot(&editor, &vault).await);
+    assert_eq!(baseline, native_snapshot(&third, &vault).await);
+    assert!(matches!(
+        third
+            .lock()
+            .await
+            .update_secret(&vault, &common, value("viewer denied"))
+            .await,
+        Err(VaultError::AccessDenied(_))
+    ));
+
+    owner_device.activate(server).await;
+    owner
+        .lock()
+        .await
+        .change_organization_grant(&vault, &third_device.username, Some("editor"), &third_key)
+        .await
+        .unwrap();
+    native_sync(&third, third_device, server, &vault).await;
+    for (manager, text) in [
+        (&owner, "owner collision edit"),
+        (&editor, "editor collision edit"),
+        (&third, "third collision edit"),
+    ] {
+        manager
+            .lock()
+            .await
+            .update_secret(&vault, &common, value(text))
+            .await
+            .unwrap();
+    }
+    {
+        // Make the conflict winner deterministic without sleeping. Both
+        // losing session values should survive in conflict copies.
+        let manager = owner.lock().await;
+        manager.vaults[&vault]
+            .conn()
+            .unwrap()
+            .execute(
+                "UPDATE sync_dirty SET changed_at = changed_at + 5000 WHERE id = ?",
+                [common.as_str()],
+            )
+            .await
+            .unwrap();
+    }
+    editor
+        .lock()
+        .await
+        .create_secret(
+            &vault,
+            "Editor addition",
+            SecretCategory::Session,
+            value("distinct editor addition"),
+        )
+        .await
+        .unwrap();
+    third
+        .lock()
+        .await
+        .delete_secret(&vault, &to_delete)
+        .await
+        .unwrap();
+
+    for (manager, device) in [
+        (&owner, owner_device),
+        (&editor, editor_device),
+        (&third, third_device),
+        (&editor, editor_device),
+        (&owner, owner_device),
+    ] {
+        native_sync(manager, device, server, &vault).await;
+    }
+    let converged = native_snapshot(&owner, &vault).await;
+    assert_eq!(converged, native_snapshot(&editor, &vault).await);
+    assert_eq!(converged, native_snapshot(&third, &vault).await);
+    assert_eq!(converged.len(), 4);
+    for expected in [
+        "owner collision edit",
+        "editor collision edit",
+        "third collision edit",
+        "distinct editor addition",
+    ] {
+        assert!(
+            converged
+                .iter()
+                .any(|(_, bytes)| bytes == expected.as_bytes()),
+            "missing {expected}"
+        );
+    }
+    assert!(!converged.iter().any(|(id, _)| id == &to_delete));
+
+    let old_key = {
+        let manager = third.lock().await;
+        sync_record::RecordKey::derive(manager.vaults[&vault].master_dek.as_ref().unwrap(), &vault)
+            .unwrap()
+    };
+    let editor_pending = editor
+        .lock()
+        .await
+        .create_secret(
+            &vault,
+            "Retained offline edit",
+            SecretCategory::Session,
+            value("publish after rotation"),
+        )
+        .await
+        .unwrap();
+    let revoked_pending = third
+        .lock()
+        .await
+        .create_secret(
+            &vault,
+            "Revoked offline edit",
+            SecretCategory::Session,
+            value("must not upload"),
+        )
+        .await
+        .unwrap();
+    let owner_account = owner_device.activate(server).await;
+    owner
+        .lock()
+        .await
+        .change_organization_grant(&vault, &third_device.username, None, "")
+        .await
+        .unwrap();
+    let target = AccountTarget::shared(&owner_account, org, id).unwrap();
+    let (bundle, _) = target.get().await.unwrap().unwrap();
+    assert!(crate::vault::sync_bundle::verify(&old_key, &bundle).is_err());
+    let third_account = third_device.activate(server).await;
+    assert!(AccountTarget::shared(&third_account, org, id)
+        .unwrap()
+        .get()
+        .await
+        .unwrap()
+        .is_none());
+    let (_, failed) = sync_vaults(&third, Some(&vault), false).await;
+    assert_eq!(failed.len(), 1);
+
+    native_sync(&editor, editor_device, server, &vault).await;
+    native_sync(&owner, owner_device, server, &vault).await;
+    let final_records = native_snapshot(&owner, &vault).await;
+    assert_eq!(final_records, native_snapshot(&editor, &vault).await);
+    assert_eq!(final_records.len(), 5);
+    assert!(final_records.iter().any(|(id, _)| id == &editor_pending));
+    assert!(!final_records.iter().any(|(id, _)| id == &revoked_pending));
+    clear_vault_test_account().await;
+    println!("Three clients converged; both collision copies and the deletion synced. Revocation and rekey preserved the retained offline edit.");
+}
