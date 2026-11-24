@@ -53,6 +53,11 @@ pub async fn rdp_connect(
         if !state.rdp_manager.lock().await.running(&id) {
             params.connect_port = crate::ipc::wireguard_commands::session_forward(&state, session_id.as_deref(), &params.host, params.port).await?;
         }
+        // Kerberos: the KDC to get the ticket from, looked up before the
+        // session is started (the lookup is a network round trip).
+        if crate::rdp::kerberos::wanted(params.options.as_ref()) && !state.rdp_manager.lock().await.running(&id) {
+            params.kdc = crate::rdp::kerberos::find_kdc(params.options.as_ref(), &params.username, &params.domain, &params.host).await;
+        }
         state
             .rdp_manager
             .lock()

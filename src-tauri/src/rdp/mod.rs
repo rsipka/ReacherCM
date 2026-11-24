@@ -44,6 +44,7 @@
 
 pub mod clipboard;
 pub mod drive;
+pub mod kerberos;
 pub mod options;
 pub mod remote_app;
 #[cfg(windows)]
@@ -116,6 +117,10 @@ pub struct RdpConnectParams {
     /// set by `rdp_connect` from the saved session, never by the webview.
     #[serde(skip)]
     pub connect_port: Option<u16>,
+    /// The Kerberos KDC for a session that logs in with Kerberos; set by
+    /// `rdp_connect` (see [`kerberos`]), never by the webview.
+    #[serde(skip)]
+    pub kdc: Option<String>,
 }
 
 /// Lifecycle, sent as a Tauri event named `rdp-status-{id}`.
@@ -417,20 +422,17 @@ impl RdpManager {
             }
         };
 
-        // A shared folder rides the device channel as one drive. The native
-        // backends serve it: IronRDP's own on Windows, its Unix one on the
-        // others. Android has no backend for it and says so.
-        if let Some(path) = params.share_path.as_deref().filter(|p| !p.trim().is_empty()) {
-            match resolve_share(path, &app).and_then(|path| drive_factory(&path)) {
-                Ok(factory) => {
-                    tracing::info!("RDP {id}: sharing {path} as a drive");
-                    client = client.with_rdpdr_backend_factory(factory);
-                }
-                Err(e) => tracing::warn!("RDP {id}: not sharing {path}: {e}"),
+        // Shared folders ride the device channel, each as a drive: the
+        // session's folder, the extra ones from its RDP settings, and every
+        // local drive when it asks. Reach's own backend serves them (see
+        // `drive`); a folder that cannot be shared is left out and logged.
+        let drives = shared_drives(&params, &app);
+        if !drives.is_empty() {
+            for (path, name) in &drives {
+                tracing::info!("RDP {id}: sharing {} as drive {name}", path.display());
             }
+            client = client.with_rdpdr_backend_factory(Box::new(drive::FoldersFactory::new(drives)));
         }
-
-
 
         // See `Open` for why this is a thread and not a task.
         let thread_name = format!("rdp-{id}");
@@ -821,6 +823,11 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
         builder = builder.with_domain(&p.domain);
     }
 
+    // Kerberos, with NTLM as the fallback, when the session asks for it.
+    if let Some(cfg) = kerberos::config(p.options.as_ref(), p.kdc.as_deref()) {
+        builder = builder.with_kerberos_config(cfg);
+    }
+
     // Log in with the password given, as mstsc does with saved credentials.
     // A server that authenticates over CredSSP (Windows) does not need it;
     // one that takes the login over TLS (xrdp) otherwise shows its own login
@@ -956,14 +963,38 @@ fn app_files_dir(_app: &AppHandle) -> Result<String, String> {
     Err("the app's Files folder is shared only on iPhone and iPad".into())
 }
 
-/// The drive backend for one shared folder, named after the folder: Reach's
-/// own, on the standard library, the same on every desktop. See [`drive`].
-fn drive_factory(path: &str) -> Result<Box<dyn ironrdp_rdpdr::backend::RdpdrBackendFactory + Send>, String> {
-    let root = std::path::PathBuf::from(path);
-    if !root.is_dir() {
-        return Err("not a directory".into());
+/// The folders a session shares, with the names they show under.
+fn shared_drives(params: &RdpConnectParams, app: &AppHandle) -> Vec<(std::path::PathBuf, String)> {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut names = Vec::new();
+    let mut add = |path: std::path::PathBuf, name: String| {
+        if !path.is_dir() {
+            tracing::warn!("RDP: not sharing {}: not a directory", path.display());
+        } else if !paths.contains(&path) {
+            paths.push(path);
+            names.push(name);
+        }
+    };
+    if let Some(path) = params.share_path.as_deref().filter(|p| !p.trim().is_empty()) {
+        match resolve_share(path, app) {
+            Ok(path) => add(std::path::PathBuf::from(&path), drive_name(&path)),
+            Err(e) => tracing::warn!("RDP: not sharing {path}: {e}"),
+        }
     }
-    Ok(Box::new(drive::FolderDriveFactory::new(root, drive_name(path))))
+    // Extra folders and all drives: desktops only, where folders can be named.
+    if cfg!(desktop) {
+        if let Some(o) = &params.options {
+            for path in o.drives.iter().flatten().take(options::MAX_DRIVES) {
+                add(std::path::PathBuf::from(path), drive_name(path));
+            }
+            if o.all_drives == Some(true) {
+                for (path, name) in drive::all_local_drives() {
+                    add(path, name);
+                }
+            }
+        }
+    }
+    paths.into_iter().zip(drive::unique_names(names)).collect()
 }
 
 /// What the drive is called on the remote: the folder's own name, or the

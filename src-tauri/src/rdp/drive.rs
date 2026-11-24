@@ -28,25 +28,139 @@ use ironrdp_rdpdr::pdu::RdpdrPdu;
 use ironrdp_rdpdr::RdpdrBackend;
 use ironrdp_svc::SvcMessage;
 
-/// Builds a [`FolderDrive`] for each connection, all serving the same folder.
-pub struct FolderDriveFactory {
-    root: PathBuf,
-    name: String,
+/// Builds [`Folders`] for each connection: several local folders, each a
+/// drive of its own on the remote.
+pub struct FoldersFactory {
+    drives: Vec<(PathBuf, String)>,
 }
 
-impl FolderDriveFactory {
-    pub fn new(root: PathBuf, name: String) -> Self {
-        Self { root, name }
+impl FoldersFactory {
+    /// The folders and the names they show under; at least one.
+    pub fn new(drives: Vec<(PathBuf, String)>) -> Self {
+        Self { drives }
     }
 }
 
-impl RdpdrBackendFactory for FolderDriveFactory {
+impl RdpdrBackendFactory for FoldersFactory {
     fn build_rdpdr_backend(&self) -> RdpdrBackendFactoryResult<RdpdrBackendProduct> {
-        Ok(RdpdrBackendProduct::new(
-            Box::new(FolderDrive::new(self.root.clone(), self.name.clone())),
-            vec![RdpdrDrive::new(1, self.name.clone())],
-        ))
+        let mut folders = Folders { drives: HashMap::new() };
+        let mut announced = Vec::new();
+        for (n, (root, name)) in self.drives.iter().enumerate() {
+            let id = u32::try_from(n + 1).unwrap_or(u32::MAX);
+            folders.drives.insert(id, FolderDrive::new(root.clone(), name.clone()));
+            announced.push(RdpdrDrive::new(id, name.clone()));
+        }
+        Ok(RdpdrBackendProduct::new(Box::new(folders), announced))
     }
+}
+
+/// Several folders: each request goes to the drive its device id names.
+#[derive(Debug)]
+pub struct Folders {
+    drives: HashMap<u32, FolderDrive>,
+}
+
+impl_as_any!(Folders);
+
+/// The device a drive request is for.
+fn device_of(req: &ServerDriveIoRequest) -> u32 {
+    match req {
+        ServerDriveIoRequest::ServerCreateDriveRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveQueryInformationRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::DeviceCloseRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveQueryDirectoryRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveNotifyChangeDirectoryRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveQueryVolumeInformationRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::DeviceControlRequest(r) => r.header.device_id,
+        ServerDriveIoRequest::DeviceReadRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::DeviceWriteRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::DeviceFlushBuffersRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveSetInformationRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveLockControlRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveQuerySecurityRequest(r) => r.device_io_request.device_id,
+        ServerDriveIoRequest::ServerDriveSetSecurityRequest(r) => r.device_io_request.device_id,
+    }
+}
+
+impl RdpdrBackend for Folders {
+    fn handle_server_device_announce_response(&mut self, _pdu: ServerDeviceAnnounceResponse) -> PduResult<()> {
+        Ok(())
+    }
+
+    fn handle_scard_call(
+        &mut self,
+        _req: DeviceControlRequest<ScardIoCtlCode>,
+        _call: ScardCall,
+    ) -> PduResult<Vec<SvcMessage>> {
+        Ok(Vec::new())
+    }
+
+    fn handle_drive_io_request(&mut self, req: ServerDriveIoRequest) -> PduResult<Vec<SvcMessage>> {
+        let device = device_of(&req);
+        match self.drives.get_mut(&device) {
+            Some(drive) => drive.handle_drive_io_request(req),
+            None => {
+                tracing::warn!("RDP drive: request for unknown device {device}");
+                Ok(Vec::new())
+            }
+        }
+    }
+}
+
+/// Names for the drives, each unique: a second `Documents` is `Documents 2`.
+pub fn unique_names(names: Vec<String>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(names.len());
+    for name in names {
+        let mut candidate = name.clone();
+        let mut n = 2;
+        while out.iter().any(|o| o.eq_ignore_ascii_case(&candidate)) {
+            candidate = format!("{name} {n}");
+            n += 1;
+        }
+        out.push(candidate);
+    }
+    out
+}
+
+/// Every local drive: the drive letters on Windows; elsewhere the home
+/// folder, the root, and disks mounted under the usual places.
+pub fn all_local_drives() -> Vec<(PathBuf, String)> {
+    let mut found = Vec::new();
+    #[cfg(windows)]
+    for letter in b'A'..=b'Z' {
+        let root = PathBuf::from(format!("{}:\\", letter as char));
+        if root.is_dir() {
+            found.push((root, (letter as char).to_string()));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_dir()) {
+            found.push((home, "Home".to_string()));
+        }
+        found.push((PathBuf::from("/"), "Root".to_string()));
+        let user = std::env::var("USER").unwrap_or_default();
+        let mut parents = vec![PathBuf::from("/Volumes"), PathBuf::from("/mnt")];
+        if !user.is_empty() {
+            parents.push(PathBuf::from("/media").join(&user));
+            parents.push(PathBuf::from("/run/media").join(&user));
+        }
+        for parent in parents {
+            let Ok(entries) = fs::read_dir(&parent) else { continue };
+            let mut mounts: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                // macOS lists the boot disk in /Volumes as a link to `/`.
+                .filter(|p| p.is_dir() && !p.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()))
+                .collect();
+            mounts.sort();
+            for m in mounts {
+                let name = m.file_name().and_then(|n| n.to_str()).unwrap_or("Disk").to_string();
+                found.push((m, name));
+            }
+        }
+    }
+    found
 }
 
 /// The most one read answers with. Servers ask for far less.
