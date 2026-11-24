@@ -432,9 +432,10 @@ async fn a_folder_carries_the_vault_between_devices() {
     let url = format!("folder:{}", w.dir.join("share").display());
     the_rules_hold(&w, &url).await;
 
-    // The file names nothing.
+    // The file names nothing. (Look for a long name: three random bytes of
+    // ciphertext can spell "web" now and then.)
     let data = std::fs::read(w.dir.join("share").join(crate::vault::sync_store::FILE_NAME)).unwrap();
-    assert!(!data.windows(3).any(|x| x == b"web"));
+    assert!(!data.windows(10).any(|x| x == b"web from b"));
 }
 
 #[tokio::test]
