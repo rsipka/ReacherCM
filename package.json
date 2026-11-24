@@ -57,6 +57,7 @@
     "sshalg:test": "node scripts/ssh-algorithms-test.mjs",
     "bulk-edit:test": "node --import ./scripts/resolve-lib.mjs scripts/bulk-edit-test.mjs",
     "addresses:test": "node --import ./scripts/resolve-lib.mjs scripts/addresses-test.mjs",
+    "rdp-files:test": "node --import ./scripts/resolve-lib.mjs scripts/rdp-files-test.mjs",
     "net-tools:test": "node --import ./scripts/resolve-lib.mjs scripts/net-tools-test.mjs",
     "net-tools:live": "node scripts/net-tools-live-test.mjs",
     "release-notes:test": "node --import ./scripts/resolve-lib.mjs scripts/release-notes-test.mjs",
@@ -70,6 +71,7 @@
     "keybindings:test": "node --import ./scripts/resolve-lib.mjs scripts/keybindings-test.mjs",
     "snapshot:test": "node --import ./scripts/resolve-lib.mjs scripts/snapshot-test.mjs",
     "settings-persist:test": "node --import ./scripts/resolve-lib.mjs scripts/settings-persist-test.mjs",
+    "transfer-result:test": "node scripts/transfer-result-test.mjs",
     "setup-wizard:test": "node --import ./scripts/resolve-lib.mjs scripts/setup-wizard-test.mjs"
   },
   "dependencies": {

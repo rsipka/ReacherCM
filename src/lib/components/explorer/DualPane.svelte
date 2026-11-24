@@ -811,7 +811,7 @@
 							{/if}
 							<span class="job-actions">
 								{#if job.status === 'queued' || job.status === 'running'}
-									<button class="ib small" type="button" tabindex="-1" onclick={() => cancelJob(job.id)} title={cancelLabel} aria-label={cancelLabel}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
+									<button class="ib small" type="button" tabindex="-1" disabled={job.status === 'running' && !job.transferId} onclick={() => cancelJob(job.id)} title={cancelLabel} aria-label={cancelLabel}>{@render icon('M6 6l12 12M18 6L6 18', 12)}</button>
 								{:else}
 									{#if job.status !== 'done'}
 										<button class="ib small" type="button" tabindex="-1" onclick={() => retryJob(job.id)} title={t('files.retry')} aria-label={t('files.retry')}>{@render icon('M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5', 12)}</button>

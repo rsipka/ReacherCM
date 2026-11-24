@@ -23,6 +23,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 use crate::mcp::protocol::{self, Request, Response};
 use crate::mcp::McpState;
@@ -102,16 +103,13 @@ fn token_matches(expected: &str, given: &str) -> bool {
     diff == 0
 }
 
-fn authorized(state: &McpState, headers: &HeaderMap) -> bool {
-    let Some(expected) = state.token() else {
-        // No token means the server should not be running at all.
-        return false;
-    };
-    headers
+fn authorized(state: &McpState, headers: &HeaderMap) -> Option<CancellationToken> {
+    let given = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|given| token_matches(&expected, given.trim()))
+        .and_then(|v| v.strip_prefix("Bearer "))?;
+    let (expected, revoked) = state.token_snapshot()?;
+    token_matches(&expected, given.trim()).then_some(revoked)
 }
 
 async fn handle_probe(State(state): State<Arc<McpState>>) -> impl IntoResponse {
@@ -134,7 +132,7 @@ async fn handle_rpc(
     headers: HeaderMap,
     body: String,
 ) -> impl IntoResponse {
-    if !authorized(&state, &headers) {
+    let Some(revoked) = authorized(&state, &headers) else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(json!({
@@ -143,7 +141,7 @@ async fn handle_rpc(
             })),
         )
             .into_response();
-    }
+    };
 
     // A batch is a JSON array. Handled because the spec allows it and a client
     // that sends one should not get a parse error.
@@ -163,7 +161,7 @@ async fn handle_rpc(
         Value::Array(items) => {
             let mut out = Vec::new();
             for item in items {
-                if let Some(r) = dispatch_value(&state, item).await {
+                if let Some(r) = dispatch_value(&state, item, &revoked).await {
                     out.push(r);
                 }
             }
@@ -174,14 +172,14 @@ async fn handle_rpc(
                 Json(out).into_response()
             }
         }
-        single => match dispatch_value(&state, single).await {
+        single => match dispatch_value(&state, single, &revoked).await {
             Some(r) => Json(r).into_response(),
             None => StatusCode::ACCEPTED.into_response(),
         },
     }
 }
 
-async fn dispatch_value(state: &Arc<McpState>, value: Value) -> Option<Response> {
+async fn dispatch_value(state: &McpState, value: Value, revoked: &CancellationToken) -> Option<Response> {
     let req: Request = match serde_json::from_value(value) {
         Ok(r) => r,
         Err(e) => {
@@ -195,7 +193,7 @@ async fn dispatch_value(state: &Arc<McpState>, value: Value) -> Option<Response>
 
     let is_note = req.is_notification();
     let id = req.id.clone().unwrap_or(Value::Null);
-    let result = state.handle(req).await;
+    let result = state.handle_authorized(req, revoked).await;
 
     // Notifications get no reply, even on error.
     if is_note {
@@ -242,12 +240,12 @@ mod tests {
         let state = McpState::default();
         state.set_token(Some("s3cr3t".into()));
 
-        assert!(authorized(&state, &headers_with("Bearer s3cr3t")));
-        assert!(authorized(&state, &headers_with("Bearer  s3cr3t ")), "surrounding space tolerated");
-        assert!(!authorized(&state, &headers_with("Bearer wrong")));
-        assert!(!authorized(&state, &headers_with("s3cr3t")), "scheme required");
-        assert!(!authorized(&state, &headers_with("Basic s3cr3t")));
-        assert!(!authorized(&state, &HeaderMap::new()), "no header at all");
+        assert!(authorized(&state, &headers_with("Bearer s3cr3t")).is_some());
+        assert!(authorized(&state, &headers_with("Bearer  s3cr3t ")).is_some(), "surrounding space tolerated");
+        assert!(authorized(&state, &headers_with("Bearer wrong")).is_none());
+        assert!(authorized(&state, &headers_with("s3cr3t")).is_none(), "scheme required");
+        assert!(authorized(&state, &headers_with("Basic s3cr3t")).is_none());
+        assert!(authorized(&state, &HeaderMap::new()).is_none(), "no header at all");
     }
 
     /// With no token configured the server must refuse everything, rather than
@@ -256,7 +254,18 @@ mod tests {
     fn no_token_means_nothing_is_authorized() {
         let state = McpState::default();
         state.set_token(None);
-        assert!(!authorized(&state, &headers_with("Bearer anything")));
-        assert!(!authorized(&state, &headers_with("Bearer ")));
+        assert!(authorized(&state, &headers_with("Bearer anything")).is_none());
+        assert!(authorized(&state, &headers_with("Bearer ")).is_none());
+    }
+
+    #[tokio::test]
+    async fn remaining_batch_calls_cannot_use_a_rotated_credential() {
+        let state = McpState::default();
+        let ping = json!({"jsonrpc": "2.0", "id": 1, "method": "ping"});
+        state.set_token(Some("before".into()));
+        let revoked = authorized(&state, &headers_with("Bearer before")).unwrap();
+        state.set_token(Some("after".into()));
+        let result = dispatch_value(&state, ping, &revoked).await.unwrap();
+        assert!(serde_json::to_string(&result).unwrap().contains("credential changed"));
     }
 }

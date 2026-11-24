@@ -125,6 +125,8 @@
 	let rdpAdmin = $state(false);
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
+	/** The SSH port of Open file manager (SFTP on the same host); '' for 22. */
+	let rdpSftpPort = $state('');
 	const RDP_RESOLUTIONS = ['1280x720', '1280x1024', '1366x768', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3840x2160'];
 	const RDP_SCALES = ['100', '125', '150', '175', '200', '250', '300'];
 	/** Seconds; shown as seconds or minutes. */
@@ -178,6 +180,12 @@
 		rdpAdmin = o?.admin === true;
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
+		rdpSftpPort = o?.files_port ? String(o.files_port) : '';
+	}
+
+	function sftpPortToSave(): number | null {
+		const p = Number(rdpSftpPort.trim());
+		return Number.isInteger(p) && p > 0 && p < 65536 && p !== 22 ? p : null;
 	}
 
 	/** The settings as saved; null when all are the defaults. */
@@ -197,6 +205,7 @@
 			admin: rdpAdmin || null,
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
+			files_port: sftpPortToSave(),
 		};
 		return Object.values(o).some((v) => v !== null) ? o : null;
 	}
@@ -1404,6 +1413,12 @@
 					</Button>
 				</div>
 				<p class="shell-hint">{t('session.rdp_share_hint')}</p>
+			</div>
+			{/if}
+			{#if !isMobile()}
+			<div class="shell-field">
+				<Input label={t('session.rdp_files_port')} bind:value={rdpSftpPort} placeholder="22" disabled={saving} />
+				<p class="shell-hint">{t('session.rdp_files_port_hint')}</p>
 			</div>
 			{/if}
 			<div class="shell-field">
