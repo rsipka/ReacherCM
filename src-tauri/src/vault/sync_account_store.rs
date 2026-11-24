@@ -7,6 +7,7 @@ use crate::ipc::sync_account_commands;
 use crate::vault::VaultError;
 
 pub(crate) const PREFIX: &str = "reachercm-sync:";
+pub(crate) const ORG_PREFIX: &str = "reachercm-org:";
 const MAX_BYTES: usize = 64 << 20;
 
 #[derive(Clone)]
@@ -14,6 +15,7 @@ pub struct AccountTarget {
     server: Url,
     username: String,
     pub(crate) vault_id: Uuid,
+    pub(crate) organization: Option<Uuid>,
 }
 
 fn error(message: &str) -> VaultError {
@@ -43,16 +45,29 @@ impl AccountTarget {
             server,
             username: account.username.clone(),
             vault_id,
+            organization: None,
         })
     }
 
     pub(crate) fn parse(config: &str, username: &str) -> Result<Self, VaultError> {
+        let shared = config.starts_with(ORG_PREFIX);
         let encoded = config
-            .strip_prefix(PREFIX)
+            .strip_prefix(if shared { ORG_PREFIX } else { PREFIX })
             .ok_or_else(|| error("Invalid vault sync server"))?;
-        let (origin, id) = encoded
+        let (base, id) = encoded
             .rsplit_once('/')
             .ok_or_else(|| error("Missing sync vault ID"))?;
+        let (origin, organization) = if shared {
+            let (origin, org) = base
+                .rsplit_once('/')
+                .ok_or_else(|| error("Missing organization ID"))?;
+            (
+                origin,
+                Some(Uuid::parse_str(org).map_err(|_| error("Invalid organization ID"))?),
+            )
+        } else {
+            (base, None)
+        };
         let server = sync_account_commands::origin(origin).map_err(connection_error)?;
         let vault_id = Uuid::parse_str(id).map_err(|_| error("Invalid sync vault ID"))?;
         if username.is_empty() {
@@ -62,11 +77,15 @@ impl AccountTarget {
             server,
             username: username.to_owned(),
             vault_id,
+            organization,
         })
     }
 
     pub(crate) fn config(&self) -> String {
-        format!("{PREFIX}{}{}", self.server, self.vault_id)
+        match self.organization {
+            Some(org) => format!("{ORG_PREFIX}{}{org}/{}", self.server, self.vault_id),
+            None => format!("{PREFIX}{}{}", self.server, self.vault_id),
+        }
     }
 
     pub(crate) fn identity(&self) -> String {
@@ -93,10 +112,40 @@ impl AccountTarget {
             .map_err(|_| error("The sync server returned an invalid vault list"))
     }
 
-    fn bundle_url(&self) -> Url {
+    pub(crate) fn shared(
+        account: &sync_account_commands::AccountView,
+        organization: Uuid,
+        vault_id: Uuid,
+    ) -> Result<Self, VaultError> {
+        let mut target = Self::from_account(account, vault_id)?;
+        target.organization = Some(organization);
+        Ok(target)
+    }
+
+    pub(crate) async fn request(
+        &self,
+        request: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, VaultError> {
+        sync_account_commands::vault_request(&self.server, &self.username, request)
+            .await
+            .map_err(connection_error)
+    }
+
+    pub(crate) fn api(&self, path: &str) -> Url {
         let mut url = self.server.clone();
-        url.set_path(&format!("/api/v1/vaults/{}/bundle", self.vault_id));
+        url.set_path(path);
         url
+    }
+
+    pub(crate) fn vault_path(&self) -> String {
+        match self.organization {
+            Some(org) => format!("/api/v1/organizations/{org}/vaults/{}", self.vault_id),
+            None => format!("/api/v1/vaults/{}", self.vault_id),
+        }
+    }
+
+    fn bundle_url(&self) -> Url {
+        self.api(&format!("{}/bundle", self.vault_path()))
     }
 
     pub(crate) async fn get(&self) -> Result<Option<(Vec<u8>, String)>, VaultError> {
@@ -169,6 +218,7 @@ impl AccountTarget {
             StatusCode::CONFLICT => Err(error(
                 "This sync account already has a different personal vault",
             )),
+            StatusCode::FORBIDDEN => Err(error("This vault is read-only for this account")),
             StatusCode::PAYLOAD_TOO_LARGE => Err(error(
                 "The vault bundle exceeds the sync server's size limit",
             )),

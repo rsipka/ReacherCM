@@ -1290,6 +1290,105 @@ pub async fn vault_enable_account_sync(state: State<'_, AppState>) -> Result<Str
     state.vault_manager.lock().await.enable_account_sync(&account).await.map_err(|e| e.to_string())
 }
 
+#[cfg(desktop)]
+fn organization_account() -> Result<crate::ipc::sync_account_commands::AccountView, String> {
+    crate::ipc::sync_account_commands::sync_account_status()
+        .map_err(str::to_owned)?
+        .ok_or_else(|| "Sign in to Reacher CM Sync first".to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organizations() -> Result<Vec<crate::vault::manager::Organization>, String> {
+    crate::vault::manager::VaultManager::organizations(&organization_account()?)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_list(
+    organization: uuid::Uuid,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::vault::manager::SharedOrganizationVault>, String> {
+    state
+        .vault_manager
+        .lock()
+        .await
+        .organization_vaults(&organization_account()?, organization)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_create(
+    organization: uuid::Uuid,
+    name: String,
+    state: State<'_, AppState>,
+) -> Result<VaultInfo, String> {
+    let account = organization_account()?;
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
+    state
+        .vault_manager
+        .lock()
+        .await
+        .create_organization_vault(&account, organization, &name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_open(
+    organization: uuid::Uuid,
+    vault_id: uuid::Uuid,
+    state: State<'_, AppState>,
+) -> Result<VaultInfo, String> {
+    let account = organization_account()?;
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
+    state
+        .vault_manager
+        .lock()
+        .await
+        .open_organization_vault(&account, organization, vault_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_grants(
+    organization: uuid::Uuid,
+    vault_id: uuid::Uuid,
+) -> Result<Vec<crate::vault::manager::OrganizationVaultGrant>, String> {
+    crate::vault::manager::VaultManager::organization_grants(
+        &organization_account()?,
+        organization,
+        vault_id,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_grant(
+    vault_id: String,
+    username: String,
+    role: Option<String>,
+    public_key: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .vault_manager
+        .lock()
+        .await
+        .change_organization_grant(&vault_id, &username, role.as_deref(), &public_key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Get personal sync config.
 #[tauri::command]
 #[tracing::instrument(skip(state))]
