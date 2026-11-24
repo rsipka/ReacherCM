@@ -985,7 +985,7 @@
   "settings.changelog": "Seznam změn",
   "settings.changelog_desc": "Co se změnilo v jednotlivých verzích.",
   "settings.license": "Licence",
-  "settings.license_desc": "Reach je svobodný software pod licencí MIT.",
+  "settings.license_desc": "Reacher CM je svobodný software pod licencí GNU GPL, verze 3 nebo novější.",
   "settings.open_link": "Otevřít",
   "report.title": "Nahlásit problém",
   "report.desc": "Otevře issue na GitHubu s logem Reach k přiložení, očištěným od vašich hostitelů, účtů a složek.",
@@ -4288,5 +4288,8 @@
   "bmc.jobs_none": "Žádné úlohy.",
   "bmc.col_job": "Úloha",
   "bmc.col_state": "Stav",
-  "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}"
+  "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}",
+  "organization.rotation_pending": "Nahrávání je pozastaveno, dokud vlastník trezoru nevymění klíč.",
+  "organization.finish_rotation": "Dokončit výměnu klíče",
+  "organization.key_rotated": "Klíč trezoru byl vyměněn."
 }

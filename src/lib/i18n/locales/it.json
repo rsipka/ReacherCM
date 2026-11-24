@@ -1003,7 +1003,7 @@
   "settings.changelog": "Registro delle modifiche",
   "settings.changelog_desc": "Cosa è cambiato in ogni versione.",
   "settings.license": "Licenza",
-  "settings.license_desc": "Reach è software libero con licenza MIT.",
+  "settings.license_desc": "Reacher CM è software libero con licenza GNU GPL, versione 3 o successiva.",
   "settings.open_link": "Apri",
   "report.title": "Segnala un problema",
   "report.desc": "Apre una segnalazione su GitHub con il registro di Reach da allegare, ripulito da host, account e cartelle.",
@@ -4288,5 +4288,8 @@
   "bmc.jobs_none": "Nessun job.",
   "bmc.col_job": "Job",
   "bmc.col_state": "Stato",
-  "bmc.licence_needed": "Il controller richiede una licenza per questo. Riporta: {{message}}"
+  "bmc.licence_needed": "Il controller richiede una licenza per questo. Riporta: {{message}}",
+  "organization.rotation_pending": "I caricamenti sono sospesi finché il proprietario della cassaforte non cambia la chiave.",
+  "organization.finish_rotation": "Completa il cambio della chiave",
+  "organization.key_rotated": "Chiave della cassaforte cambiata."
 }

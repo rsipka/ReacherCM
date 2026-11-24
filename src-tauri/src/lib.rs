@@ -465,6 +465,7 @@ pub fn run() {
             vault_organization_open,
             vault_organization_grants,
             vault_organization_grant,
+            vault_organization_finish_rotation,
             sync_account_status,
             sync_account_sign_in,
             sync_account_cancel,

@@ -1003,7 +1003,7 @@
   "settings.changelog": "Journal des modifications",
   "settings.changelog_desc": "Ce qui a changé dans chaque version.",
   "settings.license": "Licence",
-  "settings.license_desc": "Reach est un logiciel libre sous licence MIT.",
+  "settings.license_desc": "Reacher CM est un logiciel libre sous licence GNU GPL, version 3 ou ultérieure.",
   "settings.open_link": "Ouvrir",
   "report.title": "Signaler un problème",
   "report.desc": "Ouvre un ticket GitHub avec le journal de Reach à joindre, débarrassé de vos hôtes, comptes et dossiers.",
@@ -4288,5 +4288,8 @@
   "bmc.jobs_none": "Aucun travail.",
   "bmc.col_job": "Travail",
   "bmc.col_state": "État",
-  "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}"
+  "bmc.licence_needed": "Le contrôleur a besoin d'une licence pour cela. Il indique : {{message}}",
+  "organization.rotation_pending": "Les envois sont suspendus jusqu’à ce que le propriétaire du coffre renouvelle la clé.",
+  "organization.finish_rotation": "Terminer le renouvellement de la clé",
+  "organization.key_rotated": "Clé du coffre renouvelée."
 }

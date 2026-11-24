@@ -1003,7 +1003,7 @@
   "settings.changelog": "Список изменений",
   "settings.changelog_desc": "Что изменилось в каждой версии.",
   "settings.license": "Лицензия",
-  "settings.license_desc": "Reach — свободное ПО под лицензией MIT.",
+  "settings.license_desc": "Reacher CM — свободное ПО под лицензией GNU GPL версии 3 или более поздней.",
   "settings.open_link": "Открыть",
   "report.title": "Сообщить о проблеме",
   "report.desc": "Открывает issue на GitHub с журналом Reach для вложения, очищенным от ваших хостов, учётных записей и папок.",
@@ -4288,5 +4288,8 @@
   "bmc.jobs_none": "Заданий нет.",
   "bmc.col_job": "Задание",
   "bmc.col_state": "Состояние",
-  "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}"
+  "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}",
+  "organization.rotation_pending": "Отправка изменений приостановлена до смены ключа владельцем хранилища.",
+  "organization.finish_rotation": "Завершить смену ключа",
+  "organization.key_rotated": "Ключ хранилища заменён."
 }

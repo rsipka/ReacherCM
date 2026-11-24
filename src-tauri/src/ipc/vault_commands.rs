@@ -1380,6 +1380,7 @@ pub async fn vault_organization_grant(
     public_key: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
     state
         .vault_manager
         .lock()
@@ -1387,6 +1388,17 @@ pub async fn vault_organization_grant(
         .change_organization_grant(&vault_id, &username, role.as_deref(), &public_key)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn vault_organization_finish_rotation(
+    vault_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
+    state.vault_manager.lock().await.finish_organization_rotation(&vault_id)
+        .await.map_err(|e| e.to_string())
 }
 
 /// Get personal sync config.

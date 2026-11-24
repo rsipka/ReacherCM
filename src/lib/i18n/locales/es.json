@@ -1003,7 +1003,7 @@
   "settings.changelog": "Registro de cambios",
   "settings.changelog_desc": "Qué cambió en cada versión.",
   "settings.license": "Licencia",
-  "settings.license_desc": "Reach es software libre bajo la licencia MIT.",
+  "settings.license_desc": "Reacher CM es software libre bajo la licencia GNU GPL, versión 3 o posterior.",
   "settings.open_link": "Abrir",
   "report.title": "Informar de un problema",
   "report.desc": "Abre una incidencia en GitHub con el registro de Reach para adjuntar, sin tus hosts, cuentas ni carpetas.",
@@ -4288,5 +4288,8 @@
   "bmc.jobs_none": "No hay trabajos.",
   "bmc.col_job": "Trabajo",
   "bmc.col_state": "Estado",
-  "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}"
+  "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}",
+  "organization.rotation_pending": "Las subidas están pausadas hasta que el propietario de la bóveda cambie la clave.",
+  "organization.finish_rotation": "Completar el cambio de clave",
+  "organization.key_rotated": "Clave de la bóveda cambiada."
 }

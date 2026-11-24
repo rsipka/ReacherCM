@@ -16,6 +16,9 @@ use libsql::Connection;
 
 use crate::vault::error::VaultError;
 
+pub(super) const KEY_EPOCH_STATE: &str = "organization_key_epoch";
+pub(super) const ROTATION_PENDING_STATE: &str = "organization_rotation_pending";
+
 /// One secret as the `secrets` table stores it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Row {
@@ -219,10 +222,13 @@ pub async fn apply(conn: &Connection, id: &str, row: Option<&Row>) -> Result<(),
 }
 
 /// Start over: forget what was exchanged with a backend, so the next sync
-/// reads it in full. Changes not yet sent are kept.
+/// reads it in full. Pending changes and the active organization encryption
+/// state belong to the local vault, so they survive a backend reset.
 pub async fn reset(conn: &Connection) -> Result<(), VaultError> {
-    conn.execute_batch("DELETE FROM sync_known; DELETE FROM sync_state; DELETE FROM sync_applying;")
-        .await?;
+    conn.execute_batch(&format!(
+        "DELETE FROM sync_known; DELETE FROM sync_applying;
+         DELETE FROM sync_state WHERE key NOT IN ('{KEY_EPOCH_STATE}', '{ROTATION_PENDING_STATE}');"
+    )).await?;
     Ok(())
 }
 
@@ -269,6 +275,18 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn organization_key_state_survives_a_sync_reset() {
+        let conn = memory_vault().await;
+        set_state(&conn, KEY_EPOCH_STATE, "3").await.unwrap();
+        set_state(&conn, ROTATION_PENDING_STATE, "1").await.unwrap();
+        set_state(&conn, "previous_revision", "tag").await.unwrap();
+        reset(&conn).await.unwrap();
+        assert_eq!(state(&conn, KEY_EPOCH_STATE).await.unwrap().as_deref(), Some("3"));
+        assert_eq!(state(&conn, ROTATION_PENDING_STATE).await.unwrap().as_deref(), Some("1"));
+        assert!(state(&conn, "previous_revision").await.unwrap().is_none());
     }
 
     #[tokio::test]
