@@ -1,5 +1,30 @@
 /** Shared wording for the server management pages. */
 import { t } from '#lib/state/i18n.svelte.js';
+import { BMC_LICENCE } from '#lib/ipc/bmc.js';
+
+/** A failed call as the user reads it: a missing licence said plainly. */
+export function bmcError(err: unknown): string {
+	const msg = String(err);
+	return msg.startsWith(BMC_LICENCE) ? t('bmc.licence_needed', { message: msg.slice(BMC_LICENCE.length) || '—' }) : msg;
+}
+
+/** The kind of controller, for a BMC that does not name its product. */
+const VENDORS: Record<string, string> = {
+	dell: 'Dell iDRAC',
+	hpe: 'HPE iLO',
+	lenovo: 'Lenovo XClarity Controller',
+	supermicro: 'Supermicro BMC',
+	fujitsu: 'Fujitsu iRMC',
+	cisco: 'Cisco CIMC',
+	huawei: 'Huawei iBMC',
+	openbmc: 'OpenBMC',
+	asrock: 'ASRock Rack BMC',
+	ami: 'AMI MegaRAC'
+};
+
+export function vendorName(vendor: string | null | undefined): string | null {
+	return (vendor && VENDORS[vendor]) || null;
+}
 
 /** A health as words and a colour class (`ok`, `warn`, `crit`, `none`). */
 export function healthClass(h: string | null | undefined): 'ok' | 'warn' | 'crit' | 'none' {

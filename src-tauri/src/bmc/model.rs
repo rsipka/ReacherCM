@@ -59,11 +59,36 @@ pub fn vendor(root: &Value) -> &'static str {
         "hpe"
     } else if name.contains("supermicro") || has("Supermicro") {
         "supermicro"
-    } else if name.contains("lenovo") || has("Lenovo") {
+    } else if name.contains("lenovo") || name.contains("ibm") || has("Lenovo") {
         "lenovo"
+    } else if name.contains("fujitsu") || has("ts_fujitsu") || has("Fujitsu") {
+        "fujitsu"
+    } else if name.contains("cisco") || has("Cisco") {
+        "cisco"
+    } else if name.contains("huawei") || has("Huawei") {
+        "huawei"
+    } else if name.contains("openbmc") || has("OpenBmc") || has("OpenBMC") {
+        "openbmc"
+    } else if name.contains("asrock") || has("ASRockRack") {
+        "asrock"
+    } else if name == "ami" || name.contains("american megatrends") || name.contains("megarac") || has("Ami") || has("AMI") {
+        // ASRock Rack, Gigabyte, Tyan and many other boards run AMI MegaRAC.
+        "ami"
     } else {
         "other"
     }
+}
+
+/// The allowable values of an action's parameter from its `ActionInfo`
+/// resource, which some BMCs (Supermicro, AMI MegaRAC, Lenovo XCC) use
+/// instead of listing them on the action itself.
+pub fn action_info_values(info: &Value, param: &str) -> Vec<String> {
+    info["Parameters"]
+        .as_array()
+        .and_then(|ps| ps.iter().find(|p| p["Name"] == param))
+        .and_then(|p| p["AllowableValues"].as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize, Default, PartialEq)]

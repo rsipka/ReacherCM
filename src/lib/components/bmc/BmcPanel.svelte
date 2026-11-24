@@ -30,7 +30,7 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import BmcLogs from './BmcLogs.svelte';
 	import BmcTasks from './BmcTasks.svelte';
-	import { healthClass, healthLabel, word, when, num } from './bmc-format.js';
+	import { healthClass, healthLabel, word, when, num, bmcError, vendorName } from './bmc-format.js';
 
 	interface Props {
 		tab: Tab;
@@ -137,7 +137,7 @@
 			else if (which === 'sensors') sensors = await bmcSensors(id);
 			else if (which === 'hardware') hardware = await bmcHardware(id);
 		} catch (err) {
-			pageError = String(err);
+			pageError = bmcError(err);
 		} finally {
 			if (loading === which) loading = null;
 		}
@@ -245,7 +245,7 @@
 				{@render dot(headline)}
 				<div class="who-text">
 					<span class="name">{serverName}</span>
-					<span class="sub">{[opened?.product, overview?.model, where].filter(Boolean).join(' · ')}</span>
+					<span class="sub">{[opened?.product ?? vendorName(opened?.vendor), overview?.model, where].filter(Boolean).join(' · ')}</span>
 				</div>
 			</div>
 			<div class="top-actions">

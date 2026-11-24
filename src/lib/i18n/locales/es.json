@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Trabajos y tareas",
   "bmc.jobs_none": "No hay trabajos.",
   "bmc.col_job": "Trabajo",
-  "bmc.col_state": "Estado"
+  "bmc.col_state": "Estado",
+  "bmc.licence_needed": "El controlador necesita una licencia para esto. Indica: {{message}}"
 }

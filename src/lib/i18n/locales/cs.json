@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Úlohy a tasky",
   "bmc.jobs_none": "Žádné úlohy.",
   "bmc.col_job": "Úloha",
-  "bmc.col_state": "Stav"
+  "bmc.col_state": "Stav",
+  "bmc.licence_needed": "Řadič k tomu potřebuje licenci. Hlásí: {{message}}"
 }

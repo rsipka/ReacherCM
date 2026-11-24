@@ -20,6 +20,9 @@ pub enum BmcError {
     UntrustedCert(String),
     /// The user name or password was refused.
     Login(String),
+    /// The BMC needs a licence (iDRAC Enterprise, iLO Advanced, XCC
+    /// Advanced, Supermicro's OOB key...) for this; its own message.
+    Licence(String),
     /// The BMC answered with an error status.
     Status { code: u16, message: String },
     /// No answer, or one that is not Redfish.
@@ -31,6 +34,7 @@ impl std::fmt::Display for BmcError {
         match self {
             BmcError::UntrustedCert(fp) => write!(f, "Untrusted certificate {fp}"),
             BmcError::Login(m) => write!(f, "Login refused: {m}"),
+            BmcError::Licence(m) => write!(f, "The controller needs a licence for this: {m}"),
             BmcError::Status { code, message } if message.is_empty() => write!(f, "The BMC answered {code}"),
             BmcError::Status { code, message } => write!(f, "{message} ({code})"),
             BmcError::Other(m) => f.write_str(m),
@@ -86,6 +90,20 @@ pub fn valid_path(path: &str) -> bool {
 fn url_host(host: &str) -> String {
     let h = host.trim().trim_matches(['[', ']']);
     if h.contains(':') { format!("[{h}]") } else { h.to_string() }
+}
+
+/// Whether a Redfish error says a licence is missing: Dell's LIC messages,
+/// HPE's LicenseKeyRequired, Lenovo's and Supermicro's wording.
+pub fn needs_licence(body: &Value) -> bool {
+    let err = &body["error"];
+    let ids = err["@Message.ExtendedInfo"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|i| i["MessageId"].as_str()).map(str::to_owned).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let text = format!("{} {}", error_message(body), err["code"].as_str().unwrap_or_default()).to_ascii_lowercase();
+    ids.iter().any(|id| id.contains("License") || id.contains("Licence") || id.split('.').next_back().is_some_and(|l| l.starts_with("LIC")))
+        || text.contains("license")
+        || text.contains("licence")
 }
 
 /// The message a Redfish error body carries, or nothing.
@@ -242,6 +260,9 @@ impl Redfish {
             return Box::pin(self.send(method, path, body, if_match, false)).await;
         }
         if !status.is_success() {
+            if needs_licence(&value) {
+                return Err(BmcError::Licence(error_message(&value)));
+            }
             return Err(BmcError::Status { code: status.as_u16(), message: error_message(&value) });
         }
         Ok((value, headers))
@@ -329,6 +350,13 @@ mod tests {
         let body = serde_json::json!({"error": {"code": "Base.1.0.GeneralError", "message": "A general error.",
             "@Message.ExtendedInfo": [{"Message": "The request failed due to an internal service error."}]}});
         assert_eq!(error_message(&body), "The request failed due to an internal service error.");
+        let lic = serde_json::json!({"error": {"@Message.ExtendedInfo": [{"MessageId": "iLO.2.14.LicenseKeyRequired", "Message": "An iLO Advanced license is required."}]}});
+        assert!(needs_licence(&lic));
+        let dell = serde_json::json!({"error": {"@Message.ExtendedInfo": [{"MessageId": "IDRAC.2.8.LIC501", "Message": "Unable to complete the operation."}]}});
+        assert!(needs_licence(&dell));
+        let smc = serde_json::json!({"error": {"message": "Not licensed to perform this request. The following licenses SFT-DCMS-SINGLE were needed"}});
+        assert!(needs_licence(&smc));
+        assert!(!needs_licence(&serde_json::json!({"error": {"message": "Bad thing"}})));
         let plain = serde_json::json!({"error": {"message": "Bad thing"}});
         assert_eq!(error_message(&plain), "Bad thing");
         assert_eq!(error_message(&Value::Null), "");

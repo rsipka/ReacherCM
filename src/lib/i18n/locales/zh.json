@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "作业和任务",
   "bmc.jobs_none": "没有作业。",
   "bmc.col_job": "作业",
-  "bmc.col_state": "状态"
+  "bmc.col_state": "状态",
+  "bmc.licence_needed": "控制器需要许可证才能执行此操作。它报告：{{message}}"
 }

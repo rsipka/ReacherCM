@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Jobs and tasks",
   "bmc.jobs_none": "No jobs.",
   "bmc.col_job": "Job",
-  "bmc.col_state": "State"
+  "bmc.col_state": "State",
+  "bmc.licence_needed": "The controller needs a licence for this. It said: {{message}}"
 }

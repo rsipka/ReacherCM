@@ -9,12 +9,14 @@ export const BMC_PASSWORD_NEEDED = 'BMC_PASSWORD_NEEDED';
 export const BMC_LOGIN_REFUSED = 'BMC_LOGIN_REFUSED:';
 /** A connect that met a certificate nothing trusts; the fingerprint follows. */
 export const BMC_UNTRUSTED_CERT = 'BMC_UNTRUSTED_CERT:';
+/** The BMC needs a licence for what was asked; its message follows. */
+export const BMC_LICENCE = 'BMC_LICENCE:';
 
 /** `OK`, `Warning` or `Critical` (Redfish's Status.Health). */
 export type Health = 'OK' | 'Warning' | 'Critical' | string;
 
 export interface BmcOpened {
-	vendor: 'dell' | 'hpe' | 'supermicro' | 'lenovo' | 'other';
+	vendor: 'dell' | 'hpe' | 'supermicro' | 'lenovo' | 'fujitsu' | 'cisco' | 'huawei' | 'openbmc' | 'asrock' | 'ami' | 'other';
 	product: string | null;
 }
 

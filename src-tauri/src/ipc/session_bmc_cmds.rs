@@ -9,11 +9,13 @@ use crate::bmc::{model, BmcConn, BmcError, Opened};
 const PASSWORD_NEEDED: &str = "BMC_PASSWORD_NEEDED";
 const UNTRUSTED_CERT: &str = "BMC_UNTRUSTED_CERT:";
 const LOGIN_REFUSED: &str = "BMC_LOGIN_REFUSED:";
+const LICENCE: &str = "BMC_LICENCE:";
 
 fn err(e: BmcError) -> String {
     match e {
         BmcError::UntrustedCert(fp) => format!("{UNTRUSTED_CERT}{fp}"),
         BmcError::Login(m) => format!("{LOGIN_REFUSED}{m}"),
+        BmcError::Licence(m) => format!("{LICENCE}{m}"),
         other => other.to_string(),
     }
 }

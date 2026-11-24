@@ -9,7 +9,7 @@
 	import { bmcLogServices, bmcLogEntries, bmcLogClear, type BmcLogService, type BmcLogEntry } from '#lib/ipc/bmc.js';
 	import Button from '#lib/components/shared/Button.svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
-	import { healthClass, healthLabel, when } from './bmc-format.js';
+	import { healthClass, healthLabel, when, bmcError } from './bmc-format.js';
 
 	interface Props {
 		connectionId: string;
@@ -48,7 +48,7 @@
 			if (!services.some((s) => s.path === selected)) selected = services[0]?.path ?? '';
 			await loadEntries();
 		} catch (err) {
-			error = String(err);
+			error = bmcError(err);
 		} finally {
 			loading = false;
 		}
@@ -66,7 +66,7 @@
 			const got = await bmcLogEntries(connectionId, path);
 			if (path === selected) entries = got;
 		} catch (err) {
-			error = String(err);
+			error = bmcError(err);
 			entries = null;
 		} finally {
 			loading = false;
@@ -92,7 +92,7 @@
 			confirmClear = false;
 			await loadEntries();
 		} catch (err) {
-			addToast(String(err), 'error');
+			addToast(bmcError(err), 'error');
 		} finally {
 			clearing = false;
 		}

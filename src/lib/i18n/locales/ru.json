@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Задания и задачи",
   "bmc.jobs_none": "Заданий нет.",
   "bmc.col_job": "Задание",
-  "bmc.col_state": "Состояние"
+  "bmc.col_state": "Состояние",
+  "bmc.licence_needed": "Контроллеру для этого нужна лицензия. Сообщение: {{message}}"
 }

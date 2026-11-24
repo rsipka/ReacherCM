@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Εργασίες",
   "bmc.jobs_none": "Καμία εργασία.",
   "bmc.col_job": "Εργασία",
-  "bmc.col_state": "Κατάσταση"
+  "bmc.col_state": "Κατάσταση",
+  "bmc.licence_needed": "Ο ελεγκτής χρειάζεται άδεια για αυτό. Αναφέρει: {{message}}"
 }

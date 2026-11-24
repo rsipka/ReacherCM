@@ -4178,5 +4178,6 @@
   "bmc.jobs_title": "Job e attività",
   "bmc.jobs_none": "Nessun job.",
   "bmc.col_job": "Job",
-  "bmc.col_state": "Stato"
+  "bmc.col_state": "Stato",
+  "bmc.licence_needed": "Il controller richiede una licenza per questo. Riporta: {{message}}"
 }

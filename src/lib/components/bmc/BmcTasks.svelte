@@ -23,7 +23,7 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
 	import Toggle from '#lib/components/shared/Toggle.svelte';
-	import { word, when } from './bmc-format.js';
+	import { word, when, bmcError } from './bmc-format.js';
 
 	interface Props {
 		connectionId: string;
@@ -75,7 +75,7 @@
 			jobs = j;
 			if (!bootTarget || !o.bootTargets.includes(bootTarget)) bootTarget = o.bootTargets.find((b) => b === 'Pxe') ?? o.bootTargets.find((b) => b !== 'None') ?? '';
 		} catch (err) {
-			error = String(err);
+			error = bmcError(err);
 		}
 	}
 
@@ -87,7 +87,7 @@
 			after?.();
 			await load();
 		} catch (err) {
-			addToast(String(err), 'error');
+			addToast(bmcError(err), 'error');
 		} finally {
 			busy = false;
 		}
@@ -103,7 +103,7 @@
 		busy = true;
 		bmcResetBmc(connectionId)
 			.then(() => onbmcrestart())
-			.catch((err) => addToast(String(err), 'error'))
+			.catch((err) => addToast(bmcError(err), 'error'))
 			.finally(() => (busy = false));
 	}
 

@@ -60,6 +60,20 @@ fn hpe_overview_without_allowable_values() {
 }
 
 #[test]
+fn more_vendors_and_action_info() {
+    assert_eq!(vendor(&json!({"Vendor": "Lenovo", "Oem": {"Lenovo": {}}})), "lenovo");
+    assert_eq!(vendor(&json!({"Vendor": "Supermicro"})), "supermicro");
+    assert_eq!(vendor(&json!({"Vendor": "AMI"})), "ami");
+    assert_eq!(vendor(&json!({"Oem": {"Ami": {}}})), "ami");
+    assert_eq!(vendor(&json!({"Vendor": "Fujitsu", "Oem": {"ts_fujitsu": {}}})), "fujitsu");
+    assert_eq!(vendor(&json!({"Vendor": "OpenBMC"})), "openbmc");
+    let info = json!({"@odata.id": "/redfish/v1/Systems/1/ResetActionInfo",
+        "Parameters": [{"Name": "ResetType", "Required": true, "DataType": "String", "AllowableValues": ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn"]}]});
+    assert_eq!(action_info_values(&info, "ResetType").len(), 7);
+    assert!(action_info_values(&info, "Other").is_empty());
+}
+
+#[test]
 fn classic_sensors() {
     let thermal = json!({
         "Temperatures": [

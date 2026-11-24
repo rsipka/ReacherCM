@@ -163,9 +163,28 @@ impl BmcConn {
         }
     }
 
+    /// An action's allowable values for `param`: on the action itself, or
+    /// in the `ActionInfo` resource it links to.
+    async fn allowed(&self, resource: &Value, action: &str, param: &str) -> Vec<String> {
+        let a = &resource["Actions"][action];
+        let inline = allowable(a, param);
+        if !inline.is_empty() {
+            return inline;
+        }
+        match a["@Redfish.ActionInfo"].as_str().filter(|p| client::valid_path(p)) {
+            Some(info) => self.client.get(info).await.map(|i| action_info_values(&i, param)).unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+
     pub async fn overview(self: &Arc<Self>) -> Result<Overview, BmcError> {
         let (system, manager, sensors) = tokio::join!(self.system(), self.manager(), self.sensors());
-        let mut o = overview(&self.root, &system?, &manager);
+        let system = system?;
+        let mut o = overview(&self.root, &system, &manager);
+        let from_info = self.allowed(&system, "#ComputerSystem.Reset", "ResetType").await;
+        if !from_info.is_empty() {
+            o.reset_types = from_info;
+        }
         if let Ok(sensors) = sensors {
             o.power_watts = sensors.power_watts;
             o.inlet_temp = inlet(&sensors.temperatures);
@@ -294,7 +313,7 @@ impl BmcConn {
     pub async fn power(&self, reset_type: &str) -> Result<Option<String>, BmcError> {
         let sys = self.system().await?;
         let target = action_target(&sys, "#ComputerSystem.Reset").ok_or_else(|| BmcError::Other("This server has no power control".into()))?;
-        let allowed = allowable(&sys["Actions"]["#ComputerSystem.Reset"], "ResetType");
+        let allowed = self.allowed(&sys, "#ComputerSystem.Reset", "ResetType").await;
         let known = ["On", "ForceOff", "GracefulShutdown", "GracefulRestart", "ForceRestart", "Nmi", "ForceOn", "PushPowerButton", "PowerCycle"];
         if !(allowed.iter().any(|a| a == reset_type) || (allowed.is_empty() && known.contains(&reset_type))) {
             return Err(BmcError::Other(format!("The server does not offer {reset_type}")));
@@ -361,7 +380,7 @@ impl BmcConn {
         let m = self.manager.as_ref().ok_or_else(|| BmcError::Other("No BMC found".into()))?;
         let mgr = self.client.get(m).await?;
         let target = action_target(&mgr, "#Manager.Reset").ok_or_else(|| BmcError::Other("The BMC cannot be restarted from here".into()))?;
-        let allowed = allowable(&mgr["Actions"]["#Manager.Reset"], "ResetType");
+        let allowed = self.allowed(&mgr, "#Manager.Reset", "ResetType").await;
         let body = if allowed.iter().any(|a| a == "GracefulRestart") {
             json!({ "ResetType": "GracefulRestart" })
         } else if let Some(a) = allowed.first() {
