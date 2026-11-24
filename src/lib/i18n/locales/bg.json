@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Излезте, преди да свържете друг акаунт.",
   "sync_account.error_browser": "Браузърът не може да бъде отворен.",
   "sync_account.error_expired": "Заявката за влизане изтече. Опитайте отново.",
-  "sync_account.error_label": "Въведете име на устройство до 64 знака."
+  "sync_account.error_label": "Въведете име на устройство до 64 знака.",
+  "sync_account.sync_preferences": "Синхронизиране на предпочитанията",
+  "sync_account.sync_preferences_desc": "Синхронизира езика, основния режим на темата и стила на курсора на терминала между свързаните устройства.",
+  "sync_account.sync_now": "Синхронизирай сега",
+  "sync_account.syncing": "Синхронизиране на предпочитанията…"
 }

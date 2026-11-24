@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Melden Sie sich ab, bevor Sie ein anderes Konto verbinden.",
   "sync_account.error_browser": "Der Systembrowser konnte nicht geöffnet werden.",
   "sync_account.error_expired": "Die Anmeldung ist abgelaufen. Versuchen Sie es erneut.",
-  "sync_account.error_label": "Geben Sie einen Gerätenamen mit bis zu 64 Zeichen ein."
+  "sync_account.error_label": "Geben Sie einen Gerätenamen mit bis zu 64 Zeichen ein.",
+  "sync_account.sync_preferences": "Einstellungen synchronisieren",
+  "sync_account.sync_preferences_desc": "Sprache, grundlegenden Darstellungsmodus und Terminalcursor auf angemeldeten Geräten synchronisieren.",
+  "sync_account.sync_now": "Jetzt synchronisieren",
+  "sync_account.syncing": "Einstellungen werden synchronisiert…"
 }

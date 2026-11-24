@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Před připojením jiného účtu se odhlaste.",
   "sync_account.error_browser": "Nepodařilo se otevřít systémový prohlížeč.",
   "sync_account.error_expired": "Platnost požadavku na přihlášení vypršela. Zkuste to znovu.",
-  "sync_account.error_label": "Zadejte název zařízení o délce nejvýše 64 znaků."
+  "sync_account.error_label": "Zadejte název zařízení o délce nejvýše 64 znaků.",
+  "sync_account.sync_preferences": "Synchronizovat předvolby",
+  "sync_account.sync_preferences_desc": "Synchronizuje jazyk, základní režim vzhledu a styl kurzoru terminálu mezi přihlášenými zařízeními.",
+  "sync_account.sync_now": "Synchronizovat nyní",
+  "sync_account.syncing": "Synchronizace předvoleb…"
 }

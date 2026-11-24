@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Esci prima di collegare un altro account.",
   "sync_account.error_browser": "Impossibile aprire il browser di sistema.",
   "sync_account.error_expired": "La richiesta di accesso è scaduta. Riprova.",
-  "sync_account.error_label": "Inserisci un nome di dispositivo di massimo 64 caratteri."
+  "sync_account.error_label": "Inserisci un nome di dispositivo di massimo 64 caratteri.",
+  "sync_account.sync_preferences": "Sincronizza preferenze",
+  "sync_account.sync_preferences_desc": "Sincronizza lingua, modalità del tema di base e stile del cursore del terminale sui dispositivi connessi.",
+  "sync_account.sync_now": "Sincronizza ora",
+  "sync_account.syncing": "Sincronizzazione delle preferenze…"
 }

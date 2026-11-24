@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Αποσυνδεθείτε πριν συνδέσετε άλλον λογαριασμό.",
   "sync_account.error_browser": "Δεν ήταν δυνατό να ανοίξει ο περιηγητής.",
   "sync_account.error_expired": "Το αίτημα σύνδεσης έληξε. Δοκιμάστε ξανά.",
-  "sync_account.error_label": "Εισαγάγετε όνομα συσκευής έως 64 χαρακτήρες."
+  "sync_account.error_label": "Εισαγάγετε όνομα συσκευής έως 64 χαρακτήρες.",
+  "sync_account.sync_preferences": "Συγχρονισμός προτιμήσεων",
+  "sync_account.sync_preferences_desc": "Συγχρονίζει τη γλώσσα, τη βασική εμφάνιση και τον δρομέα του τερματικού στις συνδεδεμένες συσκευές.",
+  "sync_account.sync_now": "Συγχρονισμός τώρα",
+  "sync_account.syncing": "Συγχρονισμός προτιμήσεων…"
 }

@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Déconnectez-vous avant d’associer un autre compte.",
   "sync_account.error_browser": "Impossible d’ouvrir le navigateur système.",
   "sync_account.error_expired": "La demande de connexion a expiré. Réessayez.",
-  "sync_account.error_label": "Saisissez un nom d’appareil de 64 caractères maximum."
+  "sync_account.error_label": "Saisissez un nom d’appareil de 64 caractères maximum.",
+  "sync_account.sync_preferences": "Synchroniser les préférences",
+  "sync_account.sync_preferences_desc": "Synchronise la langue, le mode de thème de base et le style du curseur du terminal entre les appareils connectés.",
+  "sync_account.sync_now": "Synchroniser maintenant",
+  "sync_account.syncing": "Synchronisation des préférences…"
 }

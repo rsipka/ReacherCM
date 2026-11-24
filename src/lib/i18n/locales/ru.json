@@ -4129,5 +4129,9 @@
   "sync_account.error_existing": "Выйдите, прежде чем подключить другой аккаунт.",
   "sync_account.error_browser": "Не удалось открыть системный браузер.",
   "sync_account.error_expired": "Срок действия запроса на вход истёк. Попробуйте снова.",
-  "sync_account.error_label": "Введите имя устройства длиной до 64 символов."
+  "sync_account.error_label": "Введите имя устройства длиной до 64 символов.",
+  "sync_account.sync_preferences": "Синхронизировать настройки",
+  "sync_account.sync_preferences_desc": "Синхронизирует язык, базовый режим оформления и стиль курсора терминала между подключёнными устройствами.",
+  "sync_account.sync_now": "Синхронизировать сейчас",
+  "sync_account.syncing": "Синхронизация настроек…"
 }

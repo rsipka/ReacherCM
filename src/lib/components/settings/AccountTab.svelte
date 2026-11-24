@@ -3,13 +3,11 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { t } from '#lib/state/i18n.svelte.js';
 
-	interface Account {
-		server: string;
-		username: string;
-		deviceId: string;
-	}
+	import {
+		bindPreferenceAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
+	} from '#lib/state/preference-sync.svelte.js';
 
-	let account = $state<Account | null>(null);
+	let account = $state<SyncAccount | null>(null);
 	let server = $state('');
 	let label = $state('');
 	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | null>('load');
@@ -18,10 +16,19 @@
 
 	onMount(() => { void load(); });
 
+	$effect(() => {
+		if (preferenceSync.error === 'sync_account.error_revoked' && account && action === null) {
+			error = preferenceSync.error;
+			account = null;
+			bindPreferenceAccount(null);
+		}
+	});
+
 	async function load(): Promise<void> {
 		try {
-			account = await invoke<Account | null>('sync_account_status');
+			account = await invoke<SyncAccount | null>('sync_account_status');
 			if (account) server = account.server;
+			bindPreferenceAccount(account);
 		} catch (cause) {
 			error = errorKey(cause);
 		} finally {
@@ -41,8 +48,9 @@
 		error = '';
 		message = 'sync_account.browser_pending';
 		try {
-			account = await invoke<Account>('sync_account_sign_in', { server, label });
+			account = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
 			server = account.server;
+			bindPreferenceAccount(account);
 			message = '';
 		} catch (cause) {
 			error = errorKey(cause);
@@ -57,11 +65,14 @@
 		error = '';
 		message = '';
 		try {
-			account = await invoke<Account>('sync_account_check');
+			account = await invoke<SyncAccount>('sync_account_check');
 			message = 'sync_account.connected';
 		} catch (cause) {
 			error = errorKey(cause);
-			if (error === 'sync_account.error_revoked') account = null;
+			if (error === 'sync_account.error_revoked') {
+				account = null;
+				bindPreferenceAccount(null);
+			}
 		} finally {
 			action = null;
 		}
@@ -74,6 +85,7 @@
 		try {
 			const revoked = await invoke<boolean>('sync_account_sign_out');
 			account = null;
+			bindPreferenceAccount(null);
 			if (!revoked) message = 'sync_account.signed_out_locally';
 		} catch (cause) {
 			error = errorKey(cause);
@@ -102,6 +114,21 @@
 			<button type="button" disabled={action !== null} onclick={check}>{t('sync_account.check')}</button>
 			<button type="button" disabled={action !== null} onclick={signOut}>{t('sync_account.sign_out')}</button>
 		</div>
+		<div class="preferences">
+			<label>
+				<input type="checkbox" checked={preferenceSync.enabled}
+					disabled={action !== null || preferenceSync.error === 'sync_account.error_revoked'}
+					onchange={(event) => setPreferenceSync(event.currentTarget.checked)} />
+				<span>{t('sync_account.sync_preferences')}</span>
+			</label>
+			<p>{t('sync_account.sync_preferences_desc')}</p>
+			{#if preferenceSync.enabled}
+				<button type="button" disabled={preferenceSync.syncing || action !== null}
+					onclick={() => void syncPreferences()}>{t('sync_account.sync_now')}</button>
+			{/if}
+			{#if preferenceSync.syncing}<p role="status">{t('sync_account.syncing')}</p>{/if}
+			{#if preferenceSync.error}<p class="error" role="alert">{t(preferenceSync.error)}</p>{/if}
+		</div>
 	{:else if action === 'load'}
 		<p role="status">{t('sync_account.loading')}</p>
 	{:else}
@@ -125,7 +152,7 @@
 <style>
 	.account { padding: 14px 0; }
 	form { display: grid; gap: 8px; max-width: 30rem; }
-	input {
+	form input {
 		width: 100%;
 		padding: 7px 9px;
 		border-radius: 6px;
@@ -151,5 +178,9 @@
 	button.primary { background: var(--color-accent-fill); border-color: transparent; color: white; }
 	button:disabled { opacity: 0.6; cursor: default; }
 	p { margin: 10px 0 0; color: var(--color-text-secondary); }
+	.preferences { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+	.preferences label { display: flex; align-items: center; gap: 7px; }
+	.preferences label input { accent-color: var(--color-accent); }
+	.preferences button { margin-top: 8px; }
 	.error { color: var(--color-danger); }
 </style>
