@@ -1,6 +1,6 @@
 {
   "name": "reach",
-  "version": "26.11.1-dev.8",
+  "version": "26.11.1-dev.9",
   "private": true,
   "license": "GPL-3.0-or-later",
   "description": "Reacher CM, a personal fork of Reach with additional features: cross-platform SSH and remote management tool",
