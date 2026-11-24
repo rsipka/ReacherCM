@@ -46,8 +46,8 @@ struct CachedAccess {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountView {
-    server: String,
-    username: String,
+    pub(crate) server: String,
+    pub(crate) username: String,
     device_id: String,
 }
 
@@ -71,7 +71,7 @@ struct Identity {
     device_id: String,
 }
 
-fn origin(input: &str) -> Result<Url> {
+pub(crate) fn origin(input: &str) -> Result<Url> {
     const ERROR: &str = "sync_account.error_url";
     let url = Url::parse(input.trim()).map_err(|_| ERROR)?;
     let loopback = match url.host() {
@@ -515,9 +515,48 @@ pub async fn sync_account_preferences(
     device_id: String,
     patch: Option<PreferencePatch>,
 ) -> Result<PreferenceSnapshot> {
+    let response = account_request(
+        |account| account.device_id == device_id,
+        |http, server| {
+            let url = endpoint(server, "/api/v1/preferences");
+            match &patch {
+                Some(patch) => http.patch(url).json(patch),
+                None => http.get(url),
+            }
+        },
+    )
+    .await?;
+    let status = response.status();
+    if status != StatusCode::OK && status != StatusCode::CONFLICT {
+        return Err(SERVER_ERROR);
+    }
+    let mut snapshot = response
+        .json::<PreferenceSnapshot>()
+        .await
+        .map_err(|_| SERVER_ERROR)?;
+    snapshot.conflict = status == StatusCode::CONFLICT;
+    Ok(snapshot)
+}
+
+pub(crate) async fn vault_request(
+    server: &Url,
+    username: &str,
+    request: impl Fn(&Client) -> reqwest::RequestBuilder,
+) -> Result<Response> {
+    account_request(
+        |account| account.username == username && account.server == server.as_str(),
+        |http, _| request(http),
+    )
+    .await
+}
+
+async fn account_request(
+    matches: impl Fn(&AccountView) -> bool,
+    request: impl Fn(&Client, &Url) -> reqwest::RequestBuilder,
+) -> Result<Response> {
     let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
     let mut stored = saved()?.ok_or(REVOKED)?;
-    if stored.account.device_id != device_id {
+    if !matches(&stored.account) {
         return Err(REVOKED);
     }
     let server = origin(&stored.account.server)?;
@@ -528,7 +567,7 @@ pub async fn sync_account_preferences(
         .as_ref()
         .filter(|entry| {
             entry.server == server
-                && entry.device_id == device_id
+                && entry.device_id == stored.account.device_id
                 && entry.valid_until > Instant::now()
         })
         .map(|entry| entry.token.clone());
@@ -537,11 +576,7 @@ pub async fn sync_account_preferences(
         None => remember_access(&server, refresh_access(&http, &server, &mut stored).await?).await,
     };
     for attempt in 0..2 {
-        let url = endpoint(&server, "/api/v1/preferences");
-        let request = match &patch {
-            Some(patch) => http.patch(url).json(patch),
-            None => http.get(url),
-        };
+        let request = request(&http, &server);
         let response = request
             .bearer_auth(access.as_str())
             .send()
@@ -558,17 +593,42 @@ pub async fn sync_account_preferences(
             clear_account().await?;
             return Err(REVOKED);
         }
-        if status != StatusCode::OK && status != StatusCode::CONFLICT {
-            return Err(SERVER_ERROR);
-        }
-        let mut snapshot = response
-            .json::<PreferenceSnapshot>()
-            .await
-            .map_err(|_| SERVER_ERROR)?;
-        snapshot.conflict = status == StatusCode::CONFLICT;
-        return Ok(snapshot);
+        return Ok(response);
     }
     Err(SERVER_ERROR)
+}
+
+#[cfg(test)]
+pub(crate) async fn seed_vault_test_account(server: &str, username: &str) -> AccountView {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let server = origin(server).unwrap();
+    let account = AccountView {
+        server: server.to_string(),
+        username: username.into(),
+        device_id: random_token(),
+    };
+    let refresh = random_token();
+    save(&StoredAccount {
+        account: account.clone(),
+        refresh: refresh.clone(),
+    })
+    .unwrap();
+    remember_access(
+        &server,
+        Tokens {
+            access_token: random_token(),
+            refresh_token: refresh,
+            device_id: account.device_id.clone(),
+            expires_in: 900,
+        },
+    )
+    .await;
+    account
+}
+
+#[cfg(test)]
+pub(crate) async fn clear_vault_test_account() {
+    clear_account().await.unwrap();
 }
 
 #[cfg(test)]

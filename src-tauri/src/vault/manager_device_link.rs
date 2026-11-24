@@ -11,6 +11,7 @@ use super::*;
 
 /// What a link code starts with, so a plain backup key is told apart.
 pub const LINK_PREFIX: &str = "reachercm-link1:";
+const ACCOUNT_LINK_PREFIX: &str = "reachercm-account-link1:";
 
 #[derive(Serialize, Deserialize)]
 struct DeviceLink {
@@ -35,7 +36,7 @@ struct DeviceLink {
 
 /// Whether `text` is a link code rather than a plain backup key.
 pub fn is_link_code(text: &str) -> bool {
-    text.trim().starts_with(LINK_PREFIX)
+    text.trim().starts_with(LINK_PREFIX) || text.trim().starts_with(ACCOUNT_LINK_PREFIX)
 }
 
 fn parse(code: &str) -> Result<DeviceLink, VaultError> {
@@ -43,6 +44,7 @@ fn parse(code: &str) -> Result<DeviceLink, VaultError> {
     let body = code
         .trim()
         .strip_prefix(LINK_PREFIX)
+        .or_else(|| code.trim().strip_prefix(ACCOUNT_LINK_PREFIX))
         .ok_or_else(|| VaultError::SerializationError("This is not a device link code".into()))?;
     // A code pasted from a chat may have been wrapped across lines.
     let body: String = body.chars().filter(|c| !c.is_whitespace()).collect();
@@ -64,10 +66,11 @@ impl VaultManager {
         let data = tokio::fs::read_to_string(self.app_dir.join("vault_identity.json")).await?;
         let stored: StoredIdentity = serde_json::from_str(&data)?;
 
+        let account = self.personal_sync_url.as_deref().is_some_and(|url| url.starts_with("reachercm-sync:"));
         let user_vaults: Vec<StoredVaultRef> = self
             .user_vaults
             .iter()
-            .filter(|v| v.sync_url.is_some() && v.sync_token.is_some())
+            .filter(|v| !account && v.sync_url.is_some() && v.sync_token.is_some())
             .cloned()
             .collect();
         let has_personal = self.personal_sync_url.is_some() && self.personal_sync_token.is_some();
@@ -100,7 +103,8 @@ impl VaultManager {
             user_vaults,
         };
         let json = zeroize::Zeroizing::new(serde_json::to_vec(&link)?);
-        Ok(format!("{}{}", LINK_PREFIX, URL_SAFE_NO_PAD.encode(&*json)))
+        let prefix = if account { ACCOUNT_LINK_PREFIX } else { LINK_PREFIX };
+        Ok(format!("{}{}", prefix, URL_SAFE_NO_PAD.encode(&*json)))
     }
 
     /// Make this device another device of the identity in `code` and open
@@ -108,6 +112,7 @@ impl VaultManager {
     /// its key stays in the OS keychain and its files stay on disk, but it
     /// no longer opens.
     pub async fn link_device(&mut self, code: &str) -> Result<String, VaultError> {
+        let account = code.trim().starts_with(ACCOUNT_LINK_PREFIX);
         let link = parse(code)?;
         let secret = zeroize::Zeroizing::new(
             BASE64
@@ -127,6 +132,36 @@ impl VaultManager {
             crate::vault::sync::check_sync_url(url)?;
         }
 
+        if link.personal_sync_url.as_deref().is_some_and(|url| url.starts_with("reachercm-sync:")) != account {
+            return Err(VaultError::SerializationError("Invalid Reacher CM Sync link".into()));
+        }
+        let path = self.app_dir.join("vault_identity.json");
+        let prior = if account {
+            #[cfg(not(desktop))]
+            return Err(VaultError::SyncError("Reacher CM Sync vaults require the desktop app".into()));
+            #[cfg(desktop)]
+            {
+                self.prepare_account_link(&link, &sk).await?;
+                if path.exists() {
+                    let data = tokio::fs::read(&path).await?;
+                    let backup = self.app_dir.join(format!("vault_identity.before-sync-link-{}.json", uuid::Uuid::new_v4()));
+                    private_fs::write_async(&backup, data.clone()).await?;
+                    Some(data)
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        if let Err(error) = store_key_in_keychain(&link.user_uuid, &sk[..]) {
+            if account && link.encrypted_key.is_empty() {
+                return Err(error);
+            }
+            tracing::warn!("Linked without the OS keychain ({error}); the master password opens it");
+        }
+
         // Forget the identity this device had.
         self.vaults.clear();
         self.vault_names.clear();
@@ -139,10 +174,6 @@ impl VaultManager {
         self.internal_vault_ids.clear();
         self.user_vaults.clear();
         self.device_id = None;
-
-        if let Err(e) = store_key_in_keychain(&link.user_uuid, &*sk) {
-            tracing::warn!("Linked without the OS keychain ({e}); the master password opens it");
-        }
 
         // The file never holds a token in the clear: it is written without
         // them, and the unlock below seals them into it.
@@ -161,7 +192,6 @@ impl VaultManager {
             device_id: None,
         };
         private_fs::private_dir(&self.app_dir)?;
-        let path = self.app_dir.join("vault_identity.json");
         private_fs::write_async(&path, serde_json::to_string_pretty(&stored)?.into_bytes()).await?;
 
         let with_tokens = StoredIdentity {
@@ -169,8 +199,83 @@ impl VaultManager {
             user_vaults: link.user_vaults,
             ..stored
         };
-        self.open_with_secret_key(with_tokens, &*sk).await?;
+        let opened = async {
+            self.open_with_secret_key(with_tokens, &sk[..]).await?;
+            if account {
+                let id = self.internal_vault_ids.get("__personal__").ok_or(VaultError::Locked)?;
+                let target = self.sync_targets(Some(id))?.into_iter().next().ok_or(VaultError::Locked)?;
+                sync_engine::sync(&target).await?;
+            }
+            Ok::<_, VaultError>(())
+        }.await;
+        if let Err(error) = opened {
+            if account {
+                if let Some(prior) = prior {
+                    private_fs::write_async(&path, prior).await?;
+                } else {
+                    tokio::fs::remove_file(&path).await?;
+                }
+                // Force a normal unlock of the restored identity.
+                self.vaults.clear();
+                self.vault_names.clear();
+                self.user_vaults.clear();
+                self.internal_vault_ids.clear();
+                self.personal_sync_url = None;
+                self.personal_sync_token = None;
+                self.user_uuid = None;
+                self.identity_public_key = None;
+                self.device_id = None;
+                self.lock();
+            }
+            return Err(error);
+        }
         self.held = false;
         Ok(link.user_uuid)
+    }
+}
+
+#[cfg(desktop)]
+impl VaultManager {
+    async fn prepare_account_link(&self, link: &DeviceLink, secret: &[u8; 32]) -> Result<(), VaultError> {
+        use crate::vault::sync_account_store::AccountTarget;
+        let invalid = || VaultError::SerializationError("Invalid Reacher CM Sync vault link".into());
+        if !link.user_vaults.is_empty() {
+            return Err(invalid());
+        }
+        let target = AccountTarget::parse(
+            link.personal_sync_url.as_deref().ok_or_else(invalid)?,
+            link.personal_sync_token.as_deref().ok_or_else(invalid)?,
+        )?;
+        let id = target.vault_id.to_string();
+        if link.internal_vault_ids.get("__personal__") != Some(&id)
+            || link.internal_vault_ids.iter().any(|(name, value)| {
+                (name != "__personal__" && !INTERNAL_VAULTS.contains(&name.as_str())) || value != &id
+            })
+        {
+            return Err(invalid());
+        }
+        let salt: [u8; 32] = BASE64.decode(&link.salt).map_err(|_| invalid())?
+            .try_into().map_err(|_| invalid())?;
+        let (data, _) = target.get().await?.ok_or_else(|| VaultError::NotFound("personal vault on sync server".into()))?;
+        let (header, _) = crate::vault::sync_bundle::read_header(&data)?;
+        let (libsql::Value::Text(header_id), libsql::Value::Text(name), libsql::Value::Text(owner),
+            libsql::Value::Text(kind), libsql::Value::Text(wrapped)) =
+            (&header[0], &header[1], &header[3], &header[5], &header[6]) else { return Err(invalid()); };
+        if header_id != &id || name != "__personal__" || owner != &link.user_uuid
+            || !matches!(serde_json::from_str::<VaultType>(kind)?, VaultType::Private)
+        {
+            return Err(invalid());
+        }
+        let kek = derive_kek_from_secret_key(secret, &salt)?;
+        let master = unwrap_dek(&kek, &serde_json::from_str::<WrappedDek>(wrapped)?)?;
+        let key = sync_record::RecordKey::derive(&master, &id)?;
+        let (header, members) = crate::vault::sync_bundle::verify(&key, &data)?;
+        let dir = self.app_dir.join("vaults");
+        private_fs::private_dir(&dir)?;
+        let db = dir.join(format!("{id}.db"));
+        if !db.exists() {
+            Self::write_bootstrap_header(&db, &header, &members).await?;
+        }
+        Ok(())
     }
 }

@@ -131,6 +131,8 @@ pub struct VaultConnection {
     pub auth_token: Option<String>,
 }
 
+pub(crate) static SYNC_OPERATIONS: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
+
 /// Sync every synced vault, or only `only`, with its backend. The manager is
 /// held only to gather what each sync needs and to read the results, never
 /// while a backend answers. Returns the vaults whose contents changed, and
@@ -140,6 +142,7 @@ pub async fn sync_vaults(
     only: Option<&str>,
     timed: bool,
 ) -> (Vec<String>, Vec<(String, VaultError)>) {
+    let _operation = SYNC_OPERATIONS.read().await;
     let targets = match manager.lock().await.sync_targets(only) {
         Ok(t) => t,
         Err(e) => return (Vec::new(), vec![(only.unwrap_or_default().to_string(), e)]),
@@ -2021,6 +2024,14 @@ impl VaultManager {
                 )))
             }
         };
+        Self::write_bootstrap_header(db_path, &header, &members).await
+    }
+
+    async fn write_bootstrap_header(
+        db_path: &std::path::Path,
+        header: &[libsql::Value],
+        members: &[Vec<libsql::Value>],
+    ) -> Result<(), VaultError> {
         let tmp = db_path.with_extension("db.new");
         let _ = std::fs::remove_file(&tmp);
         {
@@ -2028,7 +2039,7 @@ impl VaultManager {
             let conn = local_connect(&db)?;
             init_schema(&conn).await?;
             sync_local::init(&conn).await?;
-            sync_engine::mirror_header(&conn, &header, &members).await?;
+            sync_engine::mirror_header(&conn, header, members).await?;
         }
         std::fs::rename(&tmp, db_path)?;
         private_fs::restrict_file(db_path)?;
@@ -3906,3 +3917,7 @@ pub mod device_link;
 #[cfg(test)]
 #[path = "manager_device_link_tests.rs"]
 mod device_link_tests;
+
+#[cfg(desktop)]
+#[path = "manager_account_sync.rs"]
+mod account_sync;

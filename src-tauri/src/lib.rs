@@ -456,6 +456,8 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.invoke_handler(refuse_web_pages(tauri::generate_handler![
+            vault_enable_account_sync,
+            vault_account_sync_enabled,
             sync_account_status,
             sync_account_sign_in,
             sync_account_cancel,
