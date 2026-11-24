@@ -104,13 +104,17 @@ fn endpoint(origin: &Url, path: &str) -> Url {
 }
 
 fn http(origin: &Url) -> Result<Client> {
+    http_builder(origin).build().map_err(|_| SERVER_ERROR)
+}
+
+fn http_builder(origin: &Url) -> reqwest::ClientBuilder {
     let mut builder = crate::http::client_builder()
         .timeout(Duration::from_secs(12))
         .redirect(reqwest::redirect::Policy::none());
     if origin.scheme() == "http" {
         builder = builder.no_proxy();
     }
-    builder.build().map_err(|_| SERVER_ERROR)
+    builder
 }
 
 #[cfg(any(not(target_os = "android"), test))]
@@ -816,6 +820,10 @@ pub(crate) async fn seed_vault_test_tokens(
 pub(crate) async fn clear_vault_test_account() {
     clear_account().await.unwrap();
 }
+
+#[cfg(test)]
+#[path = "sync_account_tls_tests.rs"]
+mod tls_tests;
 
 #[cfg(test)]
 mod tests {
