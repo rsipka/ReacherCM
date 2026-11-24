@@ -19,6 +19,7 @@
  */
 
 import { safeInsets } from '#lib/edges.js';
+import { isIos } from '#lib/platform.js';
 
 /** One row of the list: an option, or the heading of an <optgroup>. */
 export interface MenuRow {
@@ -95,6 +96,8 @@ function selectOf(target: EventTarget | null): HTMLSelectElement | null {
 const GAP = 4;
 const MARGIN = 8;
 const MAX_HEIGHT = 320;
+/** How far a finger may move and still count as a tap, not a scroll. */
+const TAP_SLOP = 10;
 
 let ids = 0;
 
@@ -253,12 +256,38 @@ export function installSelectMenus(): () => void {
 		const s = selectOf(e.target);
 		if (s && e.button === 0) {
 			e.preventDefault();
-			s.focus();
+			// Focusing a select on iOS opens the system picker over this list.
+			if (!ios) s.focus();
 			if (select === s) close();
 			else open(s);
 			return;
 		}
 		close();
+	}
+
+	// iOS opens its own picker wheel when a select is tapped or focused, and
+	// a prevented mousedown does not stop it: the mouse events come after the
+	// touch, too late. So on iOS the tap is taken at touchend, whose default
+	// is the focus and the picker, and the select is never focused.
+	const ios = isIos();
+	let touchAt: { x: number; y: number } | null = null;
+
+	function onTouchStart(e: TouchEvent) {
+		const t = e.touches[0];
+		touchAt = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY } : null;
+	}
+
+	function onTouchEnd(e: TouchEvent) {
+		const start = touchAt;
+		touchAt = null;
+		if (menu?.contains(e.target as Node)) return;
+		const s = selectOf(e.target);
+		if (!s || !start) return;
+		const t = e.changedTouches[0];
+		if (!t || Math.hypot(t.clientX - start.x, t.clientY - start.y) > TAP_SLOP) return;
+		e.preventDefault();
+		if (select === s) close();
+		else open(s);
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
@@ -356,6 +385,10 @@ export function installSelectMenus(): () => void {
 	// Capture, on window: ahead of dialogs and shortcuts, so Escape closes the
 	// list rather than the dialog under it.
 	window.addEventListener('mousedown', onMouseDown, true);
+	if (ios) {
+		window.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+		window.addEventListener('touchend', onTouchEnd, { capture: true, passive: false });
+	}
 	window.addEventListener('keydown', onKeyDown, true);
 	window.addEventListener('scroll', onScroll, true);
 	window.addEventListener('resize', onBlur);
@@ -363,6 +396,8 @@ export function installSelectMenus(): () => void {
 	return () => {
 		close();
 		window.removeEventListener('mousedown', onMouseDown, true);
+		window.removeEventListener('touchstart', onTouchStart, true);
+		window.removeEventListener('touchend', onTouchEnd, true);
 		window.removeEventListener('keydown', onKeyDown, true);
 		window.removeEventListener('scroll', onScroll, true);
 		window.removeEventListener('resize', onBlur);
