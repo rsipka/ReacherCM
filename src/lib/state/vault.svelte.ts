@@ -204,14 +204,24 @@ export async function importIdentity(secretKey: string): Promise<string> {
 /** Make this device another device of the identity in a link code. */
 export async function linkDevice(code: string): Promise<string> {
 	const uuid = await vaultIpc.linkDevice(code);
-	forgetDevOpsProjects();
-	vaultState.locked = false;
-	vaultState.hasIdentity = true;
-	vaultState.userUuid = uuid;
-	vaultState.publicKey = await vaultIpc.getPublicKey();
-	await refreshVaults();
-	restoreLocalSettingsFromVault();
+	await refreshAfterIdentitySwitch();
 	return uuid;
+}
+
+export async function restoreLocalBeforeLink(): Promise<void> {
+	await vaultIpc.restoreLocalBeforeLink();
+	await refreshAfterIdentitySwitch();
+}
+
+async function refreshAfterIdentitySwitch(): Promise<void> {
+	forgetDevOpsProjects();
+	vaultState.activeVaultId = null;
+	vaultState.secrets.clear();
+	vaultState.vaults.clear();
+	vaultState.userUuid = null;
+	vaultState.publicKey = null;
+	await checkState();
+	window.dispatchEvent(new CustomEvent('reach:sessions-changed'));
 }
 
 export async function lock(): Promise<void> {

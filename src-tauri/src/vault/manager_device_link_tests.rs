@@ -86,3 +86,173 @@ async fn a_link_code_fits_in_a_qr_code() {
     assert!(matches!(qr.version(), qrcode::Version::Normal(v) if v <= 30), "{:?} for {} bytes", qr.version(), code.len());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn a_phone_can_join_and_sync_the_encrypted_account_vault() {
+    use crate::ipc::sync_account_commands::{
+        clear_vault_test_account, seed_vault_test_account, VAULT_TEST_ACCOUNT,
+    };
+    use crate::vault::sync_account_store::AccountTarget;
+    use axum::{
+        body::Bytes,
+        http::{header, HeaderMap, StatusCode},
+        response::IntoResponse,
+        routing::{get, post},
+        Router,
+    };
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    let _account_guard = VAULT_TEST_ACCOUNT.lock().await;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("seed-vault");
+    std::fs::create_dir(&folder).unwrap();
+
+    // Seed an existing encrypted personal bundle without the desktop-only
+    // wizard that moves a device's vault to an account server.
+    let mut source = VaultManager::new(dir.path().join("source"));
+    source.init_identity("source password").await.unwrap();
+    source
+        .set_personal_sync_config(
+            Some(format!("folder:{}", folder.display())),
+            Some(String::new()),
+        )
+        .await
+        .unwrap();
+    let vault = source.personal_vault_id().unwrap();
+    let record = source
+        .create_secret(
+            &vault,
+            "Already synced",
+            SecretCategory::Session,
+            SecretBox::new(Box::new(b"from desktop".to_vec())),
+        )
+        .await
+        .unwrap();
+    let seed = source.sync_targets(Some(&vault)).unwrap().pop().unwrap();
+    sync_engine::sync(&seed).await.unwrap();
+
+    let path = format!("/api/v1/vaults/{vault}");
+    let bytes = Arc::new(Mutex::new(
+        std::fs::read(folder.join(crate::vault::sync_store::FILE_NAME)).unwrap(),
+    ));
+    let receipt = Arc::new(Mutex::new(None::<String>));
+    let etag = |data: &[u8]| format!("\"{}\"", crate::vault::sync_store::revision_of(data));
+    let router = Router::new()
+        .route(
+            &format!("{path}/bundle"),
+            get({
+                let bytes = bytes.clone();
+                move || async move {
+                    let bytes = bytes.lock().await;
+                    ([(header::ETAG, etag(&bytes))], bytes.clone())
+                }
+            })
+            .put({
+                let bytes = bytes.clone();
+                move |headers: HeaderMap, next: Bytes| async move {
+                    let mut bytes = bytes.lock().await;
+                    if headers
+                        .get(header::IF_MATCH)
+                        .and_then(|tag| tag.to_str().ok())
+                        != Some(etag(&bytes).as_str())
+                    {
+                        return StatusCode::PRECONDITION_FAILED;
+                    }
+                    *bytes = next.to_vec();
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        )
+        .route(
+            &format!("{path}/applied"),
+            post({
+                let bytes = bytes.clone();
+                let receipt = receipt.clone();
+                move |headers: HeaderMap| async move {
+                    let revision = etag(&bytes.lock().await);
+                    if headers
+                        .get(header::IF_MATCH)
+                        .and_then(|tag| tag.to_str().ok())
+                        != Some(revision.as_str())
+                    {
+                        return StatusCode::PRECONDITION_FAILED.into_response();
+                    }
+                    *receipt.lock().await = Some(revision);
+                    StatusCode::NO_CONTENT.into_response()
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let server = format!("http://{}", listener.local_addr().unwrap());
+    let service = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+    let account = seed_vault_test_account(&server, "phone-vault-test").await;
+    let target =
+        AccountTarget::from_account(&account, uuid::Uuid::parse_str(&vault).unwrap()).unwrap();
+    source.personal_sync_url = Some(target.config());
+    source.personal_sync_token = Some(account.username);
+    source.save_identity_current().await.unwrap();
+    let code = source.export_device_link().await.unwrap();
+    assert!(device_link::is_account_link_code(&code));
+    assert!(
+        qrcode::QrCode::with_error_correction_level(code.as_bytes(), qrcode::EcLevel::L).is_ok()
+    );
+
+    let mut phone = VaultManager::new(dir.path().join("phone"));
+    phone.init_identity("phone password").await.unwrap();
+    phone.link_device(&code).await.unwrap();
+    assert_eq!(
+        phone
+            .read_secret(&vault, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"from desktop"
+    );
+    assert_eq!(
+        receipt.lock().await.as_deref(),
+        Some(etag(&bytes.lock().await).as_str())
+    );
+    phone
+        .update_secret(
+            &vault,
+            &record,
+            SecretBox::new(Box::new(b"from phone".to_vec())),
+        )
+        .await
+        .unwrap();
+    let phone = Mutex::new(phone);
+    let (_, failed) = sync_vaults(&phone, Some(&vault), false).await;
+    assert!(failed.is_empty(), "{failed:?}");
+    assert_eq!(
+        receipt.lock().await.as_deref(),
+        Some(etag(&bytes.lock().await).as_str())
+    );
+    let mut source_target = seed;
+    source_target.backend = sync_engine::Backend::Account(target);
+    // The seed came from this same local database. Point its bookkeeping
+    // at the fixture before reading back the phone's changes.
+    let local = sync_engine::open_local(&source_target.local_path)
+        .await
+        .unwrap();
+    sync_local::set_state(
+        &local,
+        sync_engine::STATE_BACKEND,
+        &source_target.backend.identity(),
+    )
+    .await
+    .unwrap();
+    sync_engine::sync(&source_target).await.unwrap();
+    assert_eq!(
+        source
+            .read_secret(&vault, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"from phone"
+    );
+
+    clear_vault_test_account().await;
+    service.abort();
+}

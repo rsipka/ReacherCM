@@ -77,7 +77,6 @@ pub enum Backend {
     Git(GitTarget),
     /// An S3 bucket, on Amazon or any S3-compatible store.
     S3(crate::vault::sync_s3::S3Target),
-    #[cfg(desktop)]
     Account(crate::vault::sync_account_store::AccountTarget),
 }
 
@@ -108,11 +107,14 @@ impl Backend {
     /// - anything else is a Turso URL.
     pub fn parse(url: &str, token: &str, app_dir: &Path) -> Result<Backend, VaultError> {
         let url = url.trim();
-        if url.starts_with("reachercm-sync:") || url.starts_with("reachercm-org:") {
+        if url.starts_with(crate::vault::sync_account_store::PREFIX) {
+            return crate::vault::sync_account_store::AccountTarget::parse(url, token).map(Backend::Account);
+        }
+        if url.starts_with(crate::vault::sync_account_store::ORG_PREFIX) {
             #[cfg(desktop)]
             return crate::vault::sync_account_store::AccountTarget::parse(url, token).map(Backend::Account);
             #[cfg(not(desktop))]
-            return Err(VaultError::SyncError("Reacher CM Sync vaults require the desktop app".into()));
+            return Err(VaultError::SyncError("Organization vaults are available on desktop".into()));
         }
         if let Some(path) = url.strip_prefix("folder:") {
             let path = PathBuf::from(path.trim());
@@ -226,7 +228,6 @@ impl Backend {
             Backend::Smb(_) => "smb",
             Backend::Git(_) => "git",
             Backend::S3(_) => "s3",
-            #[cfg(desktop)]
             Backend::Account(_) => "account",
         }
     }
@@ -249,7 +250,6 @@ impl Backend {
             Backend::Smb(t) => format!("smb:{}@{}:{}/{}/{}", t.user.to_ascii_lowercase(), t.server.to_ascii_lowercase(), t.port, t.share.to_ascii_lowercase(), t.path.to_ascii_lowercase()),
             Backend::Git(t) => format!("git:{}#{}", t.remote, t.branch),
             Backend::S3(t) => t.identity(),
-            #[cfg(desktop)]
             Backend::Account(t) => t.identity(),
         }
     }
@@ -263,7 +263,6 @@ impl Backend {
             Backend::Smb(t) => Store::smb(t).await?,
             Backend::Git(t) => Store::git(t).await?,
             Backend::S3(t) => Store::S3(crate::vault::sync_s3::S3Store::open(t)?),
-            #[cfg(desktop)]
             Backend::Account(t) => Store::Account(t.clone()),
         }))
     }
@@ -321,7 +320,6 @@ pub struct Report {
     pub conflicts: usize,
     /// Whether the backend is still in the legacy format.
     pub legacy: bool,
-    #[cfg(desktop)]
     pub(super) applied_revision: Option<String>,
 }
 
@@ -394,12 +392,10 @@ pub async fn sync(target: &Target) -> Result<Report, VaultError> {
 /// Sync and report the applied revision for an active account vault.
 pub async fn sync_with_receipt(target: &Target) -> Result<Report, VaultError> {
     let report = sync(target).await?;
-    #[cfg(desktop)]
     let report = report_applied(target, report).await;
     Ok(report)
 }
 
-#[cfg(desktop)]
 pub(super) async fn report_applied(target: &Target, mut report: Report) -> Report {
     if let (Backend::Account(account), Some(revision)) = (&target.backend, report.applied_revision.take()) {
         account.report_applied(&revision).await;

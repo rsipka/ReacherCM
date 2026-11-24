@@ -4307,5 +4307,9 @@
   "sync_account.pair_start": "Spárovat toto zařízení",
   "sync_account.pair_match": "Porovnejte tento kód na webovém portálu a potom tam zařízení schvalte.",
   "sync_account.pair_invalid": "Zadejte kód pro párování mobilního zařízení Reacher CM.",
-  "sync_account.pair_camera": "Ke skenování je potřeba přístup k fotoaparátu. Párovací kód můžete vložit ručně."
+  "sync_account.pair_camera": "Ke skenování je potřeba přístup k fotoaparátu. Párovací kód můžete vložit ručně.",
+  "sync_account.mobile_vault_link_help": "Na důvěryhodném zařízení se zapnutou synchronizací osobního trezoru otevřete Synchronizace a zálohy a zobrazte kód pro propojení trezoru. Na tomto zařízení jej naskenujte nebo vložte.",
+  "sync_account.vault_link_confirm": "Toto zařízení otevře propojený osobní trezor. Předchozí místní trezor zůstane v zařízení a můžete ho obnovit v části Synchronizace a zálohy.",
+  "sync_account.local_vault_restore": "Obnovit předchozí místní trezor",
+  "sync_account.local_vault_restore_confirm": "Znovu otevřít předchozí místní trezor? Propojený trezor zůstane na disku i na synchronizačním serveru. Možná budete potřebovat předchozí heslo."
 }

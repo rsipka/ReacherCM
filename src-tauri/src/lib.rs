@@ -807,6 +807,8 @@ pub fn run() {
             vault_import_identity,
             vault_export_device_link,
             vault_link_device,
+            vault_local_link_recovery_available,
+            vault_restore_local_before_link,
             qr_svg,
             vault_lock,
             vault_is_held,
@@ -1069,6 +1071,7 @@ pub fn run() {
     #[cfg(not(desktop))]
     {
         builder = builder.invoke_handler(refuse_web_pages(tauri::generate_handler![
+            vault_account_sync_enabled,
             sync_account_status,
             sync_account_pair_origin,
             sync_account_pair,
@@ -1372,6 +1375,8 @@ pub fn run() {
             vault_import_identity,
             vault_export_device_link,
             vault_link_device,
+            vault_local_link_recovery_available,
+            vault_restore_local_before_link,
             qr_svg,
             vault_lock,
             vault_is_held,

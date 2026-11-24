@@ -3,9 +3,9 @@
 	import Input from '#lib/components/shared/Input.svelte';
 	import SyncStatusSection from './SyncStatusSection.svelte';
 	import SyncBackendSection from './SyncBackendSection.svelte';
-	import { getSettings, saveSettings, exportIdentity, linkDevice } from '#lib/state/vault.svelte.js';
+	import { getSettings, saveSettings, exportIdentity, linkDevice, restoreLocalBeforeLink } from '#lib/state/vault.svelte.js';
 	import type { AppSettings } from '#lib/ipc/vault.js';
-	import { createTursoDatabase, createTursoDatabaseToken, setPersonalSync, acceptInvite, exportDeviceLink, listTursoPersonalDatabases, qrSvg } from '#lib/ipc/vault.js';
+	import { createTursoDatabase, createTursoDatabaseToken, setPersonalSync, acceptInvite, exportDeviceLink, listTursoPersonalDatabases, qrSvg, localLinkRecoveryAvailable } from '#lib/ipc/vault.js';
 	import { canScanLinkCode, scanLinkCode } from '#lib/state/link-scan.js';
 	import { vaultState } from '#lib/state/vault.svelte.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -36,6 +36,10 @@
 	let joinCode = $state('');
 	let joinArmed = $state(false);
 	let joining = $state(false);
+	let recoveryAvailable = $state(false);
+	let confirmRecovery = $state(false);
+	let restoringLocal = $state(false);
+	let accountLink = $derived(joinCode.trim().startsWith('reachercm-account-link1:'));
 	// Another device's personal database is in the organization: the next
 	// Save makes a separate one anyway.
 	let createAnyway = $state(false);
@@ -52,6 +56,7 @@
 	async function loadSettings() {
 		loading = true;
 		try {
+			recoveryAvailable = await localLinkRecoveryAvailable();
 			const settings = await getSettings();
 			tursoOrg = settings.tursoOrg ?? '';
 			tursoApiToken = settings.tursoApiToken ?? '';
@@ -204,6 +209,21 @@
 		}
 	}
 
+	async function restoreLocalVault(): Promise<void> {
+		restoringLocal = true;
+		error = '';
+		try {
+			await restoreLocalBeforeLink();
+			confirmRecovery = false;
+			recoveryAvailable = false;
+			if (!vaultState.locked) await loadSettings();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			restoringLocal = false;
+		}
+	}
+
 	function copyToClipboard(text: string) {
 		navigator.clipboard.writeText(text);
 		addToast(t('sync.copied_toast'), 'success');
@@ -316,7 +336,7 @@
 				/>
 			</div>
 			{#if joinArmed}
-				<p class="export-warning">{t('sync.join_confirm')}</p>
+				<p class="export-warning">{t(accountLink ? 'sync_account.vault_link_confirm' : 'sync.join_confirm')}</p>
 			{/if}
 			<div class="action-row">
 				{#if canScanLinkCode()}
@@ -329,6 +349,26 @@
 				</Button>
 			</div>
 		</div>
+
+		{#if recoveryAvailable}
+			<div class="section">
+				{#if confirmRecovery}
+					<p class="export-warning">{t('sync_account.local_vault_restore_confirm')}</p>
+					<div class="action-row">
+						<Button variant="danger" size="sm" onclick={restoreLocalVault} disabled={restoringLocal}>
+							{t('common.confirm')}
+						</Button>
+						<Button variant="secondary" size="sm" onclick={() => { confirmRecovery = false; }} disabled={restoringLocal}>
+							{t('common.cancel')}
+						</Button>
+					</div>
+				{:else}
+					<Button variant="secondary" size="sm" onclick={() => { confirmRecovery = true; }} disabled={joining}>
+						{t('sync_account.local_vault_restore')}
+					</Button>
+				{/if}
+			</div>
+		{/if}
 
 		<!-- Turso Sync Section -->
 		<div class="section">

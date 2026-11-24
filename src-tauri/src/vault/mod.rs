@@ -37,5 +37,4 @@ pub use types::{
     ShareItemResult, SharedItemInfo, SyncStatus, TursoDbInfo, VaultInfo, VaultType,
 };
 
-#[cfg(desktop)]
 pub(crate) mod sync_account_store;

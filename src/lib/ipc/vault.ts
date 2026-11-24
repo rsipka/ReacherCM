@@ -166,6 +166,14 @@ export async function linkDevice(code: string): Promise<string> {
 	return invoke<string>('vault_link_device', { code });
 }
 
+export async function localLinkRecoveryAvailable(): Promise<boolean> {
+	return invoke<boolean>('vault_local_link_recovery_available');
+}
+
+export async function restoreLocalBeforeLink(): Promise<void> {
+	return invoke('vault_restore_local_before_link');
+}
+
 export async function getPublicKey(): Promise<string | null> {
 	return invoke<string | null>('vault_get_public_key');
 }

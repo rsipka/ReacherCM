@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-static TEST_ACCOUNT: Mutex<()> = Mutex::const_new(());
+use crate::ipc::sync_account_commands::VAULT_TEST_ACCOUNT;
 
 #[derive(Default)]
 struct Remote {
@@ -19,6 +19,7 @@ struct Remote {
     bytes: Vec<u8>,
     revision: u64,
     writes_allowed: bool,
+    downloads_before_failure: Option<usize>,
 }
 
 impl Remote {
@@ -34,7 +35,14 @@ async fn list(State(remote): State<Shared>) -> impl IntoResponse {
 }
 
 async fn download(State(remote): State<Shared>, Path(id): Path<String>) -> Response {
-    let remote = remote.lock().await;
+    let mut remote = remote.lock().await;
+    if let Some(remaining) = remote.downloads_before_failure.as_mut() {
+        if *remaining == 0 {
+            remote.downloads_before_failure = None;
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+        *remaining -= 1;
+    }
     if remote.id.as_deref() != Some(&id) {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -84,7 +92,7 @@ async fn flush(manager: &VaultManager, id: &str) -> sync_engine::Report {
 async fn an_account_vault_migrates_and_links_without_exposing_records() {
     use crate::ipc::sync_account_commands::{clear_vault_test_account, seed_vault_test_account};
 
-    let _account_guard = TEST_ACCOUNT.lock().await;
+    let _account_guard = VAULT_TEST_ACCOUNT.lock().await;
     let remote: Shared = Default::default();
     let router = Router::new()
         .route("/api/v1/vaults", get(list))
@@ -142,11 +150,39 @@ async fn an_account_vault_migrates_and_links_without_exposing_records() {
 
     let mut second = VaultManager::new(dir.join("second"));
     let prior_id = second.init_identity("second-password").await.unwrap();
+    let local_vault = second.get_vault_id_by_name(SESSIONS_VAULT).unwrap();
+    let local_record = second
+        .create_secret(
+            &local_vault,
+            "Before linking",
+            SecretCategory::Session,
+            value("local device session"),
+        )
+        .await
+        .unwrap();
+    let identity_path = dir.join("second/vault_identity.json");
+    let prior_file = std::fs::read(&identity_path).unwrap();
     seed_vault_test_account(&url, "other-account").await;
     assert!(second.link_device(&code).await.is_err());
     assert_eq!(second.user_uuid.as_deref(), Some(prior_id.as_str()));
     seed_vault_test_account(&url, "vault-test").await;
+    // The first GET proves the link. Fail the second, which would load
+    // the new vault, to check rollback after staging has started.
+    remote.lock().await.downloads_before_failure = Some(1);
+    assert!(second.link_device(&code).await.is_err());
+    assert_eq!(second.user_uuid.as_deref(), Some(prior_id.as_str()));
+    assert_eq!(std::fs::read(&identity_path).unwrap(), prior_file);
+    assert_eq!(
+        second
+            .read_secret(&local_vault, &local_record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"local device session"
+    );
+
     second.link_device(&code).await.unwrap();
+    assert!(second.local_vault_recovery_available());
     assert_eq!(
         second
             .read_secret(&personal, &record)
@@ -193,6 +229,23 @@ async fn an_account_vault_migrates_and_links_without_exposing_records() {
     let mut reopened = VaultManager::new(dir.join("second"));
     assert!(reopened.unlock("desktop-pass").await.unwrap());
     assert_eq!(reopened.list_secrets(&personal).await.unwrap().len(), 2);
+    assert!(reopened.local_vault_recovery_available());
+    reopened.restore_local_vault_before_link().await.unwrap();
+    assert_eq!(std::fs::read(&identity_path).unwrap(), prior_file);
+    assert!(reopened.unlock("second-password").await.unwrap());
+    assert!(!reopened.local_vault_recovery_available());
+    assert_eq!(
+        reopened
+            .read_secret(&local_vault, &local_record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"local device session"
+    );
+    assert!(dir
+        .join("second/vaults")
+        .join(format!("{personal}.db"))
+        .exists());
 
     *remote.lock().await = Remote {
         writes_allowed: true,
@@ -255,7 +308,7 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
     use axum::routing::put;
     use uuid::Uuid;
 
-    let _account_guard = TEST_ACCOUNT.lock().await;
+    let _account_guard = VAULT_TEST_ACCOUNT.lock().await;
     let remote = Arc::new(Mutex::new(Remote {
         writes_allowed: true,
         ..Default::default()
@@ -515,7 +568,7 @@ async fn three_native_clients_sync_through_postgres() {
     use crate::vault::sync_account_store::AccountTarget;
     use uuid::Uuid;
 
-    let _account_guard = TEST_ACCOUNT.lock().await;
+    let _account_guard = VAULT_TEST_ACCOUNT.lock().await;
     let fixture: NativeSyncFixture = serde_json::from_reader(std::io::stdin().lock()).unwrap();
     let [owner_device, editor_device, third_device] = &fixture.devices;
     let server = &fixture.server;

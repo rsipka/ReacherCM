@@ -4307,5 +4307,9 @@
   "sync_account.pair_start": "配对此设备",
   "sync_account.pair_match": "在网页门户中核对这个验证码，然后在那里批准设备。",
   "sync_account.pair_invalid": "请输入 Reacher CM 移动设备配对码。",
-  "sync_account.pair_camera": "扫描需要相机权限。你也可以粘贴配对码。"
+  "sync_account.pair_camera": "扫描需要相机权限。你也可以粘贴配对码。",
+  "sync_account.mobile_vault_link_help": "在已启用个人保险库同步的可信设备上，打开同步与备份并显示保险库链接码。在此设备上扫描或粘贴该代码。",
+  "sync_account.vault_link_confirm": "此设备将打开已链接的个人保险库。原来的本地保险库会保留在此设备上，可在同步与备份中恢复。",
+  "sync_account.local_vault_restore": "恢复原来的本地保险库",
+  "sync_account.local_vault_restore_confirm": "重新打开原来的本地保险库？已链接的保险库会保留在设备和同步服务器上。你可能需要输入原来的密码。"
 }

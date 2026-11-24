@@ -11,6 +11,8 @@
 		bindPreferenceAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
 	} from '#lib/state/preference-sync.svelte.js';
 
+	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
+
 	const mobile = isMobile();
 	let pairingCode = $state('');
 	let pairingServer = $state('');
@@ -42,7 +44,7 @@
 			account = await invoke<SyncAccount | null>('sync_account_status');
 			if (account) {
 				server = account.server;
-				if (!mobile) vaultSync = await invoke<boolean>('vault_account_sync_enabled');
+				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			}
 			bindPreferenceAccount(account);
 		} catch (cause) {
@@ -67,7 +69,7 @@
 			account = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
 			server = account.server;
 			bindPreferenceAccount(account);
-			if (!mobile) vaultSync = await invoke<boolean>('vault_account_sync_enabled');
+			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			message = '';
 		} catch (cause) {
 			error = errorKey(cause);
@@ -114,6 +116,7 @@
 			account = await invoke<SyncAccount>('sync_account_pair', { code: pairingCode, label, verification });
 			server = pairingServer;
 			bindPreferenceAccount(account);
+			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 		} catch (cause) {
 			error = errorKey(cause);
 		} finally {
@@ -210,7 +213,16 @@
 			{#if preferenceSync.syncing}<p role="status">{t('sync_account.syncing')}</p>{/if}
 			{#if preferenceSync.error}<p class="error" role="alert">{t(preferenceSync.error)}</p>{/if}
 		</div>
-		{#if !mobile}
+		{#if mobile}
+			<div class="preferences">
+				{#if vaultSync}
+					<p role="status">{t('sync_account.vault_enabled')}</p>
+				{:else}
+					<p>{t('sync_account.mobile_vault_link_help')}</p>
+					<button type="button" disabled={action !== null} onclick={onOpenVaultLinks}>{t('sync.join_device')}</button>
+				{/if}
+			</div>
+		{:else}
 			<div class="preferences">
 				{#if vaultSync}
 					<p role="status">{t('sync_account.vault_enabled')}</p>
