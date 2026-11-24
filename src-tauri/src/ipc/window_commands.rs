@@ -169,6 +169,9 @@ pub struct RailPlace {
     /// A menu, tooltip or other window that is part of another: kept above
     /// the others, off the taskbar, and never takes focus by itself.
     pub popup: bool,
+    /// The server's front window: its window here is brought forward too.
+    #[serde(default)]
+    pub active: bool,
 }
 
 /// Make this computer's RemoteApp windows for the tab `tab` match `windows`:
@@ -186,7 +189,9 @@ pub async fn rail_windows_sync(app: AppHandle, tab: String, windows: Vec<RailPla
             let _ = win.destroy();
         }
     }
-    for (label, place) in wanted {
+    // In the order given, bottom first, so the topmost window opens last.
+    for place in &windows {
+        let label = format!("{prefix}{}", place.id);
         let (size, at) = (
             tauri::PhysicalSize::new(place.width.max(1), place.height.max(1)),
             tauri::PhysicalPosition::new(place.x, place.y),
@@ -200,6 +205,12 @@ pub async fn rail_windows_sync(app: AppHandle, tab: String, windows: Vec<RailPla
             }
             if win.title().ok().as_deref() != Some(place.title.as_str()) {
                 let _ = win.set_title(&place.title);
+            }
+            // The server put this window in front (a click on it, or the
+            // program's own doing): so does this computer, so that the
+            // window on top here is the one clicks reach there.
+            if place.active && !place.popup && !win.is_focused().unwrap_or(false) {
+                let _ = win.set_focus();
             }
             continue;
         }

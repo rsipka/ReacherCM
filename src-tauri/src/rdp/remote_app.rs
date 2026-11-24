@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 
 use ironrdp_client::rdp::RdpInputSender;
-use ironrdp_pdu::window::{ShowState, WindowOrderBody, WindowingOrder};
+use ironrdp_pdu::window::{DesktopOrder, MonitoredDesktop, ShowState, WindowOrderBody, WindowingOrder};
 use ironrdp_rail::pdu::{ActivatePdu, ExecutePdu, ExecuteResult, ExecuteResultPdu, SystemCommand, SystemCommandPdu};
 use serde::Serialize;
 
@@ -44,6 +44,11 @@ pub struct RailWindow {
     pub listed: bool,
     /// The window that owns it (a dialog's or a menu's), 0 for none.
     pub owner: u32,
+    /// The window the server has in front (the one keys go to).
+    pub active: bool,
+    /// Its place in the server's stacking order, 0 at the top; windows the
+    /// server has not ranked come after the ranked ones.
+    pub z: u32,
 }
 
 /// What the server has said about each window so far. Orders carry only the
@@ -51,6 +56,10 @@ pub struct RailWindow {
 #[derive(Debug, Default)]
 pub struct Windows {
     known: BTreeMap<u32, Known>,
+    /// The server's front window, when it says.
+    active: Option<u32>,
+    /// The server's stacking order, topmost first, when it says.
+    z_order: Vec<u32>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -71,7 +80,26 @@ impl Windows {
     pub fn apply(&mut self, orders: &[WindowingOrder]) -> bool {
         let before = self.list();
         for order in orders {
-            let WindowingOrder::Window(order) = order else { continue };
+            let order = match order {
+                WindowingOrder::Window(order) => order,
+                WindowingOrder::Desktop(desktop) => {
+                    if desktop.resets_windows() {
+                        self.known.clear();
+                        self.active = None;
+                        self.z_order.clear();
+                    }
+                    if let DesktopOrder::ActivelyMonitored(m) = desktop {
+                        if let Some(active) = m.active_window_id {
+                            self.active = (active != MonitoredDesktop::NO_ACTIVE_WINDOW).then_some(active);
+                        }
+                        if let Some(z) = &m.z_order {
+                            self.z_order.clone_from(z);
+                        }
+                    }
+                    continue;
+                }
+                WindowingOrder::NotifyIcon(_) => continue,
+            };
             match &order.body {
                 WindowOrderBody::Deleted => {
                     self.known.remove(&order.window_id);
@@ -127,6 +155,8 @@ impl Windows {
                 height: w.height,
                 listed: w.ex_style & WS_EX_APPWINDOW != 0 || (w.owner == 0 && w.ex_style & WS_EX_TOOLWINDOW == 0),
                 owner: w.owner,
+                active: self.active == Some(*id),
+                z: self.z_order.iter().position(|z| z == id).map_or(u32::MAX, |p| u32::try_from(p).unwrap_or(u32::MAX)),
             })
             .collect()
     }
@@ -214,6 +244,15 @@ mod tests {
         assert_eq!(w.list()[0].title, "Untitled - Notepad");
         assert!(w.apply(&[state(1, false, WindowState { window_offset: Some(WindowPoint { x: 40, y: 30 }), window_size: Some(WindowSize { width: 640, height: 480 }), ..Default::default() })]));
         assert_eq!((w.list()[0].x, w.list()[0].y, w.list()[0].width, w.list()[0].height), (40, 30, 640, 480));
+
+        // The server brings window 1 forward.
+        assert!(w.apply(&[WindowingOrder::Desktop(DesktopOrder::ActivelyMonitored(MonitoredDesktop {
+            active_window_id: Some(1),
+            z_order: Some(vec![1, 2]),
+            ..Default::default()
+        }))]));
+        let one = w.list().into_iter().find(|w| w.id == 1).unwrap();
+        assert!(one.active && one.z == 0);
 
         assert!(w.apply(&[WindowingOrder::Window(WindowOrder { window_id: 1, is_new: false, body: WindowOrderBody::Deleted })]));
         assert!(w.list().iter().all(|w| w.id != 1));
