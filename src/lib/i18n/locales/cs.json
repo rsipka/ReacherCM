@@ -3281,6 +3281,8 @@
   "sync.status_title": "Stav synchronizace",
   "sync.status_desc": "Každý trezor je uložen v tomto zařízení a funguje i offline. Změny se odešlou, jakmile bude backend dostupný.",
   "sync.status_none": "Zatím se nesynchronizuje žádný trezor.",
+  "sync.status_unavailable": "Stav synchronizace trezorů se nepodařilo načíst.",
+  "sync.status_attention": "Synchronizace trezorů vyžaduje pozornost",
   "sync.personal_vault": "Osobní data",
   "sync.last_synced": "Naposledy synchronizováno {{time}}",
   "sync.never_synced": "Zatím nesynchronizováno",

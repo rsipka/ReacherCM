@@ -3281,6 +3281,8 @@
   "sync.status_title": "Synchronisierungsstatus",
   "sync.status_desc": "Jeder Tresor liegt auf diesem Gerät und funktioniert offline. Änderungen gehen an das Backend, sobald es erreichbar ist.",
   "sync.status_none": "Noch kein Tresor wird synchronisiert.",
+  "sync.status_unavailable": "Der Synchronisierungsstatus der Tresore konnte nicht geladen werden.",
+  "sync.status_attention": "Die Tresorsynchronisierung erfordert Aufmerksamkeit",
   "sync.personal_vault": "Persönliche Daten",
   "sync.last_synced": "Zuletzt synchronisiert {{time}}",
   "sync.never_synced": "Noch nicht synchronisiert",
