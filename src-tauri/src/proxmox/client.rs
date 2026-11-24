@@ -117,7 +117,7 @@ pub struct UserLogin {
     pub otp: Option<String>,
 }
 
-/// The user name with its realm: `radek` and `pam` make `radek@pam`; a name
+/// The user name with its realm: `alice` and `pam` make `alice@pam`; a name
 /// that already names one is kept.
 pub fn full_user(username: &str, realm: &str) -> String {
     let u = username.trim();
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn user_names_get_their_realm() {
-        assert_eq!(full_user("radek", "pam"), "radek@pam");
+        assert_eq!(full_user("alice", "pam"), "alice@pam");
         assert_eq!(full_user(" backup ", "pbs"), "backup@pbs");
         assert_eq!(full_user("admin@ldap", "pam"), "admin@ldap");
         assert_eq!(full_user("root", ""), "root");

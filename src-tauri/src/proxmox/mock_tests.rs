@@ -15,8 +15,8 @@ use tokio_tungstenite::tungstenite::Message;
 const CERT: &[u8] = include_bytes!("testdata/cert.pem");
 const KEY: &[u8] = include_bytes!("testdata/key.pem");
 const FINGERPRINT: &str = "D0:D6:4D:85:26:A4:69:2B:1C:29:BA:7A:D8:C4:0A:E7:82:43:88:F1:DB:CB:00:EE:D3:F9:B6:0C:0B:0C:F3:67";
-const FULL: &str = "PVE:radek@pam:6750A1B2::full";
-const TOKEN: &str = "PVEAPIToken=radek@pam!ci=11111111-2222-3333-4444-555555555555";
+const FULL: &str = "PVE:alice@pam:6750A1B2::full";
+const TOKEN: &str = "PVEAPIToken=alice@pam!ci=11111111-2222-3333-4444-555555555555";
 
 /// Bytes already read, then the stream.
 struct Prefixed<S> {
@@ -77,11 +77,11 @@ fn answer(r: &Req) -> (u16, &'static str, Value) {
         let user = r.body["username"].as_str().unwrap_or_default();
         let pass = r.body["password"].as_str().unwrap_or_default();
         return match (user, pass, r.body["tfa-challenge"].as_str()) {
-            ("radek@pam", "secret", None) => (200, "OK", json!({"data": {"username": "radek@pam", "ticket": "PVE:radek@pam:6750A1B2::!tfa!challenge", "NeedTFA": 1}})),
-            ("radek@pam", "totp:123456", Some(c)) if c.contains("challenge") => {
-                (200, "OK", json!({"data": {"username": "radek@pam", "ticket": FULL, "CSRFPreventionToken": "csrf1"}}))
+            ("alice@pam", "secret", None) => (200, "OK", json!({"data": {"username": "alice@pam", "ticket": "PVE:alice@pam:6750A1B2::!tfa!challenge", "NeedTFA": 1}})),
+            ("alice@pam", "totp:123456", Some(c)) if c.contains("challenge") => {
+                (200, "OK", json!({"data": {"username": "alice@pam", "ticket": FULL, "CSRFPreventionToken": "csrf1"}}))
             }
-            ("radek@pam", p, None) if p == FULL => (200, "OK", json!({"data": {"username": "radek@pam", "ticket": FULL, "CSRFPreventionToken": "csrf1"}})),
+            ("alice@pam", p, None) if p == FULL => (200, "OK", json!({"data": {"username": "alice@pam", "ticket": FULL, "CSRFPreventionToken": "csrf1"}})),
             _ => (401, "authentication failure", json!({"data": null})),
         };
     }
@@ -106,9 +106,9 @@ fn answer(r: &Req) -> (u16, &'static str, Value) {
         ("GET", "/nodes/pve1/qemu/100/config") => json!({"name": "win11", "vga": "qxl", "agent": "1,fstrim_cloned_disks=1", "serial0": "socket", "ostype": "win11", "onboot": 1, "tags": "lab;windows"}),
         ("GET", "/nodes/pve1/qemu/100/snapshot") => json!([{"name": "current", "running": 1}, {"name": "before_update", "snaptime": 1700000000, "description": "x", "vmstate": 1}]),
         ("GET", "/nodes/pve1/qemu/100/agent/network-get-interfaces") => json!({"result": [{"name": "lo", "ip-addresses": [{"ip-address": "127.0.0.1"}]}, {"name": "Ethernet", "ip-addresses": [{"ip-address": "10.0.0.50"}, {"ip-address": "fe80::1"}]}]}),
-        ("POST", "/nodes/pve1/qemu/100/status/shutdown") => json!("UPID:pve1:0000ABCD:00112233:6750A1B2:qmshutdown:100:radek@pam:"),
+        ("POST", "/nodes/pve1/qemu/100/status/shutdown") => json!("UPID:pve1:0000ABCD:00112233:6750A1B2:qmshutdown:100:alice@pam:"),
         ("GET", "/cluster/tasks") => json!([
-            {"upid": "UPID:pve1:0000ABCD:00112233:6750A1B2:qmshutdown:100:radek@pam:", "node": "pve1", "type": "qmshutdown", "id": "100", "user": "radek@pam", "starttime": 1733000000},
+            {"upid": "UPID:pve1:0000ABCD:00112233:6750A1B2:qmshutdown:100:alice@pam:", "node": "pve1", "type": "qmshutdown", "id": "100", "user": "alice@pam", "starttime": 1733000000},
             {"upid": "UPID:pve1:00000001:00000001:6750A000:vzdump::root@pam:", "node": "pve1", "type": "vzdump", "user": "root@pam", "starttime": 1732990000, "endtime": 1732990100, "status": "OK"}
         ]),
         ("GET", p) if p.ends_with("/log") && p.contains("qmshutdown") => {
@@ -120,7 +120,7 @@ fn answer(r: &Req) -> (u16, &'static str, Value) {
             if !r.by_ticket() {
                 return (401, "invalid ticket", json!({"data": null}));
             }
-            json!({"port": 5900, "ticket": "PVEVNC:termticket", "user": "radek@pam", "upid": "UPID:pve1:1:1:1:vncproxy:101:radek@pam:"})
+            json!({"port": 5900, "ticket": "PVEVNC:termticket", "user": "alice@pam", "upid": "UPID:pve1:1:1:1:vncproxy:101:alice@pam:"})
         }
         _ => return (501, "Method not implemented", json!({"data": null})),
     };
@@ -169,7 +169,7 @@ async fn serve_one<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(mut s: S)
                 _ => continue,
             };
             if !logged_in {
-                assert_eq!(data, b"radek@pam:PVEVNC:termticket\n");
+                assert_eq!(data, b"alice@pam:PVEVNC:termticket\n");
                 logged_in = true;
                 ws.send(Message::binary(b"OKwelcome\r\n".to_vec())).await.unwrap();
                 continue;
@@ -236,7 +236,7 @@ fn client(port: u16, trusted: Vec<String>) -> Client {
 async fn an_unknown_certificate_is_asked_about() {
     let port = mock().await;
     let c = client(port, vec![]);
-    let login = UserLogin { user: "radek@pam".into(), password: "secret".into(), otp: None };
+    let login = UserLogin { user: "alice@pam".into(), password: "secret".into(), otp: None };
     match c.ticket_login(&login).await {
         Err(ProxmoxError::UntrustedCert(fp)) => assert_eq!(fp, FINGERPRINT),
         other => panic!("{:?}", other.map(|_| ())),
@@ -247,14 +247,14 @@ async fn an_unknown_certificate_is_asked_about() {
 async fn password_then_totp_then_the_pages() {
     let port = mock().await;
     let c = client(port, vec![FINGERPRINT.into()]);
-    let mut login = UserLogin { user: "radek@pam".into(), password: "secret".into(), otp: None };
+    let mut login = UserLogin { user: "alice@pam".into(), password: "secret".into(), otp: None };
     assert!(matches!(c.ticket_login(&login).await, Err(ProxmoxError::TfaNeeded)));
     login.otp = Some("000000".into());
     assert!(matches!(c.ticket_login(&login).await, Err(ProxmoxError::Login(_))));
     login.otp = Some("123 456".into());
     let t = c.ticket_login(&login).await.unwrap();
-    assert_eq!(t.user, "radek@pam");
-    let conn = ProxmoxConn::open(c, "s1".into(), Auth::Ticket(t), "radek@pam".into()).await.unwrap();
+    assert_eq!(t.user, "alice@pam");
+    let conn = ProxmoxConn::open(c, "s1".into(), Auth::Ticket(t), "alice@pam".into()).await.unwrap();
     let opened = conn.opened().await;
     assert_eq!((opened.product, opened.version.as_deref(), opened.token), (Product::Pve, Some("9.2.1"), false));
 
@@ -295,15 +295,15 @@ async fn password_then_totp_then_the_pages() {
 async fn a_token_runs_the_pages_but_a_console_needs_a_login() {
     let port = mock().await;
     let c = client(port, vec![FINGERPRINT.into()]);
-    let header = Product::Pve.token_header("radek@pam!ci", "11111111-2222-3333-4444-555555555555");
-    let conn = ProxmoxConn::open(c, "s1".into(), Auth::Token { header }, "radek@pam!ci".into()).await.unwrap();
+    let header = Product::Pve.token_header("alice@pam!ci", "11111111-2222-3333-4444-555555555555");
+    let conn = ProxmoxConn::open(c, "s1".into(), Auth::Token { header }, "alice@pam!ci".into()).await.unwrap();
     assert!(conn.opened().await.token);
     assert_eq!(conn.resources().await.unwrap().len(), 5);
     let target = ConsoleTarget { session_id: "s1".into(), node: "pve1".into(), kind: "lxc".into(), vmid: Some(101), serial: None };
     assert!(matches!(conn.term(&target).await, Err(ProxmoxError::ConsoleLoginNeeded)));
 
     // A user login for the consoles, then the container's console.
-    let login = UserLogin { user: "radek@pam".into(), password: "secret".into(), otp: Some("123456".into()) };
+    let login = UserLogin { user: "alice@pam".into(), password: "secret".into(), otp: Some("123456".into()) };
     let t = conn.client.ticket_login(&login).await.unwrap();
     conn.client.set_console(t).await;
     let mut link = conn.term(&target).await.unwrap();
@@ -324,6 +324,6 @@ async fn a_token_runs_the_pages_but_a_console_needs_a_login() {
 async fn a_wrong_token_is_a_refused_login() {
     let port = mock().await;
     let c = client(port, vec![FINGERPRINT.into()]);
-    let header = Product::Pve.token_header("radek@pam!ci", "wrong");
+    let header = Product::Pve.token_header("alice@pam!ci", "wrong");
     assert!(matches!(ProxmoxConn::open(c, "s1".into(), Auth::Token { header }, "x".into()).await, Err(ProxmoxError::Login(_))));
 }

@@ -9,7 +9,7 @@ fn names_and_ids_are_checked() {
     assert!(!valid_node(""));
     assert!(!valid_node("a/b"));
     assert!(valid_kind("qemu") && valid_kind("lxc") && !valid_kind("node"));
-    assert!(valid_upid("UPID:pve1:0000ABCD:00112233:6750A1B2:qmstart:100:radek@pam!ci:"));
+    assert!(valid_upid("UPID:pve1:0000ABCD:00112233:6750A1B2:qmstart:100:alice@pam!ci:"));
     assert!(!valid_upid("UPID:pve1:x/../y"));
     assert!(!valid_upid("pve1"));
     assert!(valid_snapshot("before_update-2"));
@@ -118,7 +118,7 @@ fn spice_and_console_tickets() {
     assert_eq!(s.tls_port, Some(61000));
     assert!(s.ca.unwrap().contains("\nAAA\n"));
     assert!(spice_ticket(&json!({"host": "x"})).is_none());
-    let p = proxy_ticket(&json!({"port": "5900", "ticket": "PVEVNC:x", "user": "radek@pam", "password": "abcd1234"})).unwrap();
+    let p = proxy_ticket(&json!({"port": "5900", "ticket": "PVEVNC:x", "user": "alice@pam", "password": "abcd1234"})).unwrap();
     assert_eq!((p.port, p.password.as_deref()), (5900, Some("abcd1234")));
     assert!(proxy_ticket(&json!({"ticket": "x"})).is_none());
 }
