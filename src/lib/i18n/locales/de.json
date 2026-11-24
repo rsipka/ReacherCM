@@ -4149,6 +4149,7 @@
   "sync_account.sync_preferences_desc": "Sprache, grundlegenden Darstellungsmodus und Terminalcursor auf angemeldeten Geräten synchronisieren.",
   "sync_account.sync_now": "Jetzt synchronisieren",
   "sync_account.syncing": "Einstellungen werden synchronisiert…",
+  "sync_account.offline": "Offline",
   "sync_account.vault_enable": "Diesen Server für den Tresor verwenden",
   "sync_account.vault_enabled": "Die verschlüsselte Synchronisierung des persönlichen Tresors ist aktiviert.",
   "sync_account.vault_moving": "Tresor wird hochgeladen und geprüft…",

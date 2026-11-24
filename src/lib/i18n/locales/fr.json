@@ -4149,6 +4149,7 @@
   "sync_account.sync_preferences_desc": "Synchronise la langue, le mode de thème de base et le style du curseur du terminal entre les appareils connectés.",
   "sync_account.sync_now": "Synchroniser maintenant",
   "sync_account.syncing": "Synchronisation des préférences…",
+  "sync_account.offline": "Hors ligne",
   "sync_account.vault_enable": "Utiliser ce serveur pour synchroniser le coffre",
   "sync_account.vault_enabled": "La synchronisation chiffrée du coffre personnel est activée.",
   "sync_account.vault_moving": "Téléversement et vérification du coffre…",
