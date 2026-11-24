@@ -3,6 +3,7 @@
 All notable changes to Reacher CM are documented here. Reacher CM is a personal fork of [Reach](https://github.com/alexandrosnt/Reach) with additional features, written with the help of AI coding tools; the entries from v0.9.1 down are Reach's own.
 
 ## Reacher CM (unreleased, based on Reach v0.9.2)
+- **Authenticated organization vault rotations** — Shared vaults require an owner-authorized key before applying a new encryption epoch. Use **Verify owner** with a public key obtained directly from the owner when joining a vault or after its ownership changes. Update all participating clients before rotating.
 - **Vault sync status from the bottom bar** — Select the sync indicator to see each synced vault’s provider, last successful sync, pending changes, and any errors or conflicts. Vaults synced through other providers also appear when no Reacher CM Sync account is signed in.
 - **Sync account in the bottom bar** — Your signed-in username appears beside the clock. The icon shows when the device is offline or preference sync is active or needs attention. Select it to open Settings → Account.
 - **Encrypted personal vault sync on mobile** — Pair your phone with the sync account, then scan or paste a trusted device’s personal vault link in Sync & Backup. The phone participates in vault sync and reports its applied revision. Its previous local vault stays on the device and can be restored from Sync & Backup.
