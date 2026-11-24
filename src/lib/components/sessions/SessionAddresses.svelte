@@ -7,6 +7,8 @@
 		direct: boolean;
 		/** A saved SSH session to go through instead; '' for none. */
 		via: string;
+		/** A WireGuard profile whose tunnel it goes through; '' for none. */
+		wireguard: string;
 	}
 </script>
 
@@ -32,11 +34,13 @@
 		routed: boolean;
 		/** Saved SSH sessions an address can go through (not this one). */
 		jumpSessions: { id: string; name: string }[];
+		/** WireGuard profiles an address can go through. */
+		wireguardProfiles?: { id: string; name: string }[];
 		port: string;
 		disabled?: boolean;
 	}
 
-	let { mainLabel = $bindable(), rows = $bindable(), mode = $bindable(), check = $bindable(), checkByDefault, routed, jumpSessions, port, disabled = false }: Props = $props();
+	let { mainLabel = $bindable(), rows = $bindable(), mode = $bindable(), check = $bindable(), checkByDefault, routed, jumpSessions, wireguardProfiles = [], port, disabled = false }: Props = $props();
 
 	// Folded until there is something in it; open once addresses are read
 	// in (the editor fills its form after this section is made).
@@ -50,17 +54,20 @@
 	});
 
 	function add(): void {
-		rows = [...rows, { label: '', host: '', port: '', direct: false, via: '' }];
+		rows = [...rows, { label: '', host: '', port: '', direct: false, via: '', wireguard: '' }];
 		open = true;
 	}
 
-	/** The route select's value: a session id, 'direct' or '' (the session's own way). */
+	/** The route select's value: a session id, `wg:` and a WireGuard
+	 *  profile's id, 'direct' or '' (the session's own way). */
 	function routeOf(row: AddressRow): string {
+		if (row.wireguard) return `wg:${row.wireguard}`;
 		return row.via ? row.via : row.direct && routed ? 'direct' : '';
 	}
 
 	function setRoute(i: number, value: string): void {
-		rows[i] = { ...rows[i], via: value && value !== 'direct' ? value : '', direct: value === 'direct' };
+		const wg = value.startsWith('wg:') ? value.slice(3) : '';
+		rows[i] = { ...rows[i], wireguard: wg, via: !wg && value && value !== 'direct' ? value : '', direct: value === 'direct' };
 	}
 
 	function remove(i: number): void {
@@ -97,7 +104,7 @@
 					<button type="button" class="icon" onclick={() => remove(i)} {disabled} title={t('session.address_remove')} aria-label={t('session.address_remove')}>✕</button>
 				</span>
 			</div>
-			{#if routed || jumpSessions.length || row.via}
+			{#if routed || jumpSessions.length || wireguardProfiles.length || row.via || row.wireguard}
 				<div class="row route-row">
 					<span class="prio"></span>
 					<label class="route-label" for="address-route-{i}">{t('session.address_route')}</label>
@@ -113,6 +120,12 @@
 						{/each}
 						{#if row.via && !jumpSessions.some((js) => js.id === row.via)}
 							<option value={row.via}>{t('session.address_via_missing')}</option>
+						{/if}
+						{#each wireguardProfiles as wg (wg.id)}
+							<option value={`wg:${wg.id}`}>{t('wireguard.route_via', { name: wg.name })}</option>
+						{/each}
+						{#if row.wireguard && !wireguardProfiles.some((wg) => wg.id === row.wireguard)}
+							<option value={`wg:${row.wireguard}`}>{t('wireguard.missing')}</option>
 						{/if}
 					</select>
 				</div>

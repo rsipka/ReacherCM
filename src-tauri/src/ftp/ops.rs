@@ -295,7 +295,10 @@ async fn download_on(
     drop(s);
     c.finish().await?;
     complete_size(size, done, unclean_eof)?;
-    file.commit(cancel).map_err(|e| FtpError::Other(e.to_string()))?;
+    file.commit(cancel).map_err(|e| match e {
+        crate::sftp::transfer::TransferError::Cancelled => FtpError::Cancelled,
+        other => FtpError::Other(other.to_string()),
+    })?;
     progress(done, done);
     tracing::info!("FTP download complete: {remote} ({done} bytes)");
     Ok(done)

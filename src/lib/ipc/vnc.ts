@@ -1,6 +1,7 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type { MouseAction, RdpStatus } from '#lib/ipc/rdp.js';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /**
  * Remote desktop over VNC. The backend sends frames in the RDP wire format
@@ -39,6 +40,7 @@ export async function vncConnect(params: VncConnectParams, onFrame: (frame: Arra
 		onFrame(copy);
 	};
 	const { sessionId, ...rest } = params;
+	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('vnc_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }
 

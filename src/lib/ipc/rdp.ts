@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /**
  * Remote desktop over RDP.
@@ -71,6 +72,9 @@ export interface RdpOptions {
 	app_args?: string | null;
 	/** RemoteApp in the built-in client: `separate` for a window of its own per remote window. */
 	app_windows?: 'separate' | null;
+	/** The SSH port the session menu's Open file manager uses (SFTP on the
+	 *  same host). Absent: 22. */
+	files_port?: number | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */
@@ -148,6 +152,7 @@ export async function rdpConnect(
 		onFrame(copy);
 	};
 	const { sessionId, forwardLockKeys: _forwardLockKeys, ...rest } = params;
+	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('rdp_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }
 

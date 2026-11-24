@@ -134,6 +134,10 @@ pub(crate) fn approval_context(s: &SessionConfig) -> String {
     if let (Some(spice), Some(list)) = (s.spice.as_ref(), v.as_array_mut()) {
         list.push(serde_json::json!(["spice", spice]));
     }
+    // The WireGuard tunnel decides which network the login goes into.
+    if let (Some(wg), Some(list)) = (s.wireguard_id.as_ref(), v.as_array_mut()) {
+        list.push(serde_json::json!(["wireguard", wg]));
+    }
     sha2::Sha256::digest(v.to_string().as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -760,6 +764,7 @@ pub async fn session_create(
     vault_id: Option<String>,
     jump_chain: Option<Vec<JumpHostConfig>>,
     proxy: Option<crate::state::ProxyConfig>,
+    wireguard_id: Option<String>,
     shell: Option<String>,
     kind: Option<crate::state::SessionKind>,
     domain: Option<String>,
@@ -855,6 +860,7 @@ pub async fn session_create(
         } else {
             None
         },
+        wireguard_id: wireguard_id.filter(|w| !w.trim().is_empty()),
         jump_chain,
         proxy,
         shell,
@@ -2373,8 +2379,8 @@ mod approval_tests {
         use crate::ipc::ssh_commands::check_matches_session;
         let mut s = with_refs();
         s.alt_addresses = Some(vec![
-            crate::state::SessionAddress { label: "Office".into(), host: "10.0.0.5".into(), port: None, direct: true, via_session_id: None },
-            crate::state::SessionAddress { label: "Internet".into(), host: "server.example.com".into(), port: Some(2222), direct: false, via_session_id: None },
+            crate::state::SessionAddress { label: "Office".into(), host: "10.0.0.5".into(), port: None, direct: true, via_session_id: None, via_wireguard: None },
+            crate::state::SessionAddress { label: "Internet".into(), host: "server.example.com".into(), port: Some(2222), direct: false, via_session_id: None, via_wireguard: None },
         ]);
         let hops: Vec<crate::ipc::ssh_commands::JumpHostConnectParams> = vec![serde_json::from_value(serde_json::json!({
             "host": "bastion.example", "port": 22, "username": "jump", "authMethod": "key",
@@ -2403,6 +2409,7 @@ mod approval_tests {
             port: None,
             direct: false,
             via_session_id: Some("gw".into()),
+            via_wireguard: None,
         }]);
         let mut gw = session();
         gw.id = "gw".into();
@@ -2427,10 +2434,68 @@ mod approval_tests {
     }
 
     #[test]
+    fn wireguard_routes_are_the_sessions_own() {
+        use crate::ipc::ssh_commands::{check_matches_session, wireguard_route};
+        let mut s = with_refs();
+        let before = approval_context(&s);
+        s.wireguard_id = Some("office".into());
+        assert_ne!(approval_context(&s), before, "the tunnel is part of what was approved");
+        s.alt_addresses = Some(vec![crate::state::SessionAddress {
+            label: "Lab".into(),
+            host: "10.9.0.5".into(),
+            port: None,
+            direct: false,
+            via_session_id: None,
+            via_wireguard: Some("lab".into()),
+        }]);
+        assert_eq!(wireguard_route(&s, &s.host.clone(), s.port), Some("office"));
+        assert_eq!(wireguard_route(&s, "10.9.0.5", s.port), Some("lab"));
+        assert_eq!(wireguard_route(&s, "10.9.0.6", s.port), None);
+        // Inside its tunnel the address goes straight: no jump hosts, no proxy.
+        assert!(check_matches_session(&s, None, "10.9.0.5", s.port, "u", None, None).is_ok());
+        assert!(check_matches_session(&s, None, "10.9.0.5", s.port, "u", None, s.proxy.as_ref()).is_err());
+        // Tidying drops an empty choice and lets the tunnel win over a session.
+        s.alt_addresses.as_mut().unwrap()[0].via_session_id = Some("gw".into());
+        s.wireguard_id = Some("  ".into());
+        s.tidy_addresses();
+        let a = &s.alt_addresses.as_ref().unwrap()[0];
+        assert!(a.via_session_id.is_none() && a.via_wireguard.as_deref() == Some("lab"));
+        assert!(s.wireguard_id.is_none());
+    }
+
+    #[test]
+    fn an_rdp_file_manager_goes_to_the_same_machine_only() {
+        use crate::ipc::ssh_commands::{check_matches_session, rdp_files_username};
+        let mut s = with_refs();
+        s.kind = crate::state::SessionKind::Rdp;
+        s.jump_chain = None;
+        s.proxy = None;
+        s.port = 3389;
+        assert_eq!(rdp_files_username(&s), "u");
+        assert!(check_matches_session(&s, None, "web.example", 22, "u", None, None).is_ok());
+        // Not the RDP port, another host or user, nor through anything.
+        assert!(check_matches_session(&s, None, "web.example", 3389, "u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "attacker.example", 22, "u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "web.example", 22, "root", None, None).is_err());
+        let hop: crate::ipc::ssh_commands::JumpHostConnectParams =
+            serde_json::from_value(serde_json::json!({ "host": "b", "port": 22, "username": "j", "authMethod": "key" })).unwrap();
+        assert!(check_matches_session(&s, None, "web.example", 22, "u", Some(std::slice::from_ref(&hop)), None).is_err());
+        // Its own files port, and the domain in front of the user.
+        s.rdp = Some(crate::rdp::options::RdpOptions { files_port: Some(2222), ..Default::default() });
+        s.domain = Some("CORP".into());
+        assert_eq!(rdp_files_username(&s), "CORP\\u");
+        assert!(check_matches_session(&s, None, "web.example", 2222, "CORP\\u", None, None).is_ok());
+        assert!(check_matches_session(&s, None, "web.example", 22, "CORP\\u", None, None).is_err());
+        assert!(check_matches_session(&s, None, "web.example", 2222, "u", None, None).is_err());
+        s.username = "u@corp.example".into();
+        assert_eq!(rdp_files_username(&s), "u@corp.example");
+    }
+
+    #[test]
     fn other_addresses_are_part_of_what_is_approved() {
         let mut s = with_refs();
         let before = approval_context(&s);
-        s.alt_addresses = Some(vec![crate::state::SessionAddress { label: String::new(), host: "10.0.0.5".into(), port: None, direct: true, via_session_id: None }]);
+        s.alt_addresses = Some(vec![crate::state::SessionAddress { label: String::new(), host: "10.0.0.5".into(), port: None, direct: true, via_session_id: None, via_wireguard: None }]);
         assert_ne!(approval_context(&s), before);
         s.alt_addresses = None;
         assert_eq!(approval_context(&s), before);

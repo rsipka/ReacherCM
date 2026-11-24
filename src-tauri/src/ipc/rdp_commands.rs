@@ -48,6 +48,11 @@ pub async fn rdp_connect(
                 .await
                 .inspect_err(|e| tracing::warn!("RDP {id}: {e}"))?;
         }
+        // A saved session routed through a WireGuard tunnel connects to a
+        // local port into it; the server's name stays for TLS and CredSSP.
+        if !state.rdp_manager.lock().await.running(&id) {
+            params.connect_port = crate::ipc::wireguard_commands::session_forward(&state, session_id.as_deref(), &params.host, params.port).await?;
+        }
         state
             .rdp_manager
             .lock()

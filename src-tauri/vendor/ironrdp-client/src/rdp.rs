@@ -3380,6 +3380,11 @@ async fn tcp_connect_destination(config: &Config) -> ConnectorResult<TcpStream> 
         .map(|hop| hop.connect_hosts.as_slice())
         .filter(|hosts| !hosts.is_empty());
     let Some(hosts) = hosts else {
+        if let Some(address) = config.connect_address {
+            return TcpStream::connect(address)
+                .await
+                .map_err(|e| ironrdp_connector::custom_err!("TCP connect", e));
+        }
         return connect_tcp(&config.destination.to_string(), config.tcp_connect_attempt_timeout)
             .await
             .map_err(|e| ironrdp_connector::custom_err!("TCP connect", e));

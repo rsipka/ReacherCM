@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::{io, net::IpAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -59,12 +59,16 @@ pub fn cancel(id: &str) {
 
 pub async fn probe(ip: IpAddr, port: u16, timeout: Duration) -> (PortState, f64) {
     let start = Instant::now();
-    let state = match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(SocketAddr::new(ip, port))).await {
-        Ok(Ok(_)) => PortState::Open,
-        Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => PortState::Closed,
-        Ok(Err(_)) | Err(_) => PortState::Filtered,
-    };
+    let state = port_state(super::tcp_connect(ip, port, timeout).await);
     (state, start.elapsed().as_secs_f64() * 1000.0)
+}
+
+pub(super) fn port_state(attempt: Option<io::Result<()>>) -> PortState {
+    match attempt {
+        Some(Ok(())) => PortState::Open,
+        Some(Err(e)) if e.kind() == io::ErrorKind::ConnectionRefused => PortState::Closed,
+        Some(Err(_)) | None => PortState::Filtered,
+    }
 }
 
 /// Scan `ports` of `ip`, `concurrency` at a time, telling `report` about

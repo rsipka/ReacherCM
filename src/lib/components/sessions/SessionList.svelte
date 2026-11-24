@@ -68,6 +68,7 @@
 	import { winboxLaunch } from '#lib/ipc/winbox.js';
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
+	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
@@ -1377,6 +1378,7 @@
 			password: auth.type === 'Password' && !auth.password_ref ? (auth.password ?? null) : null,
 			passwordRef: auth.type === 'Password' ? (auth.password_ref ?? null) : null,
 			sessionId: session.id,
+			wireguard: session.wireguard_id ?? null,
 		};
 	}
 
@@ -1643,7 +1645,8 @@
 
 	/** Session menu > Open file manager: the full-pane file manager of an
 	 *  SSH session. A connected tab of it switches over; otherwise it is
-	 *  connected first. */
+	 *  connected first. An RDP session's is the same machine over SFTP, in
+	 *  a tab of its own (see #lib/sessions/rdp-files). */
 	function openFileManager(session: SessionConfig): void {
 		const open = getTabs().find((tab) => tab.type === 'ssh' && tab.sessionId === session.id && tab.connectionId && !tab.link);
 		if (open) {
@@ -1652,7 +1655,33 @@
 			return;
 		}
 		filesOnConnect = session.id;
-		void handleConnect(session);
+		void handleConnect(sessionKind(session) === 'rdp' ? rdpFilesSession(session) : session);
+	}
+
+	/** An RDP session's file manager found no SSH server: how to turn one on. */
+	let sftpHelp = $state<{ session: SessionConfig; host: string; port: number; error: string } | undefined>();
+	const SFTP_POWERSHELL = 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0\nStart-Service sshd\nSet-Service sshd -StartupType Automatic';
+	let sftpCopied = $state(false);
+
+	async function copySftpCommands(): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(SFTP_POWERSHELL);
+			sftpCopied = true;
+			setTimeout(() => (sftpCopied = false), 1500);
+		} catch (err) {
+			addToast(String(err), 'error');
+		}
+	}
+
+	function retrySftp(): void {
+		const s = sftpHelp?.session;
+		sftpHelp = undefined;
+		if (s) openFileManager(s);
+	}
+
+	/** A connect of an RDP session's file manager: the saved session is RDP. */
+	function isRdpFiles(session: SessionConfig): boolean {
+		return sessionKind(session) === 'ssh' && sessions.some((s) => s.id === session.id && sessionKind(s) === 'rdp');
 	}
 
 	async function handleConnect(session: SessionConfig, address?: ResolvedAddress): Promise<void> {
@@ -1899,8 +1928,11 @@
 				sessionId: session.id,
 				// An address marked direct goes straight, without the session's
 				// jump hosts or proxy.
-				jumpChain: addr.viaSessionId ? viaChain(addr.viaSessionId) : addr.routed ? jumpChain : undefined,
-				proxy: addr.routed && !addr.viaSessionId && session.proxy ? {
+				jumpChain: addr.viaSessionId ? viaChain(addr.viaSessionId) : addr.routed && !addr.tunnelOnly ? jumpChain : undefined,
+				// The WireGuard tunnel this address goes through, brought up
+				// (after asking) by sshConnect.
+				wireguard: addr.wireguardId ?? null,
+				proxy: addr.routed && !addr.viaSessionId && !addr.tunnelOnly && session.proxy ? {
 					proxy_type: session.proxy.proxy_type,
 					host: session.proxy.host,
 					port: session.proxy.port,
@@ -1977,7 +2009,9 @@
 			// plain Linux, unknown or Debian is asked again: older versions saved
 			// that for MikroTik and UniFi devices and Raspberry Pi OS, which have
 			// their own logos now.
-			if (osNeedsDetection(session.detected_os, session.os_manual)) {
+			// Not for an RDP session's file manager: its OS says how the
+			// remote desktop connects (GNOME), not what SSH would find.
+			if (!isRdpFiles(session) && osNeedsDetection(session.detected_os, session.os_manual)) {
 				sshDetectOs(id).then(async (osId) => {
 					if (osId && osId !== session.detected_os) {
 						updateTabOs(id, osId);
@@ -2003,6 +2037,15 @@
 			// changed since the list was read): ask, below, then try again.
 			untrusted = untrustedRefsFromError(err);
 			const errStr = String(err);
+			if (!untrusted && isRdpFiles(session) && isUnreachable(errStr)) {
+				// An RDP session's file manager needs an SSH server there,
+				// which a Windows machine has only with OpenSSH Server on:
+				// the prompt goes, a dialog says how to turn it on.
+				const saved = sessions.find((s) => s.id === session.id);
+				if (saved) sftpHelp = { session: saved, host: session.host, port: rdpFilesPort(session), error: errStr };
+				connectSession = undefined;
+				return;
+			}
 			if (!untrusted) {
 				connectError = errStr;
 				askSecret = true;
@@ -2677,9 +2720,9 @@
 				<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(contextMenu.session); closeContextMenu(); }} type="button">
 					{t('session.connect')}
 				</button>
-				{#if sessionKind(contextMenu.session) === 'ssh' && !isMobile()}
-					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button">
-						{t('session.open_file_manager')}
+				{#if (sessionKind(contextMenu.session) === 'ssh' || sessionKind(contextMenu.session) === 'rdp') && !isMobile()}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button" title={sessionKind(contextMenu.session) === 'rdp' ? t('session.rdp_files_hint') : undefined}>
+						{sessionKind(contextMenu.session) === 'rdp' ? t('session.open_file_manager_sftp') : t('session.open_file_manager')}
 					</button>
 				{/if}
 				{#if tmuxFor(contextMenu.session, folders)}
@@ -2868,6 +2911,31 @@
 	onclose={() => (bulkEditOpen = false)}
 	onapplied={(r) => void bulkEdited(r)}
 />
+
+<Modal open={sftpHelp !== undefined} onclose={() => (sftpHelp = undefined)} title={t('session.rdp_sftp_help_title')} maxWidth="560px">
+	{#if sftpHelp}
+		<div class="sftp-help">
+			<p>{t('session.rdp_sftp_help_intro', { host: sftpHelp.host, port: String(sftpHelp.port) })}</p>
+			<ul>
+				<li>{t('session.rdp_sftp_help_2025')}</li>
+				<li>
+					{t('session.rdp_sftp_help_2019')}
+					<div class="sftp-code">
+						<pre>{SFTP_POWERSHELL}</pre>
+						<Button variant="secondary" size="sm" onclick={() => void copySftpCommands()}>{sftpCopied ? t('common.copied') : t('common.copy')}</Button>
+					</div>
+				</li>
+				<li>{t('session.rdp_sftp_help_old')}</li>
+			</ul>
+			<p>{t('session.rdp_sftp_help_after')}</p>
+			<p class="sftp-error">{sftpHelp.error}</p>
+		</div>
+	{/if}
+	{#snippet actions()}
+		<Button variant="secondary" onclick={() => (sftpHelp = undefined)}>{t('common.close')}</Button>
+		<Button variant="primary" onclick={retrySftp}>{t('session.rdp_sftp_help_retry')}</Button>
+	{/snippet}
+</Modal>
 
 <Modal open={moveIds_ !== null} onclose={() => (moveIds_ = null)} title={t('session.move_n_title', { count: String(moveIds_?.length ?? 0) })} maxWidth="420px">
 	<div class="move-body">
@@ -4388,5 +4456,46 @@
 		.folder-header { min-height: 44px; }
 		.folder-menu-btn { width: 36px; height: 36px; opacity: 1; }
 		.folder-delete-btn { display: none; }
+	}
+	.sftp-help {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		font-size: 13px;
+		line-height: 1.5;
+		color: var(--color-text-primary);
+	}
+	.sftp-help p,
+	.sftp-help ul {
+		margin: 0;
+	}
+	.sftp-help ul {
+		padding-left: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.sftp-code {
+		display: flex;
+		align-items: flex-start;
+		gap: 8px;
+		margin-top: 6px;
+	}
+	.sftp-code pre {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+		padding: 8px 10px;
+		overflow-x: auto;
+		font-family: var(--font-mono, monospace);
+		font-size: 12px;
+		border-radius: 6px;
+		background: var(--color-surface-hover);
+		user-select: text;
+	}
+	.sftp-error {
+		font-size: 12px;
+		color: var(--color-text-secondary);
+		word-break: break-word;
 	}
 </style>
