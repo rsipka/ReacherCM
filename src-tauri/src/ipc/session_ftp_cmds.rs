@@ -88,6 +88,12 @@ pub async fn ftp_session_cert_trust(
     session_id: String,
     fingerprint: String,
 ) -> Result<(), String> {
+    trust_session_cert(&state, &session_id, &fingerprint, "ftp").await
+}
+
+/// Add a certificate fingerprint to `<kind>.certs` of a stored session of
+/// that kind (`ftp`, `bmc`), keeping the newest 16.
+pub(super) async fn trust_session_cert(state: &AppState, session_id: &str, fingerprint: &str, kind: &str) -> Result<(), String> {
     let valid = fingerprint.len() == 95 && fingerprint.split(':').all(|b| b.len() == 2 && b.bytes().all(|c| c.is_ascii_hexdigit()));
     if !valid {
         return Err("Not a SHA-256 fingerprint".into());
@@ -96,24 +102,27 @@ pub async fn ftp_session_cert_trust(
     if manager.is_locked() {
         return Err("Vault is locked".to_string());
     }
-    let loc = locate_session(&manager, &session_id).await.ok_or_else(|| format!("Session not found: {session_id}"))?;
+    let loc = locate_session(&manager, session_id).await.ok_or_else(|| format!("Session not found: {session_id}"))?;
     let plaintext = manager.read_secret(&loc.vault_id, &loc.secret_id).await.map_err(|e| e.to_string())?;
     use secrecy::ExposeSecret;
     let mut value: serde_json::Value =
         serde_json::from_slice(plaintext.expose_secret()).map_err(|e| format!("Invalid session data: {e}"))?;
     let Some(obj) = value.as_object_mut() else { return Err(format!("Invalid session data: {session_id}")) };
-    if obj.get("kind").and_then(|k| k.as_str()) != Some("ftp") {
-        return Err("Not an FTP session".into());
+    if obj.get("kind").and_then(|k| k.as_str()) != Some(kind) {
+        return Err(format!("Not a {kind} session"));
     }
-    let ftp = obj.entry("ftp").or_insert_with(|| serde_json::json!({}));
-    let Some(ftp) = ftp.as_object_mut() else { return Err(format!("Invalid session data: {session_id}")) };
-    let mut certs: Vec<String> = ftp.get("certs").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+    let opts = obj.entry(kind).or_insert_with(|| serde_json::json!({}));
+    if opts.is_null() {
+        *opts = serde_json::json!({});
+    }
+    let Some(opts) = opts.as_object_mut() else { return Err(format!("Invalid session data: {session_id}")) };
+    let mut certs: Vec<String> = opts.get("certs").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
     let fp = fingerprint.to_ascii_uppercase();
     certs.retain(|c| !c.eq_ignore_ascii_case(&fp));
     certs.push(fp);
     let extra = certs.len().saturating_sub(16);
     certs.drain(..extra);
-    ftp.insert("certs".into(), serde_json::to_value(&certs).map_err(|e| e.to_string())?);
+    opts.insert("certs".into(), serde_json::to_value(&certs).map_err(|e| e.to_string())?);
     let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     manager
         .update_secret(&loc.vault_id, &loc.secret_id, SecretBox::new(Box::new(json)))

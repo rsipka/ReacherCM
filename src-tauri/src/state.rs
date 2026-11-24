@@ -59,6 +59,9 @@ pub enum SessionKind {
     Web,
     /// FTP or FTPS, shown in the full-pane file manager. Desktop only.
     Ftp,
+    /// A server's BMC (iDRAC, iLO...) over Redfish: health, sensors, logs,
+    /// power and virtual media; see `crate::bmc`.
+    Bmc,
 }
 
 impl SessionKind {
@@ -270,6 +273,9 @@ pub struct SessionConfig {
     /// FTP only: encryption and the certificates it trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ftp: Option<crate::ftp::FtpOptions>,
+    /// Server management (BMC) only: the certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bmc: Option<crate::bmc::BmcOptions>,
 }
 
 /// How to wake a session's machine over the network.
@@ -675,6 +681,8 @@ pub struct AppState {
     pub telnet_manager: Arc<tokio::sync::Mutex<crate::telnet::TelnetManager>>,
     /// Open FTP sessions; their ids are answered by the `sftp_*` commands.
     pub ftp_manager: Arc<crate::ftp::FtpManager>,
+    /// Open server management (Redfish) sessions.
+    pub bmc_manager: Arc<crate::bmc::BmcManager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -724,6 +732,7 @@ impl AppState {
             rdp_manager: Arc::new(tokio::sync::Mutex::new(RdpManager::new())),
             telnet_manager: Arc::new(tokio::sync::Mutex::new(crate::telnet::TelnetManager::new())),
             ftp_manager: Arc::new(crate::ftp::FtpManager::new()),
+            bmc_manager: Arc::new(crate::bmc::BmcManager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),
