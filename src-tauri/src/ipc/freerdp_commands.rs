@@ -222,6 +222,28 @@ fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> Result<String, St
     if o.admin == Some(true) {
         line("/admin");
     }
+    // More folders as drives, and every local drive; a name or path with a
+    // comma cannot be said in FreeRDP's argument.
+    for path in o.drives.iter().flatten() {
+        let name = Path::new(path).file_name().and_then(|n| n.to_str()).unwrap_or("Drive");
+        if path.contains(',') || name.contains(',') || !Path::new(path).is_absolute() {
+            return Err("FreeRDP drive sharing requires absolute folder paths without commas.".into());
+        }
+        line(&format!("/drive:{name},{path}"));
+    }
+    if o.all_drives == Some(true) {
+        line("+drives");
+        line("+home-drive");
+    }
+    // Kerberos: FreeRDP negotiates it by itself; a KDC proxy is passed on.
+    if o.auth.as_deref() == Some("kerberos") {
+        if let Some(kdc) = o.kdc.as_deref().filter(|k| k.starts_with("https://") || k.starts_with("http://")) {
+            if kdc.contains(',') {
+                return Err("FreeRDP cannot use a KDC proxy URL with a comma.".into());
+            }
+            line(&format!("/kerberos:kdc-url:{kdc}"));
+        }
+    }
     let program = o.program.as_deref().map(str::trim).filter(|s| !s.is_empty());
     if let Some(program) = program.filter(|_| o.is_remote_app()) {
         // One argument of comma-separated key:value pairs, so no value may
