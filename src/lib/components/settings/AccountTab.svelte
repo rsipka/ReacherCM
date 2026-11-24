@@ -8,7 +8,7 @@
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
 	import {
-		bindPreferenceAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
+		bindPreferenceAccount, getSyncAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
 	} from '#lib/state/preference-sync.svelte.js';
 
 	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
@@ -17,7 +17,7 @@
 	let pairingCode = $state('');
 	let pairingServer = $state('');
 	let verificationCode = $state('');
-	let account = $state<SyncAccount | null>(null);
+	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
 	let vaultSync = $state(false);
@@ -32,21 +32,19 @@
 	});
 
 	$effect(() => {
-		if (preferenceSync.error === 'sync_account.error_revoked' && account && action === null) {
+		if (preferenceSync.error === 'sync_account.error_revoked' && action === null) {
 			error = preferenceSync.error;
-			account = null;
-			bindPreferenceAccount(null);
 		}
 	});
 
 	async function load(): Promise<void> {
 		try {
-			account = await invoke<SyncAccount | null>('sync_account_status');
-			if (account) {
-				server = account.server;
+			const saved = await invoke<SyncAccount | null>('sync_account_status');
+			bindPreferenceAccount(saved);
+			if (saved) {
+				server = saved.server;
 				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			}
-			bindPreferenceAccount(account);
 		} catch (cause) {
 			error = errorKey(cause);
 		} finally {
@@ -66,9 +64,9 @@
 		error = '';
 		message = 'sync_account.browser_pending';
 		try {
-			account = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
-			server = account.server;
-			bindPreferenceAccount(account);
+			const signedIn = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
+			server = signedIn.server;
+			bindPreferenceAccount(signedIn);
 			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			message = '';
 		} catch (cause) {
@@ -113,9 +111,9 @@
 		action = 'pair';
 		try {
 			const verification = new Channel<string>((code) => { verificationCode = code; });
-			account = await invoke<SyncAccount>('sync_account_pair', { code: pairingCode, label, verification });
-			server = pairingServer;
-			bindPreferenceAccount(account);
+			const paired = await invoke<SyncAccount>('sync_account_pair', { code: pairingCode, label, verification });
+			server = paired.server;
+			bindPreferenceAccount(paired);
 			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 		} catch (cause) {
 			error = errorKey(cause);
@@ -132,12 +130,11 @@
 		error = '';
 		message = '';
 		try {
-			account = await invoke<SyncAccount>('sync_account_check');
+			bindPreferenceAccount(await invoke<SyncAccount>('sync_account_check'));
 			message = 'sync_account.connected';
 		} catch (cause) {
 			error = errorKey(cause);
 			if (error === 'sync_account.error_revoked') {
-				account = null;
 				bindPreferenceAccount(null);
 			}
 		} finally {
@@ -151,7 +148,6 @@
 		message = '';
 		try {
 			const revoked = await invoke<boolean>('sync_account_sign_out');
-			account = null;
 			bindPreferenceAccount(null);
 			if (!revoked) message = 'sync_account.signed_out_locally';
 		} catch (cause) {

@@ -4,6 +4,7 @@
 	import McpSessionBar from './McpSessionBar.svelte';
 	import ShareBar from '#lib/components/share/ShareBar.svelte';
 	import Clock from '#lib/components/layout/Clock.svelte';
+	import SyncAccountIndicator from '#lib/components/layout/SyncAccountIndicator.svelte';
 	import HistoryIndicator from '#lib/components/layout/HistoryIndicator.svelte';
 	import { getActiveTab } from '#lib/state/tabs.svelte.js';
 
@@ -187,6 +188,7 @@
 			{/if}
 		</div>
 		<HistoryIndicator />
+		<SyncAccountIndicator />
 		<Clock />
 	</div>
 {:else}
@@ -197,6 +199,7 @@
 		<span class="disconnected-text">{monitoringOff && connectionId ? t('monitoring.off') : t('monitoring.not_connected')}</span>
 		<ShareBar />
 		<HistoryIndicator />
+		<SyncAccountIndicator />
 		<Clock />
 	</div>
 {/if}

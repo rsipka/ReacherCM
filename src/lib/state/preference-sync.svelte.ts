@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { getSettings, onPortableSettingChanged, applyPortableSettings } from '#lib/state/settings.svelte.js';
 import { defaults } from '#lib/state/settings-store.js';
 import {
@@ -18,14 +19,18 @@ interface Journal extends PreferenceJournal {
 
 const STORAGE_KEY = 'reachercm-preference-sync';
 const POLL_INTERVAL = 30_000;
-let current: SyncAccount | null = null;
+let current = $state<SyncAccount | null>(null);
 let journal: Journal | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let running = false;
-let accountResolved = false;
+let accountRevision = 0;
 let resync = false;
 
-export const preferenceSync = $state({ enabled: false, syncing: false, error: '' });
+export const preferenceSync = $state({ enabled: false, syncing: false, error: '', online: true });
+
+export function getSyncAccount(): SyncAccount | null {
+	return current;
+}
 
 function scope(account: SyncAccount | null): string {
 	return account ? JSON.stringify([account.server, account.username, account.deviceId]) : '';
@@ -53,8 +58,8 @@ function persist(): void {
 }
 
 export function bindPreferenceAccount(account: SyncAccount | null): void {
-	if (accountResolved && scope(current) === scope(account)) return;
-	accountResolved = true;
+	if (accountRevision && scope(current) === scope(account)) return;
+	accountRevision++;
 	current = account;
 	const saved = readJournal();
 	journal = saved?.scope === scope(account) && account ? saved : null;
@@ -81,23 +86,42 @@ export function startPreferenceSync(): () => void {
 		if (running) resync = true;
 		else schedule();
 	});
-	const poll = () => { void syncPreferences(); };
-	const interval = setInterval(poll, POLL_INTERVAL);
-	window.addEventListener('online', poll);
-	window.addEventListener('focus', poll);
 	let stopped = false;
-	if (readJournal()) {
+	function refreshAccount(): void {
+		const revision = accountRevision;
 		void invoke<SyncAccount | null>('sync_account_status').then((account) => {
-			if (!stopped && !accountResolved) bindPreferenceAccount(account);
+			if (!stopped && revision === accountRevision) bindPreferenceAccount(account);
 		}).catch(() => {});
 	}
+	function updateOnline(): void {
+		preferenceSync.online = navigator.onLine;
+	}
+	function poll(): void {
+		updateOnline();
+		void syncPreferences();
+	}
+	function resume(): void {
+		refreshAccount();
+		poll();
+	}
+	const interval = setInterval(poll, POLL_INTERVAL);
+	const unlisten = listen('vault-sync-status', () => {
+		if (current) refreshAccount();
+	}).catch(() => undefined);
+	window.addEventListener('online', poll);
+	window.addEventListener('offline', updateOnline);
+	window.addEventListener('focus', resume);
+	updateOnline();
+	refreshAccount();
 	return () => {
 		stopped = true;
 		clearTimeout(timer);
 		clearInterval(interval);
 		stopChanges();
+		void unlisten.then((stop) => stop?.());
 		window.removeEventListener('online', poll);
-		window.removeEventListener('focus', poll);
+		window.removeEventListener('offline', updateOnline);
+		window.removeEventListener('focus', resume);
 	};
 }
 
@@ -131,7 +155,7 @@ export async function syncPreferences(): Promise<void> {
 		if (journal !== active) return;
 		const error = typeof cause === 'string' && cause.startsWith('sync_account.')
 			? cause : 'sync_account.error_server';
-		if (error === 'sync_account.error_revoked') setPreferenceSync(false);
+		if (error === 'sync_account.error_revoked') bindPreferenceAccount(null);
 		if (error !== 'sync_account.busy') preferenceSync.error = error;
 	} finally {
 		running = false;

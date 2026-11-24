@@ -4149,6 +4149,7 @@
   "sync_account.sync_preferences_desc": "Synchronizuje jazyk, základní režim vzhledu a styl kurzoru terminálu mezi přihlášenými zařízeními.",
   "sync_account.sync_now": "Synchronizovat nyní",
   "sync_account.syncing": "Synchronizace předvoleb…",
+  "sync_account.offline": "Bez připojení",
   "sync_account.vault_enable": "Použít tento server pro synchronizaci trezoru",
   "sync_account.vault_enabled": "Šifrovaná synchronizace osobního trezoru je zapnutá.",
   "sync_account.vault_moving": "Nahrávání a ověřování trezoru…",

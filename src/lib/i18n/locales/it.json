@@ -4149,6 +4149,7 @@
   "sync_account.sync_preferences_desc": "Sincronizza lingua, modalità del tema di base e stile del cursore del terminale sui dispositivi connessi.",
   "sync_account.sync_now": "Sincronizza ora",
   "sync_account.syncing": "Sincronizzazione delle preferenze…",
+  "sync_account.offline": "Offline",
   "sync_account.vault_enable": "Usa questo server per sincronizzare il vault",
   "sync_account.vault_enabled": "La sincronizzazione cifrata del vault personale è attiva.",
   "sync_account.vault_moving": "Caricamento e verifica del vault…",

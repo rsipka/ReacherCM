@@ -2,6 +2,7 @@
 	import { getActiveTab } from '#lib/state/tabs.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import Clock from './Clock.svelte';
+	import SyncAccountIndicator from './SyncAccountIndicator.svelte';
 	import HistoryIndicator from './HistoryIndicator.svelte';
 
 	let activeTab = $derived(getActiveTab());
@@ -36,6 +37,7 @@
 
 	<div class="statusbar-right">
 		<HistoryIndicator />
+		<SyncAccountIndicator />
 		<Clock />
 	</div>
 </footer>
@@ -78,7 +80,8 @@
 	}
 
 	.statusbar-right {
-		flex: 1;
+		flex: 0 1 auto;
+		min-width: 0;
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
