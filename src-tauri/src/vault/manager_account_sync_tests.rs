@@ -434,8 +434,21 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
     acl.lock().await.signed_in = "recipient";
     let account = seed_vault_test_account(&url, "recipient").await;
     let id = Uuid::parse_str(&info.id).unwrap();
+    let owner_key = BASE64.encode(owner.identity.as_ref().unwrap().public_key.as_bytes());
+    assert!(
+        recipient
+            .open_organization_vault(&account, org, id, None)
+            .await
+            .is_err()
+    );
+    assert!(
+        recipient
+            .open_organization_vault(&account, org, id, Some(&public_key))
+            .await
+            .is_err()
+    );
     recipient
-        .open_organization_vault(&account, org, id)
+        .open_organization_vault(&account, org, id, Some(&owner_key))
         .await
         .unwrap();
     assert_eq!(
@@ -455,14 +468,42 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
 
     acl.lock().await.grants.get_mut("recipient").unwrap()["role"] = json!("editor");
     recipient
-        .open_organization_vault(&account, org, id)
+        .open_organization_vault(&account, org, id, None)
         .await
         .unwrap();
     recipient
         .update_secret(&info.id, &record, value("editor edit"))
         .await
         .unwrap();
-    acl.lock().await.signed_in = "owner";
+    // A higher reported epoch without an owner-authorized key must leave
+    // the pending edit intact and stop sync before the upload.
+    let revision = remote.lock().await.revision;
+    acl.lock().await.epoch = 1;
+    let recipient_manager = Mutex::new(recipient);
+    let (_, failures) = sync_vaults(&recipient_manager, Some(&info.id), false).await;
+    assert_eq!(failures.len(), 1);
+    assert_eq!(remote.lock().await.revision, revision);
+    let recipient = recipient_manager.into_inner();
+    assert_eq!(
+        recipient.vaults[&info.id]
+            .organization_key_epoch()
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        recipient
+            .read_secret(&info.id, &record)
+            .await
+            .unwrap()
+            .expose_secret(),
+        b"editor edit"
+    );
+    {
+        let mut acl = acl.lock().await;
+        acl.epoch = 0;
+        acl.signed_in = "owner";
+    }
     seed_vault_test_account(&url, "owner").await;
     owner
         .change_organization_grant(&info.id, "removed", None, "")
@@ -658,12 +699,22 @@ async fn three_native_clients_sync_through_postgres() {
         .await
         .unwrap();
 
+    let owner_key = BASE64.encode(
+        owner
+            .lock()
+            .await
+            .identity
+            .as_ref()
+            .unwrap()
+            .public_key
+            .as_bytes(),
+    );
     for (manager, device) in [(&editor, editor_device), (&third, third_device)] {
         let account = device.activate(server).await;
         manager
             .lock()
             .await
-            .open_organization_vault(&account, org, id)
+            .open_organization_vault(&account, org, id, Some(&owner_key))
             .await
             .unwrap();
     }
