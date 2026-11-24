@@ -82,7 +82,7 @@ pub(crate) fn download_subdir(root: &Dir, names: &[String]) -> io::Result<Dir> {
     for name in names {
         dir = match dir.open_dir_nofollow(name) {
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                match dir.create_dir(name) {
+                match create_download_dir(&dir, name) {
                     Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
                     Err(e) => return Err(e),
@@ -95,6 +95,40 @@ pub(crate) fn download_subdir(root: &Dir, names: &[String]) -> io::Result<Dir> {
         reject_reparse_point(&dir.dir_metadata()?)?;
     }
     Ok(dir)
+}
+
+#[cfg(not(windows))]
+fn create_download_dir(dir: &Dir, name: &str) -> io::Result<()> {
+    dir.create_dir(name)
+}
+
+#[cfg(windows)]
+fn create_download_dir(dir: &Dir, name: &str) -> io::Result<()> {
+    std::fs::create_dir(windows_dir_path(dir)?.join(name))
+}
+
+// cap-primitives 4.0.3 strips the extended prefix before using path-based
+// operations on Windows. Retain it so UNC paths stay absolute. The directory
+// handle denies delete sharing and stays open through each operation.
+#[cfg(windows)]
+fn windows_dir_path(dir: &Dir) -> io::Result<std::path::PathBuf> {
+    use std::os::windows::{ffi::OsStringExt, io::AsRawHandle};
+    use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{GetFinalPathNameByHandleW, FILE_NAME_OPENED}};
+
+    let mut path = vec![0u16; 32_768];
+    // SAFETY: `dir` owns the live handle and the buffer is writable.
+    let len = unsafe { GetFinalPathNameByHandleW(HANDLE(dir.as_raw_handle()), &mut path, FILE_NAME_OPENED) } as usize;
+    if len == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if len >= path.len() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Download directory path is too long"));
+    }
+    let path = std::path::PathBuf::from(OsString::from_wide(&path[..len]));
+    if !path.is_absolute() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Download directory path is not absolute"));
+    }
+    Ok(path)
 }
 
 #[cfg(windows)]
@@ -131,7 +165,13 @@ impl PendingFile {
 
     pub(crate) fn replace(mut self, destination: &OsStr) -> io::Result<()> {
         let name = self.name.as_ref().expect("pending file");
+        #[cfg(not(windows))]
         self.dir.rename(name, &self.dir, destination)?;
+        #[cfg(windows)]
+        {
+            let dir = windows_dir_path(&self.dir)?;
+            std::fs::rename(dir.join(name), dir.join(destination))?;
+        }
         self.keep();
         Ok(())
     }
@@ -140,7 +180,10 @@ impl PendingFile {
 impl Drop for PendingFile {
     fn drop(&mut self) {
         if let Some(name) = self.name.take() {
+            #[cfg(not(windows))]
             let _ = self.dir.remove_file(name);
+            #[cfg(windows)]
+            let _ = windows_dir_path(&self.dir).and_then(|dir| std::fs::remove_file(dir.join(name)));
         }
     }
 }

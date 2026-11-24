@@ -11,6 +11,15 @@ fn ftp_conn(state: &AppState, connection_id: &str) -> Option<std::sync::Arc<crat
     state.ftp_manager.get(connection_id)
 }
 
+fn emit_transfer_error(app: &tauri::AppHandle, id: &str, error: impl std::fmt::Display, cancelled: bool) {
+    if cancelled {
+        let _ = app.emit(&format!("transfer-cancelled-{id}"), ());
+    } else {
+        tracing::error!("Transfer {id} failed: {error}");
+        let _ = app.emit(&format!("transfer-error-{id}"), error.to_string());
+    }
+}
+
 /// List the contents of a remote directory.
 #[tauri::command]
 pub async fn sftp_list_dir(
@@ -66,6 +75,20 @@ fn register_transfer(
     token
 }
 
+async fn transfer_fs(
+    manager: &tokio::sync::Mutex<crate::ssh::client::SshManager>,
+    connection_id: &str,
+    cancel: &crate::sftp::transfer::CancellationToken,
+) -> Result<crate::sftp::backend::RemoteFs, crate::sftp::transfer::TransferError> {
+    use crate::sftp::transfer::TransferError;
+    let manager = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err(TransferError::Cancelled),
+        manager = manager.lock() => manager,
+    };
+    Ok(manager.get_fs(connection_id)?)
+}
+
 /// Stop every transfer running on a connection.
 pub fn cancel_transfers_on(state: &AppState, connection_id: &str) {
     if let Ok(map) = state.transfers.lock() {
@@ -77,8 +100,7 @@ pub fn cancel_transfers_on(state: &AppState, connection_id: &str) {
     }
 }
 
-/// Stop one upload or download. The partial file is removed: on the server
-/// for an upload, on this machine for a download.
+/// Stop a download or stop an upload at the next file boundary.
 #[tauri::command]
 pub async fn sftp_transfer_cancel(
     state: tauri::State<'_, AppState>,
@@ -120,16 +142,11 @@ pub async fn sftp_upload(
                 map.remove(&tid);
             }
             if let Err(e) = result {
-                tracing::error!("FTP upload failed for {}: {}", tid, e);
-                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::ftp::FtpError::Cancelled));
             }
         });
         return Ok(transfer_id);
     }
-    let fs = {
-        let manager = state.ssh_manager.lock().await;
-        manager.get_fs(&connection_id).map_err(|e| e.to_string())?
-    };
     let transfer_id = transfer_id_from(transfer_id)?;
     let tid = transfer_id.clone();
     let plugin_mgr = state.plugin_manager.clone();
@@ -137,17 +154,18 @@ pub async fn sftp_upload(
     let rpath = remote_path.clone();
     let cancel = register_transfer(&state, &transfer_id, &connection_id);
     let transfers = state.transfers.clone();
+    let manager = state.ssh_manager.clone();
 
     tokio::spawn(async move {
-        let result = crate::sftp::transfer::upload_path(
-            &fs, &local_path, &remote_path, &tid, &app, &cancel,
-        ).await;
+        let result = match transfer_fs(&manager, &connection_id, &cancel).await {
+            Ok(fs) => crate::sftp::transfer::upload_path(&fs, &local_path, &remote_path, &tid, &app, &cancel).await,
+            Err(e) => Err(e),
+        };
         if let Ok(mut map) = transfers.lock() {
             map.remove(&tid);
         }
         if let Err(e) = result {
-            tracing::error!("Upload failed for {}: {}", tid, e);
-            let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            emit_transfer_error(&app, &tid, &e, matches!(e, crate::sftp::transfer::TransferError::Cancelled));
         } else {
             let hook = hooks::sftp_upload_complete(&conn_id, &rpath);
             let mut mgr = plugin_mgr.lock().await;
@@ -185,16 +203,11 @@ pub(crate) async fn sftp_download(
                 map.remove(&tid);
             }
             if let Err(e) = result {
-                tracing::error!("FTP download failed for {}: {}", tid, e);
-                let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::ftp::FtpError::Cancelled));
             }
         });
         return Ok(transfer_id);
     }
-    let fs = {
-        let manager = state.ssh_manager.lock().await;
-        manager.get_fs(&connection_id).map_err(|e| e.to_string())?
-    };
     let transfer_id = transfer_id_from(transfer_id)?;
     let tid = transfer_id.clone();
     let plugin_mgr = state.plugin_manager.clone();
@@ -203,17 +216,18 @@ pub(crate) async fn sftp_download(
     let lpath = local_path.path();
     let cancel = register_transfer(&state, &transfer_id, &connection_id);
     let transfers = state.transfers.clone();
+    let manager = state.ssh_manager.clone();
 
     tokio::spawn(async move {
-        let result = crate::sftp::transfer::download_file(
-            &fs, &remote_path, &local_path, &tid, &app, &cancel,
-        ).await;
+        let result = match transfer_fs(&manager, &connection_id, &cancel).await {
+            Ok(fs) => crate::sftp::transfer::download_file(&fs, &remote_path, &local_path, &tid, &app, &cancel).await,
+            Err(e) => Err(e),
+        };
         if let Ok(mut map) = transfers.lock() {
             map.remove(&tid);
         }
         if let Err(e) = result {
-            tracing::error!("Download failed for {}: {}", tid, e);
-            let _ = app.emit(&format!("transfer-error-{}", tid), e.to_string());
+            emit_transfer_error(&app, &tid, &e, matches!(e, crate::sftp::transfer::TransferError::Cancelled));
         } else {
             let hook = hooks::sftp_download_complete(&conn_id, &rpath, &lpath.to_string_lossy());
             let mut mgr = plugin_mgr.lock().await;
@@ -667,4 +681,26 @@ pub async fn sftp_home(
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
     };
     Ok(browser::home_dir(&fs).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::transfer_fs;
+    use crate::sftp::transfer::{CancellationToken, TransferError};
+    use crate::ssh::client::SshManager;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn transfer_can_stop_while_the_connection_lookup_is_waiting() {
+        let manager = tokio::sync::Mutex::new(SshManager::new());
+        let _busy = manager.lock().await;
+        let cancel = CancellationToken::new();
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(transfer_fs(&manager, "example", &cancel), async {
+                tokio::task::yield_now().await;
+                cancel.cancel();
+            })
+        }).await.unwrap();
+        assert!(matches!(result, Err(TransferError::Cancelled)));
+    }
 }
