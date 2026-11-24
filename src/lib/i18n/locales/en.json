@@ -4118,5 +4118,9 @@
   "sync_account.error_existing": "Sign out before connecting another account.",
   "sync_account.error_browser": "Could not open the system browser.",
   "sync_account.error_expired": "The sign-in request expired. Try again.",
-  "sync_account.error_label": "Enter a device name of up to 64 characters."
+  "sync_account.error_label": "Enter a device name of up to 64 characters.",
+  "sync_account.sync_preferences": "Sync preferences",
+  "sync_account.sync_preferences_desc": "Sync language, base theme mode, and terminal cursor style across signed-in devices.",
+  "sync_account.sync_now": "Sync now",
+  "sync_account.syncing": "Syncing preferences…"
 }

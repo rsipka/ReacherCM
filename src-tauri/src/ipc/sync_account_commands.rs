@@ -1,4 +1,9 @@
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    net::Ipv4Addr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use axum::{
     extract::State,
@@ -29,6 +34,14 @@ const CANCELED: &str = "sync_account.canceled";
 
 static ACTION: Mutex<()> = Mutex::const_new(());
 static CANCEL: Notify = Notify::const_new();
+static ACCESS: Mutex<Option<CachedAccess>> = Mutex::const_new(None);
+
+struct CachedAccess {
+    server: Url,
+    device_id: String,
+    token: Zeroizing<String>,
+    valid_until: Instant,
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +62,7 @@ struct Tokens {
     access_token: String,
     refresh_token: String,
     device_id: String,
+    expires_in: u64,
 }
 
 #[derive(Deserialize)]
@@ -369,12 +383,13 @@ pub async fn sync_account_sign_in(server: String, label: String) -> Result<Accou
     };
     let stored = StoredAccount {
         account: account.clone(),
-        refresh: value.refresh_token,
+        refresh: value.refresh_token.clone(),
     };
     if let Err(err) = save(&stored) {
         revoke(&http, &server, &stored.refresh).await;
         return Err(err);
     }
+    remember_access(&server, value).await;
     Ok(account)
 }
 
@@ -389,36 +404,14 @@ pub async fn sync_account_check() -> Result<AccountView> {
     let mut stored = saved()?.ok_or(REVOKED)?;
     let server = origin(&stored.account.server)?;
     let http = http(&server)?;
-    let fresh = match tokens(
-        &http,
-        &server,
-        &[
-            ("client_id", CLIENT_ID),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", &stored.refresh),
-        ],
-    )
-    .await
-    {
-        Ok(tokens) => tokens,
-        Err(REVOKED) => {
-            forget()?;
-            return Err(REVOKED);
-        }
-        Err(err) => return Err(err),
-    };
-    if fresh.device_id != stored.account.device_id {
-        return Err(SERVER_ERROR);
-    }
-    stored.refresh.clone_from(&fresh.refresh_token);
-    if let Err(err) = save(&stored) {
-        revoke(&http, &server, &stored.refresh).await;
-        return Err(err);
-    }
+    let fresh = refresh_access(&http, &server, &mut stored).await?;
     match identity(&http, &server, &fresh).await {
-        Ok(identity) if identity.username == stored.account.username => Ok(stored.account),
+        Ok(identity) if identity.username == stored.account.username => {
+            remember_access(&server, fresh).await;
+            Ok(stored.account)
+        }
         Err(REVOKED) => {
-            forget()?;
+            clear_account().await?;
             Err(REVOKED)
         }
         Err(error) => Err(error),
@@ -432,7 +425,7 @@ pub async fn sync_account_sign_out() -> Result<bool> {
     let Some(stored) = saved()? else {
         return Ok(true);
     };
-    forget()?;
+    clear_account().await?;
     let Ok(server) = origin(&stored.account.server) else {
         return Ok(false);
     };
@@ -448,6 +441,134 @@ pub fn sync_account_manage() -> Result<()> {
     let server = origin(&stored.account.server)?;
     tauri_plugin_opener::open_url(endpoint(&server, "/devices").as_str(), None::<&str>)
         .map_err(|_| "sync_account.error_browser")
+}
+
+async fn clear_account() -> Result<()> {
+    *ACCESS.lock().await = None;
+    forget()
+}
+
+async fn refresh_access(
+    client: &Client,
+    server: &Url,
+    stored: &mut StoredAccount,
+) -> Result<Tokens> {
+    let fresh = match tokens(
+        client,
+        server,
+        &[
+            ("client_id", CLIENT_ID),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", &stored.refresh),
+        ],
+    )
+    .await
+    {
+        Ok(tokens) => tokens,
+        Err(REVOKED) => {
+            clear_account().await?;
+            return Err(REVOKED);
+        }
+        Err(err) => return Err(err),
+    };
+    if fresh.device_id != stored.account.device_id {
+        return Err(SERVER_ERROR);
+    }
+    stored.refresh.clone_from(&fresh.refresh_token);
+    if let Err(err) = save(stored) {
+        revoke(client, server, &stored.refresh).await;
+        return Err(err);
+    }
+    Ok(fresh)
+}
+
+async fn remember_access(server: &Url, value: Tokens) -> Zeroizing<String> {
+    let token = Zeroizing::new(value.access_token);
+    // Refresh a short time before expiry so a request has time to reach the server.
+    let valid_until =
+        Instant::now() + Duration::from_secs(value.expires_in.min(900).saturating_sub(30));
+    *ACCESS.lock().await = Some(CachedAccess {
+        server: server.clone(),
+        device_id: value.device_id,
+        token: token.clone(),
+        valid_until,
+    });
+    token
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct PreferencePatch {
+    revision: u64,
+    changes: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct PreferenceSnapshot {
+    revision: u64,
+    values: BTreeMap<String, String>,
+    #[serde(skip_deserializing)]
+    conflict: bool,
+}
+
+#[tauri::command]
+pub async fn sync_account_preferences(
+    device_id: String,
+    patch: Option<PreferencePatch>,
+) -> Result<PreferenceSnapshot> {
+    let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
+    let mut stored = saved()?.ok_or(REVOKED)?;
+    if stored.account.device_id != device_id {
+        return Err(REVOKED);
+    }
+    let server = origin(&stored.account.server)?;
+    let http = http(&server)?;
+    let cached = ACCESS
+        .lock()
+        .await
+        .as_ref()
+        .filter(|entry| {
+            entry.server == server
+                && entry.device_id == device_id
+                && entry.valid_until > Instant::now()
+        })
+        .map(|entry| entry.token.clone());
+    let mut access = match cached {
+        Some(token) => token,
+        None => remember_access(&server, refresh_access(&http, &server, &mut stored).await?).await,
+    };
+    for attempt in 0..2 {
+        let url = endpoint(&server, "/api/v1/preferences");
+        let request = match &patch {
+            Some(patch) => http.patch(url).json(patch),
+            None => http.get(url),
+        };
+        let response = request
+            .bearer_auth(access.as_str())
+            .send()
+            .await
+            .map_err(|_| SERVER_ERROR)?;
+        let status = response.status();
+        if status == StatusCode::UNAUTHORIZED {
+            if attempt == 0 {
+                access =
+                    remember_access(&server, refresh_access(&http, &server, &mut stored).await?)
+                        .await;
+                continue;
+            }
+            clear_account().await?;
+            return Err(REVOKED);
+        }
+        if status != StatusCode::OK && status != StatusCode::CONFLICT {
+            return Err(SERVER_ERROR);
+        }
+        let mut snapshot = response
+            .json::<PreferenceSnapshot>()
+            .await
+            .map_err(|_| SERVER_ERROR)?;
+        snapshot.conflict = status == StatusCode::CONFLICT;
+        return Ok(snapshot);
+    }
+    Err(SERVER_ERROR)
 }
 
 #[cfg(test)]

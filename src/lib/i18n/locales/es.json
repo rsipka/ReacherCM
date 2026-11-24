@@ -4118,5 +4118,9 @@
   "sync_account.error_existing": "Cierra sesión antes de conectar otra cuenta.",
   "sync_account.error_browser": "No se pudo abrir el navegador del sistema.",
   "sync_account.error_expired": "La solicitud de inicio de sesión caducó. Inténtalo de nuevo.",
-  "sync_account.error_label": "Introduce un nombre de dispositivo de hasta 64 caracteres."
+  "sync_account.error_label": "Introduce un nombre de dispositivo de hasta 64 caracteres.",
+  "sync_account.sync_preferences": "Sincronizar preferencias",
+  "sync_account.sync_preferences_desc": "Sincroniza el idioma, el modo de tema básico y el estilo del cursor del terminal entre los dispositivos conectados.",
+  "sync_account.sync_now": "Sincronizar ahora",
+  "sync_account.syncing": "Sincronizando preferencias…"
 }
