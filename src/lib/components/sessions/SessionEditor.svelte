@@ -125,6 +125,10 @@
 	let rdpAdmin = $state(false);
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
+	let rdpRemoteApp = $state(false);
+	/** RemoteApp: its windows in the tab, or each in a window of its own. */
+	let rdpAppWindows = $state<'' | 'separate'>('');
+	let rdpAppArgs = $state('');
 	/** The SSH port of Open file manager (SFTP on the same host); '' for 22. */
 	let rdpSftpPort = $state('');
 	const RDP_RESOLUTIONS = ['1280x720', '1280x1024', '1366x768', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3840x2160'];
@@ -180,6 +184,9 @@
 		rdpAdmin = o?.admin === true;
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
+		rdpRemoteApp = o?.remote_app === true;
+		rdpAppWindows = o?.app_windows === 'separate' ? 'separate' : '';
+		rdpAppArgs = o?.app_args ?? '';
 		rdpSftpPort = o?.files_port ? String(o.files_port) : '';
 	}
 
@@ -205,6 +212,9 @@
 			admin: rdpAdmin || null,
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
+			remote_app: rdpProgram.trim() && rdpRemoteApp ? true : null,
+			app_args: rdpProgram.trim() && rdpRemoteApp ? rdpAppArgs.trim() || null : null,
+			app_windows: rdpProgram.trim() && rdpRemoteApp && rdpAppWindows ? rdpAppWindows : null,
 			files_port: sftpPortToSave(),
 		};
 		return Object.values(o).some((v) => v !== null) ? o : null;
@@ -955,6 +965,10 @@
 		const terminalToSave: TerminalOptions | null = termSsh && (termType.trim() || backspaceChoice || encodingChoice)
 			? { term: termType.trim() || null, backspace: backspaceChoice || null, encoding: encodingChoice || null }
 			: null;
+		if (kind === 'rdp' && rdpRemoteApp && !rdpProgram.trim()) {
+			error = t('session.rdp_app_program_missing');
+			return;
+		}
 		if (terminalToSave?.term && !/^[\x21-\x7e]{1,64}$/.test(terminalToSave.term)) {
 			error = t('session.term_type_invalid');
 			return;
@@ -1395,6 +1409,31 @@
 					<button type="button" class="auth-btn" class:active={os === 'gnome'} disabled={saving} onclick={() => (os = 'gnome')}>{t('session.os_gnome')}</button>
 				</div>
 			</div>
+			<div class="auth-section">
+				<span class="auth-label">{t('session.rdp_opens')}</span>
+				<div class="auth-toggle">
+					<button type="button" class="auth-btn" class:active={!rdpRemoteApp} disabled={saving} onclick={() => (rdpRemoteApp = false)}>{t('session.rdp_opens_desktop')}</button>
+					<button type="button" class="auth-btn" class:active={rdpRemoteApp} disabled={saving} onclick={() => (rdpRemoteApp = true)}>RemoteApp</button>
+				</div>
+			</div>
+			{#if rdpRemoteApp}
+				<div class="shell-field">
+					<Input label={t('session.rdp_app_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
+					<p class="shell-hint">{t('session.rdp_remote_app_hint')}</p>
+				</div>
+				<Input label={t('session.rdp_app_args')} bind:value={rdpAppArgs} placeholder="C:\Users\Public\notes.txt" disabled={saving} />
+				<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+				{#if rdpClient === 'ironrdp' && !isMobile()}
+					<div class="shell-field">
+						<label class="via-label" for="rdp-app-windows">{t('session.rdp_app_windows')}</label>
+						<select id="rdp-app-windows" class="via-select" bind:value={rdpAppWindows} disabled={saving}>
+							<option value="">{t('session.rdp_app_windows_tab')}</option>
+							<option value="separate">{t('session.rdp_app_windows_separate')}</option>
+						</select>
+						{#if rdpAppWindows === 'separate'}<p class="shell-hint">{t('session.rdp_app_windows_separate_hint')}</p>{/if}
+					</div>
+				{/if}
+			{/if}
 			{#if onIos}
 			<div class="shell-field">
 				<label class="jump-toggle">
@@ -1531,12 +1570,14 @@
 							<span class="jump-toggle-text">{t('session.rdp_admin')}</span>
 						</label>
 					</div>
-					<div class="shell-field">
-						<Input label={t('session.rdp_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
-						<p class="shell-hint">{t('session.rdp_program_hint')}</p>
-					</div>
-					{#if rdpProgram.trim()}
-						<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+					{#if !rdpRemoteApp}
+						<div class="shell-field">
+							<Input label={t('session.rdp_program')} bind:value={rdpProgram} placeholder="C:\Windows\System32\notepad.exe" disabled={saving} />
+							<p class="shell-hint">{t('session.rdp_program_hint')}</p>
+						</div>
+						{#if rdpProgram.trim()}
+							<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+						{/if}
 					{/if}
 				</div>
 			</details>

@@ -45,6 +45,7 @@
 pub mod clipboard;
 pub mod drive;
 pub mod options;
+pub mod remote_app;
 #[cfg(windows)]
 mod audio_session;
 
@@ -248,6 +249,13 @@ impl Flow {
         self.notify.notify_one();
     }
 
+    /// Send the whole picture next, to every canvas: one more has started
+    /// listening.
+    pub(crate) fn refresh(&self) {
+        self.refresh.store(true, Ordering::Release);
+        self.notify.notify_one();
+    }
+
     pub(crate) fn has_ended(&self) -> bool {
         self.ended.load(Ordering::Acquire)
     }
@@ -275,6 +283,17 @@ impl Flow {
     }
 }
 
+/// One more canvas the picture goes to: a RemoteApp window of its own,
+/// showing its part of the session. Paced like the panel; the slowest canvas
+/// sets the pace for all.
+pub(crate) struct View {
+    key: String,
+    channel: Channel<InvokeResponseBody>,
+    in_flight: AtomicU32,
+}
+
+type Views = Arc<std::sync::Mutex<Vec<Arc<View>>>>;
+
 /// One open desktop. Dropping the input sender does not end the session —
 /// `request_close` does — so both halves are kept.
 ///
@@ -299,6 +318,11 @@ struct Open {
     /// The display scaling asked for at connect, asked for again on every
     /// resize: a resize without it puts the remote back to 100%.
     scale: u32,
+    /// RemoteApp sessions: the window row as last sent, for a panel that
+    /// re-attaches. Empty for a desktop.
+    windows: Arc<std::sync::Mutex<Vec<remote_app::RailWindow>>>,
+    /// RemoteApp windows of their own, each showing its part of the picture.
+    views: Views,
 }
 
 #[derive(Default)]
@@ -368,6 +392,16 @@ impl RdpManager {
         let client = RdpClient::new(config, out_tx).with_desktop_updates();
         let input = client.input_sender();
 
+        // A RemoteApp's launch is queued now and sent once the RemoteApp
+        // channel is up. Once only: after an automatic reconnect the server
+        // still has the program running.
+        if let Some(execute) = remote_app::execute(params.options.as_ref()) {
+            tracing::info!("RDP {id}: starting a RemoteApp");
+            input
+                .try_send_rail_execute(execute)
+                .map_err(|e| format!("could not queue the RemoteApp launch: {e}"))?;
+        }
+
         // The clipboard has a thread of its own; see the clipboard module.
         let mut client = client;
         let clipboard = match clipboard_mode(&params) {
@@ -421,10 +455,20 @@ impl RdpManager {
 
         let flow = Arc::new(Flow::new());
         let frames = Arc::new(std::sync::Mutex::new(frames));
-        let pump = tokio::spawn(pump_output(app, id.clone(), out_rx, Arc::clone(&frames), Arc::clone(&flow)));
+        let windows = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let views: Views = Arc::default();
+        let pump = tokio::spawn(pump_output(
+            app,
+            id.clone(),
+            out_rx,
+            Arc::clone(&frames),
+            Arc::clone(&flow),
+            Arc::clone(&windows),
+            Arc::clone(&views),
+        ));
 
         let scale = desktop_scale(&params).unwrap_or(100);
-        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard, scale });
+        self.open.insert(id, Open { input, session, pump, flow, frames, clipboard, scale, windows, views });
         Ok(())
     }
 
@@ -549,6 +593,46 @@ impl RdpManager {
     /// Set the remote's CapsLock, NumLock and ScrollLock to the local ones.
     pub fn sync_locks(&self, id: &str, caps: bool, num: bool, scroll: bool) -> Result<(), String> {
         self.send_fast_path(id, FastPathInputEvent::SyncEvent(lock_flags(caps, num, scroll)))
+    }
+
+    /// A RemoteApp window of its own starts showing the picture (or a
+    /// reloaded one starts again).
+    pub fn attach_view(&self, id: &str, key: &str, channel: Channel<InvokeResponseBody>) -> Result<(), String> {
+        let open = self.open.get(id).ok_or_else(|| format!("no RDP session {id}"))?;
+        let mut views = open.views.lock().unwrap_or_else(|e| e.into_inner());
+        views.retain(|v| v.key != key);
+        views.push(Arc::new(View { key: key.to_string(), channel, in_flight: AtomicU32::new(0) }));
+        open.flow.refresh();
+        Ok(())
+    }
+
+    /// A RemoteApp window of its own closed.
+    pub fn detach_view(&self, id: &str, key: &str) {
+        if let Some(open) = self.open.get(id) {
+            open.views.lock().unwrap_or_else(|e| e.into_inner()).retain(|v| v.key != key);
+            open.flow.notify.notify_one();
+        }
+    }
+
+    /// A RemoteApp window of its own painted one message.
+    pub fn ack_view(&self, id: &str, key: &str) -> Result<(), String> {
+        let open = self.open.get(id).ok_or_else(|| format!("no RDP session {id}"))?;
+        if let Some(view) = open.views.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|v| v.key == key) {
+            let _ = view.in_flight.try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1));
+        }
+        open.flow.notify.notify_one();
+        Ok(())
+    }
+
+    /// A RemoteApp's windows as the panel's window row shows them.
+    pub fn rail_windows(&self, id: &str) -> Vec<remote_app::RailWindow> {
+        self.open.get(id).map(|o| o.windows.lock().unwrap_or_else(|e| e.into_inner()).clone()).unwrap_or_default()
+    }
+
+    /// Activate, close, minimise, maximise or restore a RemoteApp window.
+    pub fn rail_command(&self, id: &str, window_id: u32, command: &str) -> Result<(), String> {
+        let open = self.open.get(id).ok_or_else(|| format!("no RDP session {id}"))?;
+        remote_app::send_command(&open.input, window_id, command)
     }
 
     pub fn resize(&self, id: &str, width: u16, height: u16) -> Result<(), String> {
@@ -711,7 +795,10 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
         // device never appears and the sound channel stays silent (IronRDP
         // #1791). With no folder the client attaches its no-op backend.
         .with_rdpdr(true)
-        .with_graphics_pipeline(p.graphics_pipeline)
+        // The graphics pipeline sends a RemoteApp's windows as surfaces of
+        // their own, which the panel does not draw; without it they come in
+        // the picture like a desktop's.
+        .with_graphics_pipeline(p.graphics_pipeline && !p.options.as_ref().is_some_and(options::RdpOptions::is_remote_app))
         .with_egfx_thin_client(p.older_graphics_formats)
         // H.264 for the graphics pipeline, one decoder per connection. With
         // it the client advertises AVC420 and a Windows server sends video as
@@ -765,6 +852,11 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
     if let Some(o) = &p.options {
         builder = apply_options(builder, o);
     }
+    // RemoteApp: the program's windows only. Its launch is sent on the
+    // RemoteApp channel (see `connect`), not as the shell.
+    if p.options.as_ref().is_some_and(options::RdpOptions::is_remote_app) {
+        builder = builder.with_remote_application_mode(true);
+    }
 
     if let Some(port) = p.connect_port {
         builder = builder.with_connect_address(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
@@ -800,7 +892,7 @@ fn apply_options(mut builder: ConfigBuilder, o: &options::RdpOptions) -> ConfigB
     if o.admin == Some(true) {
         builder = builder.with_administrative_session(true);
     }
-    if let Some(program) = o.program.as_deref().filter(|s| !s.trim().is_empty()) {
+    if let Some(program) = o.program.as_deref().filter(|s| !s.trim().is_empty() && !o.is_remote_app()) {
         builder = builder.with_alternate_shell(program.trim());
         if let Some(dir) = o.work_dir.as_deref().filter(|s| !s.trim().is_empty()) {
             builder = builder.with_work_dir(dir.trim());
@@ -917,7 +1009,18 @@ async fn pump_output(
     mut rx: OutputEventReceiver,
     frames: Arc<std::sync::Mutex<Channel<InvokeResponseBody>>>,
     flow: Arc<Flow>,
+    shown_windows: Arc<std::sync::Mutex<Vec<remote_app::RailWindow>>>,
+    views: Views,
 ) {
+    // Room to send: the panel and every window of its own have painted enough.
+    let room = || {
+        flow.can_send()
+            && views
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .iter()
+                .all(|v| v.in_flight.load(Ordering::Acquire) < MAX_IN_FLIGHT)
+    };
     let status = |s: RdpStatus| {
         if matches!(s, RdpStatus::Error { .. } | RdpStatus::Closed { .. }) {
             flow.ended.store(true, Ordering::Release);
@@ -926,6 +1029,7 @@ async fn pump_output(
     };
 
     let mut screen = Screen::default();
+    let mut windows = remote_app::Windows::default();
 
     loop {
         let pending = screen.pending();
@@ -941,11 +1045,36 @@ async fn pump_output(
             biased;
             event = rx.recv() => {
                 let Some(event) = event else { break };
+                // RemoteApp: the window row, and why a launch failed.
+                match &event {
+                    RdpOutputEvent::WindowingOrders(orders) => {
+                        if windows.apply(orders) {
+                            let list = windows.list();
+                            *shown_windows.lock().unwrap_or_else(|e| e.into_inner()) = list.clone();
+                            let _ = app.emit(&format!("rdp-windows-{id}"), list);
+                        }
+                        continue;
+                    }
+                    RdpOutputEvent::RailExecuteResult(result) => {
+                        if let Some(message) = remote_app::launch_error(result) {
+                            tracing::warn!("RDP {id}: {message}");
+                            status(RdpStatus::Error { message });
+                            break;
+                        }
+                        continue;
+                    }
+                    RdpOutputEvent::RailExecuteFailed { reason, .. } => {
+                        tracing::warn!("RDP {id}: RemoteApp launch not sent: {reason:?}");
+                        status(RdpStatus::Error { message: format!("The RemoteApp could not be started ({reason:?}).") });
+                        break;
+                    }
+                    _ => {}
+                }
                 if !screen.receive(&id, event, &status) {
                     break;
                 }
             }
-            _ = flow.notify.notified(), if pending && !flow.can_send() => {}
+            _ = flow.notify.notified(), if pending && !room() => {}
             _ = tokio::time::sleep_until(deadline), if pending && !settled => {}
         }
 
@@ -954,12 +1083,19 @@ async fn pump_output(
             screen.touch();
         }
 
-        if screen.pending() && screen.settled() && flow.can_send() {
+        if screen.pending() && screen.settled() && room() {
             flow.sent();
+            let message = screen.take();
+            // Windows of their own get the same message; one that is gone
+            // (its window closed without saying so) is dropped.
+            views.lock().unwrap_or_else(|e| e.into_inner()).retain(|v| {
+                v.in_flight.fetch_add(1, Ordering::AcqRel);
+                v.channel.send(InvokeResponseBody::Raw(message.clone())).is_ok()
+            });
             let sent = frames
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .send(InvokeResponseBody::Raw(screen.take()));
+                .send(InvokeResponseBody::Raw(message));
             if sent.is_err() {
                 // The webview is gone; nothing left to draw for.
                 break;

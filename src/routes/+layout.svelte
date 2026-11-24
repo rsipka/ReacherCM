@@ -43,7 +43,8 @@
 
 	let { children }: { children: Snippet } = $props();
 
-	const isEditorWindow = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('editor');
+	// A seamless RemoteApp's window is as bare as the editor's: no tray, lock screen or setup.
+	const isEditorWindow = typeof window !== 'undefined' && ['editor', 'railview'].some((k) => new URLSearchParams(window.location.search).has(k));
 	const settings = getSettings();
 	/** A floating session window (#lib/state/windows): a slim shell, and the main window owns the rest. */
 	const isFloat = isFloatWindow();
