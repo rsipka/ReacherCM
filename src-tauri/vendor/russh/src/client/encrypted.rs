@@ -19,7 +19,7 @@ use std::str::FromStr;
 use bytes::Bytes;
 use log::{debug, error, info, trace, warn};
 use ssh_encoding::{Decode, Encode, Reader};
-use ssh_key::Algorithm;
+use ssh_key::{Algorithm, PublicKey, Signature};
 
 use super::IncomingSshPacket;
 use crate::auth::AuthRequest;
@@ -29,9 +29,43 @@ use crate::helpers::{AlgorithmExt, EncodedExt, NameList, sign_with_hash_alg};
 use crate::parsing::{ChannelOpenConfirmation, ChannelType, OpenChannelMessage, ensure_end};
 use crate::session::{Encrypted, EncryptedState, GlobalRequestResponse};
 use crate::{
-    Channel, ChannelId, ChannelMsg, ChannelOpenFailure, ChannelParams, Error, MethodSet, Sig, auth,
-    map_err, msg,
+    Channel, ChannelId, ChannelMsg, ChannelOpenFailure, ChannelParams, CryptoVec, Error, MethodSet,
+    Sig, auth, map_err, msg,
 };
+
+/// Checks a `hostkeys-prove-00@openssh.com` reply: one signature per requested
+/// key, in order, each over `string name || string session_id || string key_blob`.
+fn verify_hostkeys_proof(
+    session_id: &[u8],
+    keys: &[PublicKey],
+    allowed_algorithms: &[Algorithm],
+    mut r: &[u8],
+) -> Result<(), crate::Error> {
+    for key in keys {
+        let signature = Bytes::decode(&mut r)?;
+        let mut signature_reader = &signature[..];
+        let signature = Signature::decode(&mut signature_reader)?;
+        ensure_end(&signature_reader)?;
+
+        // An RSA signature chooses its hash, so ssh-rsa (SHA-1) would pass
+        // even when the client does not allow it
+        if matches!(signature.algorithm(), Algorithm::Rsa { .. })
+            && !allowed_algorithms.contains(&signature.algorithm())
+        {
+            return Err(crate::Error::WrongServerSig);
+        }
+
+        // CryptoVec: the session id is key material and is zeroized on drop.
+        let mut signed = CryptoVec::new();
+        "hostkeys-prove-00@openssh.com".encode(&mut signed)?;
+        session_id.encode(&mut signed)?;
+        key.to_bytes()?.encode(&mut signed)?;
+        signature::Verifier::verify(key, &signed, &signature)
+            .map_err(|_| crate::Error::WrongServerSig)?;
+    }
+    ensure_end(&r)?;
+    Ok(())
+}
 
 impl Session {
     pub(crate) async fn client_read_encrypted<H: Handler>(
@@ -75,6 +109,7 @@ impl Session {
                                     let auth_request = AuthRequest::new(meth);
                                     if enc.write_auth_request(&self.common.auth_user, meth)? {
                                         debug!("enc: auth request written");
+                                        self.pending_auth_requests += 1;
                                         enc.state = EncryptedState::WaitingAuthRequest(auth_request)
                                     }
                                 } else {
@@ -125,6 +160,15 @@ impl Session {
                             debug!(
                                 "remaining methods {remaining_methods:?}, partial success {partial_success:?}"
                             );
+                            // Nothing reads the reply to a failure that answers no
+                            // request, and the reply queue is unbounded
+                            self.pending_auth_requests = self
+                                .pending_auth_requests
+                                .checked_sub(1)
+                                .ok_or(crate::Error::Inconsistent)?;
+                            if self.pending_auth_requests == 0 {
+                                auth_request.current = None;
+                            }
                             auth_request.methods = remaining_methods.clone();
 
                             let no_more_methods = auth_request.methods.is_empty();
@@ -267,13 +311,21 @@ impl Session {
                                     self.common.buffer = loop {
                                         match self.receiver.recv().await {
                                             Some(Msg::Signed { data }) => break data[..].to_vec(),
+                                            // The signer could not sign. Leave the PK_OK
+                                            // unanswered, as OpenSSH does when it cannot
+                                            // sign: the server keeps waiting for a userauth
+                                            // request and the next one (any method) replaces
+                                            // this attempt. Going back to the main loop is
+                                            // what lets that next request through.
+                                            Some(Msg::SignFailed) => {
+                                                debug!("signer failed, abandoning the request");
+                                                return Ok(());
+                                            }
                                             None => return Err(crate::Error::RecvError.into()),
                                             _ => {}
                                         }
                                     };
-                                    // Reach: an empty answer means the signer
-                                    // failed; nothing is sent for this key.
-                                    if !self.common.buffer.is_empty() && self.common.buffer.len() != len {
+                                    if self.common.buffer.len() != len {
                                         // The buffer was modified.
                                         push_packet!(enc.write, {
                                             #[allow(clippy::indexing_slicing)] // length checked
@@ -303,13 +355,16 @@ impl Session {
                                     self.common.buffer = loop {
                                         match self.receiver.recv().await {
                                             Some(Msg::Signed { data }) => break data,
+                                            // See the public key case above.
+                                            Some(Msg::SignFailed) => {
+                                                debug!("signer failed, abandoning the request");
+                                                return Ok(());
+                                            }
                                             None => return Err(crate::Error::RecvError.into()),
                                             _ => {}
                                         }
                                     };
-                                    // Reach: an empty answer means the signer
-                                    // failed; nothing is sent for this key.
-                                    if !self.common.buffer.is_empty() && self.common.buffer.len() != len {
+                                    if self.common.buffer.len() != len {
                                         // The buffer was modified.
                                         push_packet!(enc.write, {
                                             #[allow(clippy::indexing_slicing)] // length checked
@@ -397,6 +452,12 @@ impl Session {
     }
 
     fn handle_ext_info(&mut self, r: &mut impl Reader) -> Result<(), Error> {
+        // RFC 8308 §2.4: a server sends EXT_INFO at most twice per session.
+        // Refusing more keeps `received_extensions` bounded.
+        self.ext_info_count += 1;
+        if self.ext_info_count > 2 {
+            return Err(Error::Inconsistent);
+        }
         let n_extensions = u32::decode(r)? as usize;
         debug!("Received EXT_INFO, {n_extensions:?} extensions");
         for _ in 0..n_extensions {
@@ -442,10 +503,13 @@ impl Session {
         match buf.split_first() {
             Some((&msg::CHANNEL_OPEN_CONFIRMATION, mut reader)) => {
                 debug!("channel_open_confirmation");
-                let msg = map_err!(ChannelOpenConfirmation::decode(&mut reader))?;
+                let msg = ChannelOpenConfirmation::parse(&mut reader)?;
                 map_err!(ensure_end(&reader))?;
                 let local_id = ChannelId(msg.recipient_channel);
 
+                if !self.common.is_pending_channel_open(local_id) {
+                    return Err(crate::Error::Inconsistent.into());
+                }
                 if let Some(ref mut enc) = self.common.encrypted {
                     if let Some(parameters) = enc.channels.get_mut(&local_id) {
                         parameters.confirm(&msg);
@@ -489,7 +553,7 @@ impl Session {
                 if let Some(ref mut enc) = self.common.encrypted {
                     // The CHANNEL_CLOSE message must be sent to the server at this point or the session
                     // will not be released.
-                    enc.close(channel_num)?;
+                    enc.close_from_peer(channel_num)?;
                 }
                 // Forward the close to the channel before removing it, so that
                 // consumers waiting on `Channel::wait()` receive an explicit
@@ -520,16 +584,14 @@ impl Session {
                 let descr = map_err!(String::decode(&mut r))?;
                 let language = map_err!(String::decode(&mut r))?;
                 map_err!(ensure_end(&r))?;
-                // Unlike other channel-scoped messages this arrives for a
-                // channel the client opened but that is not yet confirmed, so
-                // gate on existence in the encrypted table rather than
-                // `is_established_channel` (which requires `confirmed`).
-                let known = match self.common.encrypted {
-                    Some(ref mut enc) => enc.channels.remove(&channel_num).is_some(),
-                    None => false,
-                };
-                if !known {
+                // Only valid for a channel the client opened that is not yet
+                // confirmed; an established channel must go through
+                // CHANNEL_CLOSE instead.
+                if !self.common.is_pending_channel_open(channel_num) {
                     return Ok(());
+                }
+                if let Some(ref mut enc) = self.common.encrypted {
+                    enc.channels.remove(&channel_num);
                 }
 
                 if let Some(sender) = self.channels.remove(&channel_num) {
@@ -537,8 +599,6 @@ impl Session {
                         .send(ChannelMsg::OpenFailure(reason_code.clone()))
                         .await;
                 }
-
-                let _ = self.sender.send(Reply::ChannelOpenFailure);
 
                 client
                     .channel_open_failure(channel_num, reason_code, &descr, &language, self)
@@ -553,6 +613,7 @@ impl Session {
                     return Ok(());
                 }
                 let target = self.common.config.window_size;
+                #[allow(clippy::collapsible_if)]
                 if let Some(ref mut enc) = self.common.encrypted {
                     if enc.adjust_window_size(channel_num, &data, target)? {
                         let next_window =
@@ -579,6 +640,7 @@ impl Session {
                     return Ok(());
                 }
                 let target = self.common.config.window_size;
+                #[allow(clippy::collapsible_if)]
                 if let Some(ref mut enc) = self.common.encrypted {
                     if enc.adjust_window_size(channel_num, &data, target)? {
                         let next_window =
@@ -678,15 +740,15 @@ impl Session {
                     }
                     _ => {
                         let wants_reply = map_err!(u8::decode(&mut r))?;
-                        if wants_reply == 1 {
-                            if let Some(ref mut enc) = self.common.encrypted {
-                                self.common.wants_reply = false;
-                                if let Some(ch) = enc.channels.get(&channel_num) {
-                                    push_packet!(enc.write, {
-                                        map_err!(msg::CHANNEL_FAILURE.encode(&mut enc.write))?;
-                                        map_err!(ch.recipient_channel.encode(&mut enc.write))?;
-                                    })
-                                }
+                        if wants_reply == 1
+                            && let Some(ref mut enc) = self.common.encrypted
+                        {
+                            self.common.wants_reply = false;
+                            if let Some(ch) = enc.channels.get(&channel_num) {
+                                push_packet!(enc.write, {
+                                    map_err!(msg::CHANNEL_FAILURE.encode(&mut enc.write))?;
+                                    map_err!(ch.recipient_channel.encode(&mut enc.write))?;
+                                })
                             }
                         }
                         info!("Unknown channel request {req:?} {wants_reply:?}",);
@@ -715,19 +777,17 @@ impl Session {
                 let is_rekeying = self.kex.active();
                 let common = &mut self.common;
                 if let Some(enc) = common.encrypted.as_mut() {
-                    new_size -= enc
-                        .flush_pending_with_writer(
-                            &mut common.packet_writer,
-                            channel_num,
-                            is_rekeying,
-                        )?
-                        as u32;
+                    new_size -= enc.flush_pending_with_writer(
+                        &mut common.packet_writer,
+                        channel_num,
+                        is_rekeying,
+                    )? as u32;
                 }
                 if let Some(chan) = self.channels.get(&channel_num) {
-                    chan.window_size().update(new_size).await;
+                    chan.window_size().grow(amount).await;
                     // Use try_send to avoid blocking the session loop when channel buffer is full.
                     // WindowAdjusted is informational - the critical side effect (updating
-                    // WindowSizeRef and notifying ChannelTx) already happens in update().
+                    // WindowSizeRef and notifying ChannelTx) already happens in grow().
                     let _ = chan.try_send(ChannelMsg::WindowAdjusted { new_size });
                 }
                 client.window_adjusted(channel_num, new_size, self).await
@@ -757,8 +817,10 @@ impl Session {
                         return client.openssh_ext_host_keys_announced(keys, self).await;
                     } else {
                         warn!("Unhandled global request: {req:?} {wants_reply:?}",);
-                        self.common.wants_reply = false;
-                        push_packet!(enc.write, enc.write.push(msg::REQUEST_FAILURE))
+                        if wants_reply == 1 {
+                            self.common.wants_reply = false;
+                            push_packet!(enc.write, enc.write.push(msg::REQUEST_FAILURE))
+                        }
                     }
                 }
                 self.common.received_data = false;
@@ -968,8 +1030,29 @@ impl Session {
                         map_err!(ensure_end(&r))?;
                         let _ = return_channel.send(true);
                     }
-                    Some(GlobalRequestResponse::HostKeysProve(keys, return_channel)) => {
+                    Some(GlobalRequestResponse::HostKeysProveEach(keys, return_channel)) => {
                         let _ = return_channel.send(self.check_host_key_proofs(&keys, &mut r));
+                    }
+                    Some(GlobalRequestResponse::HostKeysProve {
+                        return_channel,
+                        keys,
+                    }) => {
+                        let result = match self.common.encrypted {
+                            Some(ref enc) => verify_hostkeys_proof(
+                                &enc.session_id,
+                                &keys,
+                                &self.common.config.preferred.key,
+                                r,
+                            ),
+                            None => Err(crate::Error::Inconsistent),
+                        };
+                        if let Err(ref e) = result {
+                            error!("hostkeys-prove-00@openssh.com reply rejected: {e:?}");
+                        }
+                        let _ = return_channel.send(result);
+                    }
+                    Some(GlobalRequestResponse::Other(return_channel)) => {
+                        let _ = return_channel.send(Some(CryptoVec::from_slice(r)));
                     }
                     None => {
                         error!("Received global request failure for unknown request!")
@@ -1002,8 +1085,14 @@ impl Session {
                     Some(GlobalRequestResponse::CancelStreamLocalForward(return_channel)) => {
                         let _ = return_channel.send(false);
                     }
-                    Some(GlobalRequestResponse::HostKeysProve(_, return_channel)) => {
+                    Some(GlobalRequestResponse::HostKeysProveEach(_, return_channel)) => {
                         let _ = return_channel.send(Err(Error::RequestDenied));
+                    }
+                    Some(GlobalRequestResponse::HostKeysProve { return_channel, .. }) => {
+                        let _ = return_channel.send(Err(crate::Error::RequestDenied));
+                    }
+                    Some(GlobalRequestResponse::Other(return_channel)) => {
+                        let _ = return_channel.send(None);
                     }
                     None => {
                         error!("Received global request failure for unknown request!")
@@ -1047,6 +1136,7 @@ impl Session {
             debug!("write_auth_request_if_needed: is_waiting = {is_waiting:?}");
             if is_waiting {
                 enc.write_auth_request(user, &meth)?;
+                self.pending_auth_requests += 1;
                 let auth_request = AuthRequest::new(&meth);
                 enc.state = EncryptedState::WaitingAuthRequest(auth_request);
             }
@@ -1071,6 +1161,41 @@ mod tests {
     use crate::kex::{KEXES, NONE};
     use crate::session::Exchange;
     use crate::{CryptoVec, MethodKind};
+
+    #[cfg(feature = "rsa")]
+    #[test]
+    fn hostkeys_proof_rsa_hash_must_be_an_allowed_algorithm() {
+        use ssh_key::{HashAlg, PrivateKey};
+
+        let key = PrivateKey::random(&mut rand::rng(), Algorithm::Rsa { hash: None }).unwrap();
+        let ssh_key::private::KeypairData::Rsa(keypair) = key.key_data() else {
+            unreachable!()
+        };
+        let mut signed = Vec::new();
+        "hostkeys-prove-00@openssh.com".encode(&mut signed).unwrap();
+        b"session".as_slice().encode(&mut signed).unwrap();
+        key.public_key()
+            .to_bytes()
+            .unwrap()
+            .encode(&mut signed)
+            .unwrap();
+        // ssh-rsa (SHA-1)
+        let signature: Signature =
+            signature::Signer::try_sign(&(keypair, None), signed.as_slice()).unwrap();
+        let mut proof = Vec::new();
+        signature.encoded().unwrap().encode(&mut proof).unwrap();
+
+        let keys = [key.public_key().clone()];
+        let sha2_only = [Algorithm::Rsa {
+            hash: Some(HashAlg::Sha512),
+        }];
+        assert!(matches!(
+            verify_hostkeys_proof(b"session", &keys, &sha2_only, &proof),
+            Err(crate::Error::WrongServerSig)
+        ));
+        let with_ssh_rsa = [Algorithm::Rsa { hash: None }];
+        assert!(verify_hostkeys_proof(b"session", &keys, &with_ssh_rsa, &proof).is_ok());
+    }
 
     fn test_encrypted() -> Encrypted {
         Encrypted {
@@ -1224,15 +1349,12 @@ mod tests {
         ensure_end(&mic).unwrap();
     }
 
-
     fn rsa_user_certificate() -> ssh_key::Certificate {
-        let subject = ssh_key::PrivateKey::random(
-            &mut rand::rng(),
-            ssh_key::Algorithm::Rsa { hash: None },
-        )
-        .unwrap();
-        let ca = ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Ed25519)
-            .unwrap();
+        let subject =
+            ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Rsa { hash: None })
+                .unwrap();
+        let ca =
+            ssh_key::PrivateKey::random(&mut rand::rng(), ssh_key::Algorithm::Ed25519).unwrap();
         let mut builder = ssh_key::certificate::Builder::new_with_random_nonce(
             &mut rand::rng(),
             subject.public_key(),
@@ -1545,8 +1667,12 @@ impl Encrypted {
     ) -> Result<(), crate::Error> {
         match method {
             auth::Method::PublicKey { key } => {
-                let i0 =
-                    self.client_make_to_sign(user, &PublicKeyOrCertificate::from(key), None, buffer)?;
+                let i0 = self.client_make_to_sign(
+                    user,
+                    &PublicKeyOrCertificate::from(key),
+                    None,
+                    buffer,
+                )?;
 
                 // Extend with self-signature.
                 sign_with_hash_alg(key, buffer)?.encode(&mut *buffer)?;

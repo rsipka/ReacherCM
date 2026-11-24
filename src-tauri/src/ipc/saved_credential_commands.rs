@@ -821,8 +821,8 @@ mod tests {
             ("saved".to_string(), "Saved".to_string(), material(ENCRYPTED_KEY.trim_end(), Some("hunter2"))),
             // The same key imported again, encrypted anew: other text.
             ("copy".to_string(), "Copy".to_string(), material(&{
-                let key = ssh_key::PrivateKey::from_openssh(ENCRYPTED_KEY).unwrap().decrypt("hunter2").unwrap();
-                key.encrypt(&mut rsa::rand_core::OsRng, "hunter2").unwrap().to_openssh(ssh_key::LineEnding::LF).unwrap().to_string()
+                let key = russh::keys::ssh_key::PrivateKey::from_openssh(ENCRYPTED_KEY).unwrap().decrypt("hunter2").unwrap();
+                key.encrypt(&mut rand::rng(), "hunter2").unwrap().to_openssh(russh::keys::ssh_key::LineEnding::LF).unwrap().to_string()
             }, None)),
         ];
         let cred = |name: &str, auth: serde_json::Value| -> SavedCredential {

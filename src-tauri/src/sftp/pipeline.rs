@@ -14,7 +14,7 @@
 use std::collections::VecDeque;
 
 use russh_sftp::client::error::Error as SftpError;
-use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, SftpHandle, StatusCode};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -74,9 +74,9 @@ pub(crate) async fn read_file(
 
 type ReadTask = JoinHandle<Result<Vec<u8>, SftpError>>;
 
-fn spawn_read(proto: &SftpProtocol, handle: &str, offset: u64, len: u32) -> ReadTask {
+fn spawn_read(proto: &SftpProtocol, handle: &SftpHandle, offset: u64, len: u32) -> ReadTask {
     let session = proto.session.clone();
-    let handle = handle.to_string();
+    let handle = handle.clone();
     tokio::spawn(async move {
         match session.read(handle, offset, len).await {
             Ok(data) => Ok(data.data),
@@ -90,7 +90,7 @@ fn spawn_read(proto: &SftpProtocol, handle: &str, offset: u64, len: u32) -> Read
 async fn read_open(
     proto: &SftpProtocol,
     path: &str,
-    handle: &str,
+    handle: &SftpHandle,
     size: u64,
     cancel: &CancellationToken,
     sink: &mut impl FnMut(&[u8]) -> Result<(), TransferError>,
@@ -197,7 +197,7 @@ pub(crate) async fn write_file(
 async fn write_open(
     proto: &SftpProtocol,
     path: &str,
-    handle: &str,
+    handle: &SftpHandle,
     next_chunk: &mut impl FnMut(usize) -> Result<Option<Vec<u8>>, TransferError>,
     progress: &mut impl FnMut(u64),
 ) -> Result<u64, TransferError> {
@@ -214,7 +214,7 @@ async fn write_open(
                 Ok(Some(data)) => {
                     let len = data.len() as u64;
                     let session = proto.session.clone();
-                    let handle = handle.to_string();
+                    let handle = handle.clone();
                     let at = offset;
                     queue.push_back((
                         len,
@@ -285,14 +285,14 @@ mod tests {
             if flags.contains(OpenFlags::TRUNCATE) {
                 self.data.lock().unwrap().clear();
             }
-            Ok(Handle { id, handle: "h".to_string() })
+            Ok(Handle { id, handle: "h".into() })
         }
 
-        async fn close(&mut self, id: u32, _: String) -> Result<Status, Self::Error> {
+        async fn close(&mut self, id: u32, _: SftpHandle) -> Result<Status, Self::Error> {
             Ok(ok(id))
         }
 
-        async fn read(&mut self, id: u32, _: String, offset: u64, len: u32) -> Result<Data, Self::Error> {
+        async fn read(&mut self, id: u32, _: SftpHandle, offset: u64, len: u32) -> Result<Data, Self::Error> {
             let data = self.data.lock().unwrap();
             let start = offset as usize;
             if start >= data.len() {
@@ -302,7 +302,7 @@ mod tests {
             Ok(Data { id, data: data[start..end].to_vec() })
         }
 
-        async fn write(&mut self, id: u32, _: String, offset: u64, chunk: Vec<u8>) -> Result<Status, Self::Error> {
+        async fn write(&mut self, id: u32, _: SftpHandle, offset: u64, chunk: Vec<u8>) -> Result<Status, Self::Error> {
             let mut data = self.data.lock().unwrap();
             let end = offset as usize + chunk.len();
             if data.len() < end {

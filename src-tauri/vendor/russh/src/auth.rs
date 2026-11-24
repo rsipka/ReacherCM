@@ -173,7 +173,6 @@ impl AuthResult {
     }
 }
 
-#[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 pub trait Signer: Sized {
     type Error: From<crate::SendError>;
 
@@ -223,7 +222,6 @@ pub enum GssapiError {
     ErrorToken(Vec<u8>),
 }
 
-#[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 pub trait GssapiAuthenticator: Sized {
     type Error: From<crate::SendError>;
 
@@ -254,7 +252,6 @@ pub trait GssapiAuthenticator: Sized {
 
 /// Signs hostbased authentication data (RFC 4252 section 9) with a host
 /// key, as OpenSSH's ssh does through ssh-keysign.
-#[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 pub trait HostbasedSigner: Sized {
     type Error: From<crate::SendError>;
 
@@ -274,7 +271,6 @@ pub enum AgentAuthError {
     Key(#[from] crate::keys::Error),
 }
 
-#[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 impl<R: AsyncRead + AsyncWrite + Unpin + Send> Signer
     for crate::keys::agent::client::AgentClient<R>
 {
@@ -407,6 +403,7 @@ pub struct AuthRequest {
     pub(crate) principal: Option<AuthPrincipal>,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     pub rejection_count: usize,
+    pub(crate) banner_sent: bool,
 }
 
 #[doc(hidden)]
@@ -443,6 +440,7 @@ impl AuthRequest {
             current: None,
             principal: None,
             rejection_count: 0,
+            banner_sent: false,
         }
     }
 
@@ -463,6 +461,7 @@ impl AuthRequest {
             current,
             principal: None,
             rejection_count: 0,
+            banner_sent: false,
         }
     }
 

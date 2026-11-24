@@ -68,7 +68,7 @@ pub struct KeyFacts {
 /// private key at all. An encrypted key is still described — we want its
 /// algorithm and fingerprint in the list even when it cannot be opened yet.
 pub fn inspect(private_key: &str) -> Result<KeyFacts, String> {
-    use ssh_key::PrivateKey;
+    use russh::keys::ssh_key::PrivateKey;
 
     let trimmed = private_key.trim();
     if trimmed.is_empty() {
@@ -168,7 +168,7 @@ pub fn describe(id: &str, name: &str, created_at: i64, material: &StoredKeyMater
 
 /// Whether two OpenSSH public keys are the same key, whatever their comments.
 pub fn same_public_key(a: &str, b: &str) -> bool {
-    match (ssh_key::PublicKey::from_openssh(a.trim()), ssh_key::PublicKey::from_openssh(b.trim())) {
+    match (russh::keys::ssh_key::PublicKey::from_openssh(a.trim()), russh::keys::ssh_key::PublicKey::from_openssh(b.trim())) {
         (Ok(a), Ok(b)) => a.key_data() == b.key_data(),
         _ => false,
     }

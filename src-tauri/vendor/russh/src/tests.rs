@@ -127,7 +127,7 @@ mod compress {
         async fn auth_publickey(
             &mut self,
             _: &str,
-            _: &crate::keys::ssh_key::PublicKey,
+            _: server::VerifiedPublicKey<'_>,
         ) -> Result<server::Auth, Self::Error> {
             debug!("auth_publickey");
             Ok(server::Auth::Accept)
@@ -293,7 +293,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -326,6 +326,65 @@ mod channels {
             },
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_auth_banner_is_sent_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        struct Client(Arc<AtomicUsize>);
+
+        impl client::Handler for Client {
+            type Error = crate::Error;
+
+            async fn check_server_key(
+                &mut self,
+                _server_public_key: &PublicKeyOrCertificate,
+            ) -> Result<bool, Self::Error> {
+                Ok(true)
+            }
+
+            async fn auth_banner(
+                &mut self,
+                banner: &str,
+                _session: &mut client::Session,
+            ) -> Result<(), Self::Error> {
+                assert_eq!(banner, "hello");
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        struct Server;
+
+        impl server::Handler for Server {
+            type Error = crate::Error;
+
+            async fn authentication_banner(&mut self) -> Result<Option<String>, Self::Error> {
+                Ok(Some("hello".into()))
+            }
+
+            async fn auth_publickey(
+                &mut self,
+                _: &str,
+                _: server::VerifiedPublicKey<'_>,
+            ) -> Result<server::Auth, Self::Error> {
+                Ok(server::Auth::Accept)
+            }
+        }
+
+        // test_session sends two auth requests: a public key probe and the
+        // signed request
+        let banners = Arc::new(AtomicUsize::new(0));
+        test_session(
+            Client(banners.clone()),
+            Server,
+            |c| async move { c },
+            |s| async move { s },
+        )
+        .await;
+        assert_eq!(banners.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -364,7 +423,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -450,7 +509,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -536,7 +595,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -618,7 +677,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -729,7 +788,7 @@ mod channels {
             async fn auth_publickey(
                 &mut self,
                 _: &str,
-                _: &crate::keys::ssh_key::PublicKey,
+                _: server::VerifiedPublicKey<'_>,
             ) -> Result<server::Auth, Self::Error> {
                 Ok(server::Auth::Accept)
             }
@@ -1579,7 +1638,7 @@ mod future_certificate {
                 async fn auth_publickey_offered(
                     &mut self,
                     _user: &str,
-                    _public_key: &ssh_key::PublicKey,
+                    _public_key: server::PublicKeyOffer<'_>,
                 ) -> Result<server::Auth, Self::Error> {
                     // Accept the key/certificate for the probe
                     Ok(server::Auth::Accept)
@@ -1698,7 +1757,7 @@ mod rekey_under_load {
         async fn auth_publickey(
             &mut self,
             _: &str,
-            _: &crate::keys::ssh_key::PublicKey,
+            _: server::VerifiedPublicKey<'_>,
         ) -> Result<server::Auth, Self::Error> {
             Ok(server::Auth::Accept)
         }

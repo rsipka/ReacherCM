@@ -13,7 +13,7 @@ use russh::keys::{HashAlg, PrivateKey};
 use russh::server::{Auth, ChannelOpenHandle, Msg, Session};
 use russh::{Channel, ChannelId, MethodKind, MethodSet};
 use russh_sftp::protocol::{
-    Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode, Version,
+    Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, SftpHandle, Status, StatusCode, Version,
 };
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -213,7 +213,7 @@ enum OpenHandle {
 struct SftpHandler {
     shared: Arc<Shared>,
     peer: SocketAddr,
-    handles: HashMap<String, OpenHandle>,
+    handles: HashMap<SftpHandle, OpenHandle>,
     next: u64,
 }
 
@@ -245,9 +245,9 @@ impl SftpHandler {
         Ok((virt, real))
     }
 
-    fn add(&mut self, handle: OpenHandle) -> String {
+    fn add(&mut self, handle: OpenHandle) -> SftpHandle {
         self.next += 1;
-        let id = self.next.to_string();
+        let id = SftpHandle::from(self.next.to_string());
         self.handles.insert(id.clone(), handle);
         id
     }
@@ -291,7 +291,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(Handle { id, handle })
     }
 
-    async fn close(&mut self, id: u32, handle: String) -> Result<Status, Self::Error> {
+    async fn close(&mut self, id: u32, handle: SftpHandle) -> Result<Status, Self::Error> {
         if let Some(OpenHandle::File { mut file, virt, written, read }) = self.handles.remove(&handle) {
             let _ = file.flush().await;
             if written > 0 {
@@ -303,7 +303,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(ok(id))
     }
 
-    async fn read(&mut self, id: u32, handle: String, offset: u64, len: u32) -> Result<Data, Self::Error> {
+    async fn read(&mut self, id: u32, handle: SftpHandle, offset: u64, len: u32) -> Result<Data, Self::Error> {
         let Some(OpenHandle::File { file, read, .. }) = self.handles.get_mut(&handle) else {
             return Err(StatusCode::Failure.with_message("Bad handle"));
         };
@@ -318,7 +318,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(Data { id, data: buf })
     }
 
-    async fn write(&mut self, id: u32, handle: String, offset: u64, data: Vec<u8>) -> Result<Status, Self::Error> {
+    async fn write(&mut self, id: u32, handle: SftpHandle, offset: u64, data: Vec<u8>) -> Result<Status, Self::Error> {
         if !self.shared.allow_write {
             return Err(read_only());
         }
@@ -341,7 +341,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(Attrs { id, attrs: FileAttributes::from(&meta) })
     }
 
-    async fn fstat(&mut self, id: u32, handle: String) -> Result<Attrs, Self::Error> {
+    async fn fstat(&mut self, id: u32, handle: SftpHandle) -> Result<Attrs, Self::Error> {
         match self.handles.get(&handle) {
             Some(OpenHandle::File { file, .. }) => {
                 let meta = file.metadata().await.map_err(|e| status_of(&e))?;
@@ -357,7 +357,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(ok(id))
     }
 
-    async fn fsetstat(&mut self, id: u32, _handle: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
+    async fn fsetstat(&mut self, id: u32, _handle: SftpHandle, _attrs: FileAttributes) -> Result<Status, Self::Error> {
         Ok(ok(id))
     }
 
@@ -379,7 +379,7 @@ impl russh_sftp::server::Handler for SftpHandler {
         Ok(Handle { id, handle })
     }
 
-    async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
+    async fn readdir(&mut self, id: u32, handle: SftpHandle) -> Result<Name, Self::Error> {
         match self.handles.get_mut(&handle) {
             Some(OpenHandle::Dir { entries }) => match entries.take() {
                 Some(files) if !files.is_empty() => Ok(Name { id, files }),
