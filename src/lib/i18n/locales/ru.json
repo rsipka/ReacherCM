@@ -995,7 +995,7 @@
   "settings.changelog": "Список изменений",
   "settings.changelog_desc": "Что изменилось в каждой версии.",
   "settings.license": "Лицензия",
-  "settings.license_desc": "Reach — свободное ПО под лицензией MIT.",
+  "settings.license_desc": "Reacher CM — свободное ПО под лицензией GNU GPL версии 3 или более поздней.",
   "settings.open_link": "Открыть",
   "report.title": "Сообщить о проблеме",
   "report.desc": "Открывает issue на GitHub с журналом Reach для вложения, очищенным от ваших хостов, учётных записей и папок.",

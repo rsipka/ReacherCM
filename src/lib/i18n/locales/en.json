@@ -995,7 +995,7 @@
   "settings.changelog": "Changelog",
   "settings.changelog_desc": "What changed in each version.",
   "settings.license": "License",
-  "settings.license_desc": "Reach is free software under the MIT License.",
+  "settings.license_desc": "Reacher CM is free software under the GNU General Public License, version 3 or later.",
   "settings.open_link": "Open",
   "report.title": "Report a problem",
   "report.desc": "Opens a GitHub issue with Reach's log to attach, cleaned of your hosts, accounts and folders.",

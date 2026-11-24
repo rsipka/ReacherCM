@@ -2,7 +2,7 @@
   "name": "reach",
   "version": "26.11.1-dev.8",
   "private": true,
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "description": "Reacher CM, a personal fork of Reach with additional features: cross-platform SSH and remote management tool",
   "repository": "github:rsipka/ReacherCM",
   "type": "module",
