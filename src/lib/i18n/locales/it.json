@@ -4137,5 +4137,8 @@
   "sync_account.vault_enable": "Usa questo server per sincronizzare il vault",
   "sync_account.vault_enabled": "La sincronizzazione cifrata del vault personale è attiva.",
   "sync_account.vault_moving": "Caricamento e verifica del vault…",
-  "sync_account.vault_confirm": "Spostare la sincronizzazione del vault personale su questo server? I file locali e la posizione precedente vengono conservati."
+  "sync_account.vault_confirm": "Spostare la sincronizzazione del vault personale su questo server? I file locali e la posizione precedente vengono conservati.",
+  "session.via_wireguard": "Tramite WireGuard: {{name}}",
+  "titlebar.wireguard_on": "WireGuard attivo: {{names}}. Fai clic per vedere i tunnel.",
+  "wireguard.auto_off": "Si spegne quando nessuna sessione lo usa"
 }

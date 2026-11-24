@@ -4137,5 +4137,8 @@
   "sync_account.vault_enable": "Use this server for vault sync",
   "sync_account.vault_enabled": "Encrypted personal vault sync is enabled.",
   "sync_account.vault_moving": "Uploading and verifying the vault…",
-  "sync_account.vault_confirm": "Move personal vault sync to this server? The existing local files and previous sync location are kept."
+  "sync_account.vault_confirm": "Move personal vault sync to this server? The existing local files and previous sync location are kept.",
+  "session.via_wireguard": "Through WireGuard: {{name}}",
+  "titlebar.wireguard_on": "WireGuard on: {{names}}. Click to see the tunnels.",
+  "wireguard.auto_off": "Turns off when no session uses it"
 }

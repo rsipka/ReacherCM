@@ -45,6 +45,9 @@ pub(crate) struct WebWin {
     basic_used: bool,
     /// A SOCKS5 proxy into the session's WireGuard tunnel; its popups use it too.
     proxy: Option<url::Url>,
+    /// Keeps that tunnel on while the window is open, though a page may sit
+    /// with no connection open for a while.
+    _tunnel: Option<crate::wireguard::manager::Hold>,
 }
 
 impl Drop for WebWin {
@@ -189,8 +192,10 @@ fn clear_leftovers() {
 /// Open a session's page, or bring its open window to the front.
 /// `password`: already fetched (vault or password manager); `None` signs
 /// nothing in. `socks`: the port of a local SOCKS5 proxy all of the
-/// window's traffic must go through (a WireGuard tunnel).
-pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>, socks: Option<u16>) -> Result<String, String> {
+/// window's traffic must go through (a WireGuard tunnel), and the hold that
+/// keeps the tunnel on while the window is open.
+pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>, socks: Option<(u16, crate::wireguard::manager::Hold)>) -> Result<String, String> {
+    let (socks, tunnel) = socks.unzip();
     let _ = APP.set(app.clone());
     clear_leftovers();
     let opts = s.web.clone().unwrap_or_default();
@@ -226,6 +231,7 @@ pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>, socks:
         pending: None,
         basic_used: false,
         proxy: socks.map(|port| format!("socks5://127.0.0.1:{port}").parse().expect("a URL")),
+        _tunnel: tunnel,
     }));
 
     let label = {

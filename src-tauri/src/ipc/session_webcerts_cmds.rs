@@ -93,6 +93,10 @@ pub async fn web_session_open(state: State<'_, AppState>, app: tauri::AppHandle,
     if socks.is_some() && cfg!(target_os = "macos") {
         return Err("Web sessions through a WireGuard tunnel are not available on macOS yet.".into());
     }
+    let socks = match socks {
+        Some((port, tunnel)) => Some((port, crate::wireguard::manager::hold(&tunnel).await.ok_or("The WireGuard tunnel for this session is off. Open it again to turn it on.")?)),
+        None => None,
+    };
     crate::web::window::open(&app, &stored, password, socks)
 }
 

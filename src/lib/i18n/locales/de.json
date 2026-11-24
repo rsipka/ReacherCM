@@ -4137,5 +4137,8 @@
   "sync_account.vault_enable": "Diesen Server für den Tresor verwenden",
   "sync_account.vault_enabled": "Die verschlüsselte Synchronisierung des persönlichen Tresors ist aktiviert.",
   "sync_account.vault_moving": "Tresor wird hochgeladen und geprüft…",
-  "sync_account.vault_confirm": "Den persönlichen Tresor über diesen Server synchronisieren? Lokale Dateien und der bisherige Speicherort bleiben erhalten."
+  "sync_account.vault_confirm": "Den persönlichen Tresor über diesen Server synchronisieren? Lokale Dateien und der bisherige Speicherort bleiben erhalten.",
+  "session.via_wireguard": "Über WireGuard: {{name}}",
+  "titlebar.wireguard_on": "WireGuard an: {{names}}. Klicken, um die Tunnel zu sehen.",
+  "wireguard.auto_off": "Schaltet sich aus, wenn keine Sitzung ihn nutzt"
 }

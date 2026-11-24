@@ -21,10 +21,28 @@ export async function refreshWireguard(): Promise<WgProfileInfo[]> {
 	try {
 		profiles = await wireguardList();
 	} catch {
-		// Locked vault: nothing to show yet.
+		// Locked vault: nothing to show yet; asked again next time.
+		loaded = false;
 	}
 	window.dispatchEvent(new CustomEvent('reach:wireguard-changed'));
 	return profiles;
+}
+
+/** The profiles whose tunnel is on, kept fresh while any is: a tunnel a
+ *  connection turned on goes off by itself once unused. */
+export function runningWireguard(): WgProfileInfo[] {
+	watch();
+	return profiles.filter((p) => p.state.running);
+}
+
+let watching = false;
+function watch(): void {
+	if (watching || typeof window === 'undefined') return;
+	watching = true;
+	if (!loaded) void refreshWireguard();
+	window.setInterval(() => {
+		if (profiles.some((p) => p.state.running)) void refreshWireguard();
+	}, 5000);
 }
 
 export function wireguardName(id: string | null | undefined): string {
@@ -51,7 +69,7 @@ export function ensureWireguard(id: string): Promise<void> {
 		if (!p) throw new Error(t('wireguard.missing_error'));
 		const ok = await ask(t('wireguard.confirm_up', { name: p.name, endpoint: p.endpoint ?? '' }), { confirmLabel: t('wireguard.turn_on') });
 		if (!ok) throw new Error(t('wireguard.declined', { name: p.name }));
-		await wireguardUp(id);
+		await wireguardUp(id, true);
 		await refreshWireguard();
 	})();
 	starting.set(id, job);

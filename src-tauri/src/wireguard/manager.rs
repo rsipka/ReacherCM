@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,10 @@ use super::stack::{Tunnel, WgStream};
 /// How long the server may take to answer the first handshake.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a tunnel that a connection turned on stays on once nothing uses
+/// it: long enough for a reconnect or a tab moved to another window.
+const IDLE_OFF: Duration = Duration::from_secs(30);
+
 struct Running {
     tunnel: Arc<Tunnel>,
     since: Instant,
@@ -27,12 +32,80 @@ struct Running {
     forwards: HashMap<(String, u16), Listener>,
     /// A loopback SOCKS5 proxy through the tunnel, for web sessions.
     socks: Option<Listener>,
+    /// Turned on by a connection, not by hand: turned off again once
+    /// nothing has used it for [`IDLE_OFF`].
+    auto: bool,
+    /// Users that keep it on without a connection open all the time (an
+    /// open web window): see [`hold`].
+    holds: Arc<AtomicUsize>,
+    idle_since: Option<Instant>,
 }
 
 impl Running {
-    fn new(tunnel: Tunnel) -> Self {
-        Self { tunnel: Arc::new(tunnel), since: Instant::now(), forwards: HashMap::new(), socks: None }
+    fn new(tunnel: Tunnel, auto: bool) -> Self {
+        Self {
+            tunnel: Arc::new(tunnel),
+            since: Instant::now(),
+            forwards: HashMap::new(),
+            socks: None,
+            auto,
+            holds: Arc::default(),
+            idle_since: None,
+        }
     }
+
+    fn in_use(&self) -> bool {
+        self.tunnel.stats().connections > 0 || self.holds.load(Ordering::Relaxed) > 0
+    }
+}
+
+/// Keeps a tunnel from being turned off for being unused while it lives.
+pub struct Hold(Arc<AtomicUsize>);
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// A [`Hold`] on the tunnel of profile `id`, if it is up.
+pub async fn hold(id: &str) -> Option<Hold> {
+    let all = running().lock().await;
+    let r = all.get(id)?;
+    r.holds.fetch_add(1, Ordering::Relaxed);
+    Some(Hold(r.holds.clone()))
+}
+
+/// Turns off the tunnels a connection turned on once nothing has used them
+/// for [`IDLE_OFF`]. One task for all, started with the first tunnel.
+fn watch_idle() {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    if STARTED.set(()).is_err() {
+        return;
+    }
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            reap_idle(IDLE_OFF).await;
+        }
+    });
+}
+
+async fn reap_idle(after: Duration) {
+    let mut all = running().lock().await;
+    let now = Instant::now();
+    all.retain(|id, r| {
+        if !r.auto || r.in_use() {
+            r.idle_since = None;
+            return true;
+        }
+        let since = *r.idle_since.get_or_insert(now);
+        if now.duration_since(since) <= after {
+            return true;
+        }
+        tracing::info!("WireGuard tunnel {id} is off: no connection has used it for {}s", after.as_secs());
+        false
+    });
 }
 
 /// A loopback listener's port and accept loop, stopped when dropped (the
@@ -64,14 +137,20 @@ pub struct TunnelState {
     pub rx_bytes: u64,
     pub connections: usize,
     pub error: Option<String>,
+    /// Turned on by a connection: goes off again when nothing uses it.
+    pub auto: bool,
 }
 
 /// Brings the tunnel up, unless it already is with the same profile. Waits
 /// for the server's answer, so an error here is a tunnel that cannot work.
-pub async fn up(id: &str, config: &WgConfig) -> Result<(), String> {
+/// `auto`: for a connection, so it goes off again once unused; turned on by
+/// hand (`false`) it stays on, also when a connection had turned it on.
+pub async fn up(id: &str, config: &WgConfig, auto: bool) -> Result<(), String> {
+    watch_idle();
     let mut all = running().lock().await;
-    if let Some(r) = all.get(id) {
+    if let Some(r) = all.get_mut(id) {
         if r.tunnel.is_running() && r.tunnel.config() == config {
+            r.auto &= auto;
             return Ok(());
         }
         all.remove(id);
@@ -79,7 +158,7 @@ pub async fn up(id: &str, config: &WgConfig) -> Result<(), String> {
     let tunnel = Tunnel::start(config).await.map_err(|e| e.to_string())?;
     tunnel.wait_handshake(HANDSHAKE_TIMEOUT).await.map_err(|e| e.to_string())?;
     tracing::info!("WireGuard tunnel {id} is up");
-    all.insert(id.to_string(), Running::new(tunnel));
+    all.insert(id.to_string(), Running::new(tunnel, auto));
     Ok(())
 }
 
@@ -106,6 +185,7 @@ pub async fn state(id: &str) -> TunnelState {
         rx_bytes: s.rx_bytes,
         connections: s.connections,
         error: s.error,
+        auto: r.auto,
     }
 }
 
@@ -272,4 +352,10 @@ async fn socks_client(mut c: TcpStream, tunnel: Arc<Tunnel>) -> io::Result<()> {
             Err(e)
         }
     }
+}
+
+/// One look of the idle watch with no waiting, for tests.
+#[cfg(test)]
+pub(crate) async fn reap_idle_now() {
+    reap_idle(Duration::ZERO).await;
 }

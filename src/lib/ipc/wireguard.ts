@@ -10,6 +10,8 @@ export interface WgTunnelState {
 	rx_bytes: number;
 	connections: number;
 	error?: string | null;
+	/** Turned on by a connection: goes off again when nothing uses it. */
+	auto?: boolean;
 }
 
 /** A saved profile as the list shows it: no private key. */
@@ -55,8 +57,9 @@ export function wireguardDelete(id: string): Promise<void> {
 }
 
 /** Brings the tunnel up and waits for the server's answer. */
-export function wireguardUp(id: string): Promise<WgProfileInfo> {
-	return invoke<WgProfileInfo>('wireguard_up', { id });
+/** `auto`: for a connection, so it goes off again once unused; by hand it stays on. */
+export function wireguardUp(id: string, auto = false): Promise<WgProfileInfo> {
+	return invoke<WgProfileInfo>('wireguard_up', { id, auto });
 }
 
 export function wireguardDown(id: string): Promise<void> {

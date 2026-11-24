@@ -24,6 +24,7 @@
 	import { captureTab } from '#lib/state/capture.js';
 	import { CAMERA_ICON } from '#lib/terminal/snapshot.js';
 	import { formatHops, formatProxyAddress, ROUTE_ICON } from '#lib/utils/route.js';
+	import { wireguardName, wireguardProfiles } from '#lib/state/wireguard.svelte.js';
 
 	interface Props {
 		tab: Tab;
@@ -69,6 +70,13 @@
 			? t('session.via_proxy', { type: tab.sshConnectParams.proxy.proxy_type.toUpperCase(), address: formatProxyAddress(tab.sshConnectParams.proxy) })
 			: ''
 	);
+	/** Connected through a WireGuard tunnel: it is on while this tab is. */
+	let wireguardTip = $derived.by(() => {
+		const id = (tab.type === 'ssh' || tab.type === 'telnet') && tab.link !== 'down' ? params?.wireguard : null;
+		if (!id) return '';
+		wireguardProfiles();
+		return t('session.via_wireguard', { name: wireguardName(id) });
+	});
 	let tmuxName = $derived(tab.type === 'ssh' ? (tab.sshConnectParams?.tmux?.name ?? null) : null);
 	let tap = $derived(tabHistory(tab.id));
 	let log = $derived(tap?.log ?? null);
@@ -212,6 +220,7 @@
 	{#if remote || tab.wslDistro}<span class="badge">{protocol}</span>{/if}
 	{#if jumpTip}<span class="route" role="img" aria-label={jumpTip} title={jumpTip}>{@render icon(ROUTE_ICON.jump, 13)}</span>{/if}
 	{#if proxyTip}<span class="route" role="img" aria-label={proxyTip} title={proxyTip}>{@render icon(ROUTE_ICON.proxy, 13)}</span>{/if}
+	{#if wireguardTip}<span class="route wg" role="img" aria-label={wireguardTip} title={wireguardTip}>{@render icon(ROUTE_ICON.wireguard, 13)}<span class="wg-text">WG</span></span>{/if}
 	{#if tmuxName}<TmuxMenu {tab} name={tmuxName} />{/if}
 	{#if log}<span class="rec" class:paused={log.paused} title={log.paused ? t('history.log_paused_hint') : t('termbar.logging')}>{t('termbar.log')}</span>{/if}
 
@@ -342,6 +351,19 @@
 		flex-shrink: 0;
 		display: inline-flex;
 		color: var(--color-text-secondary);
+	}
+
+	/* The tunnel is on while this tab is connected: said in colour. */
+	.route.wg {
+		align-items: center;
+		gap: 2px;
+		color: var(--color-success);
+	}
+
+	.wg-text {
+		font-size: 0.625rem;
+		font-weight: 600;
+		letter-spacing: 0.02em;
 	}
 
 	/* Writing to a log file is never silent. */

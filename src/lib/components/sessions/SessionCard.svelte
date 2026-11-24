@@ -11,6 +11,7 @@
 	import { tooltip } from '#lib/utils/tooltip.js';
 	import { longPress } from '#lib/utils/longPress.js';
 	import { formatHops, formatProxyAddress, ROUTE_ICON } from '#lib/utils/route.js';
+	import { wireguardName, wireguardProfiles } from '#lib/state/wireguard.svelte.js';
 
 	const settings = getSettings();
 
@@ -100,6 +101,15 @@
 			? t('session.via_proxy', { type: session.proxy.proxy_type.toUpperCase(), address: formatProxyAddress(session.proxy) })
 			: ''
 	);
+
+	/** A WireGuard tunnel the session (or one of its other addresses) goes
+	 *  through, by profile name. */
+	let wireguardTip = $derived.by(() => {
+		const ids = [session.wireguard_id, ...(session.alt_addresses ?? []).map((a) => a.via_wireguard)].filter((id): id is string => !!id);
+		if (!ids.length) return '';
+		wireguardProfiles();
+		return t('session.via_wireguard', { name: [...new Set(ids)].map(wireguardName).join(', ') });
+	});
 
 	/** The session's notes and fields, for a tooltip: hidden values stay masked. */
 	let docsTooltip = $derived.by(() => {
@@ -228,6 +238,11 @@
 				{#if proxyTip}
 					<span class="mark-tip route-mark" title={proxyTip}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label={proxyTip}>
 						<path d={ROUTE_ICON.proxy} />
+					</svg></span>
+				{/if}
+				{#if wireguardTip}
+					<span class="mark-tip route-mark" title={wireguardTip}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label={wireguardTip}>
+						<path d={ROUTE_ICON.wireguard} />
 					</svg></span>
 				{/if}
 				<!-- Beside the name, which is short, so the address below has the
