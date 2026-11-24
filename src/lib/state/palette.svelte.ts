@@ -22,7 +22,10 @@ export type SessionRequest =
 	/** Open the session's editor. */
 	| { kind: 'edit'; sessionId: string }
 	/** `prefill`: an address someone typed, to start the dialog from. */
-	| { kind: 'quick-connect'; prefill?: TypedAddress };
+	| { kind: 'quick-connect'; prefill?: TypedAddress }
+	/** A server management session's serial console: SSH to the controller
+	 *  at `port`, then type `command`. */
+	| { kind: 'bmc-console'; sessionId: string; port: number; command: string };
 
 let open = $state(false);
 let request = $state<SessionRequest | null>(null);

@@ -66,7 +66,6 @@ use ipc::marketplace_commands::*;
 use ipc::registry_url_commands::*;
 use ipc::credential_commands::*;
 use ipc::settings_commands::*;
-#[cfg(desktop)]
 use ipc::sync_account_commands::*;
 use ipc::history_commands::*;
 use ipc::font_commands::*;
@@ -973,6 +972,7 @@ pub fn run() {
             web_session_cert_add,
             web_session_cert_remove,
             web_session_clear_data,
+            bmc_remote_console,
             // WireGuard profiles and tunnels (see `wireguard`)
             wireguard_list,
             wireguard_get,
@@ -1069,6 +1069,14 @@ pub fn run() {
     #[cfg(not(desktop))]
     {
         builder = builder.invoke_handler(refuse_web_pages(tauri::generate_handler![
+            sync_account_status,
+            sync_account_pair_origin,
+            sync_account_pair,
+            sync_account_cancel,
+            sync_account_check,
+            sync_account_sign_out,
+            sync_account_manage,
+            sync_account_preferences,
             // MCP server. Off until the user enables it; nothing here starts
             // a listener or shares a session on its own.
             mcp_start,

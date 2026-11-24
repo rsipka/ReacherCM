@@ -18,6 +18,8 @@ export type Health = 'OK' | 'Warning' | 'Critical' | string;
 export interface BmcOpened {
 	vendor: 'dell' | 'hpe' | 'supermicro' | 'lenovo' | 'fujitsu' | 'cisco' | 'huawei' | 'openbmc' | 'asrock' | 'ami' | 'other';
 	product: string | null;
+	/** Typed after an SSH login for the serial console; empty: none known. */
+	consoleCommand: string;
 }
 
 export interface BmcOverview {
@@ -148,3 +150,6 @@ export const bmcMediaInsert = (connectionId: string, path: string, image: string
 export const bmcMediaEject = (connectionId: string, path: string) => invoke<void>('bmc_media_eject', { connectionId, path });
 /** Restart the BMC; its login ends, so the tab connects again later. */
 export const bmcResetBmc = (connectionId: string) => invoke<void>('bmc_reset_bmc', { connectionId });
+/** Open the controller's remote console in a web window of its own
+ *  (desktop): the iDRAC's HTML5 console, or the others' web interface. */
+export const bmcRemoteConsole = (connectionId: string, sessionId: string) => invoke<string>('bmc_remote_console', { connectionId, sessionId });

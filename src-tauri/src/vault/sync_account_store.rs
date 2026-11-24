@@ -191,6 +191,28 @@ impl AccountTarget {
         Ok(Some((data, etag)))
     }
 
+    pub(crate) async fn report_applied(&self, revision: &str) {
+        let url = self.api(&format!("{}/applied", self.vault_path()));
+        let result = self
+            .request(|http| http.post(url.clone()).header(header::IF_MATCH, revision))
+            .await;
+        match result {
+            Ok(response)
+                if matches!(
+                    response.status(),
+                    StatusCode::NO_CONTENT
+                        | StatusCode::NOT_FOUND
+                        | StatusCode::PRECONDITION_FAILED
+                ) => {}
+            Ok(response) => {
+                tracing::debug!(vault = %self.vault_id, status = %response.status(), "Vault receipt was not accepted")
+            }
+            Err(error) => {
+                tracing::debug!(vault = %self.vault_id, %error, "Could not send vault receipt")
+            }
+        }
+    }
+
     pub(crate) async fn put(
         &self,
         data: &[u8],
@@ -223,9 +245,9 @@ impl AccountTarget {
         match response.status() {
             StatusCode::NO_CONTENT => Ok(true),
             StatusCode::PRECONDITION_FAILED => Ok(false),
-            StatusCode::CONFLICT if self.organization.is_some() => {
-                Err(error("The vault owner must finish key rotation before changes can sync"))
-            }
+            StatusCode::CONFLICT if self.organization.is_some() => Err(error(
+                "The vault owner must finish key rotation before changes can sync",
+            )),
             StatusCode::CONFLICT => Err(error(
                 "This sync account already has a different personal vault",
             )),

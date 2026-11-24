@@ -206,7 +206,7 @@ subtle = "2"
 # difference between a cursor blink costing a few hundred bytes and costing
 # eight megabytes. All three crates come from the same revision so their types
 # agree. Move back to versions when the next release carries this.
-ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false, features = ["rustls", "clipboard", "rdpdr"] }
+ironrdp-client = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1", default-features = false, features = ["rustls", "clipboard", "rdpdr", "gateway"] }
 ironrdp-cliprdr = { git = "https://github.com/Devolutions/IronRDP", rev = "a8da54ba4d849370bc92e1d5230cc18e99cf5ff1" }
 # Pictures on the RDP clipboard: DIB to and from PNG (IronRDP's converters),
 # and PNG to and from the RGBA the local clipboard speaks.

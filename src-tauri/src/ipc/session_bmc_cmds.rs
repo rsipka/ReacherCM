@@ -174,3 +174,81 @@ pub async fn bmc_reset_bmc(state: State<'_, AppState>, connection_id: String) ->
     state.bmc_manager.remove(&connection_id);
     Ok(())
 }
+
+/// Open the controller's remote console in a web window (desktop): the
+/// iDRAC's HTML5 console with a one-time login, or the web interface of the
+/// others, signed in with this connection's login. The window is a web
+/// session's (`crate::web`): no app commands, its own storage, and only the
+/// certificates this session trusts.
+#[cfg(desktop)]
+#[tauri::command]
+#[tracing::instrument(skip(state, app))]
+pub async fn bmc_remote_console(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+    connection_id: String,
+    session_id: String,
+) -> Result<String, String> {
+    let c = conn(&state, &connection_id)?;
+    let stored = stored_session(&state, &session_id).await?;
+    if stored.kind != crate::state::SessionKind::Bmc {
+        return Err("Not a server management session".into());
+    }
+    let web = console_window_session(&stored, c.client.base(), c.console().await.map_err(err)?)?;
+    let password = (web.web.as_ref().and_then(|w| w.login.as_deref()) != Some("off")).then(|| c.client.password().to_string());
+    crate::web::window::open(&app, &web, password, None)
+}
+
+/// The session as the web session its console window opens: the
+/// controller's own address, the console's path, the certificates this
+/// session trusts. Refused when the connection is not to this session's
+/// controller, so its login never goes to another one.
+fn console_window_session(
+    stored: &crate::state::SessionConfig,
+    connected_to: &str,
+    launch: crate::bmc::ConsoleLaunch,
+) -> Result<crate::state::SessionConfig, String> {
+    let port = if stored.port == 0 { 443 } else { stored.port };
+    let own = format!("https://{}:{port}", crate::bmc::client::url_host(&stored.host));
+    if !own.eq_ignore_ascii_case(connected_to) {
+        return Err("This tab is connected to another controller; reconnect it".into());
+    }
+    let mut s = stored.clone();
+    s.kind = crate::state::SessionKind::Web;
+    s.port = port;
+    s.web = Some(crate::web::WebOptions {
+        path: Some(launch.path),
+        login: launch.login.map(str::to_owned),
+        certs: stored
+            .bmc
+            .as_ref()
+            .map(|b| b.certs.iter().map(|f| crate::web::WebCert { sha256: f.clone(), host: stored.host.clone(), saved_at: None }).collect())
+            .unwrap_or_default(),
+        ..Default::default()
+    });
+    Ok(s)
+}
+
+#[cfg(test)]
+mod console_tests {
+    use super::*;
+
+    #[test]
+    fn the_console_window_goes_to_the_sessions_own_controller() {
+        let s: crate::state::SessionConfig = serde_json::from_value(serde_json::json!({
+            "id": "s1", "name": "bmc", "kind": "bmc", "host": "bmc.example.com", "port": 443, "username": "root",
+            "auth_method": { "type": "Password" }, "folder_id": null, "tags": [],
+            "bmc": { "certs": ["AB:CD"] },
+        }))
+        .unwrap();
+        let launch = crate::bmc::ConsoleLaunch { path: "/console?x=1".into(), login: Some("off") };
+        let w = console_window_session(&s, "https://bmc.example.com:443", launch.clone()).unwrap();
+        assert_eq!(w.kind, crate::state::SessionKind::Web);
+        let opts = w.web.unwrap();
+        assert_eq!(opts.path.as_deref(), Some("/console?x=1"));
+        assert_eq!(opts.login.as_deref(), Some("off"));
+        assert_eq!(opts.certs[0].sha256, "AB:CD");
+        assert_eq!(crate::web::session_url(&w.host, w.port, &opts).unwrap().as_str(), "https://bmc.example.com/console?x=1");
+        assert!(console_window_session(&s, "https://other.example.com:443", launch).is_err());
+    }
+}

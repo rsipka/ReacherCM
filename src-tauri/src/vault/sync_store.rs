@@ -29,7 +29,7 @@ fn sync_error(msg: impl Into<String>) -> VaultError {
     VaultError::SyncError(msg.into())
 }
 
-fn revision_of(data: &[u8]) -> String {
+pub(super) fn revision_of(data: &[u8]) -> String {
     Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
 }
 

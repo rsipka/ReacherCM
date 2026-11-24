@@ -545,3 +545,28 @@ pub fn valid_image(url: &str) -> bool {
 #[cfg(test)]
 #[path = "model_tests.rs"]
 mod tests;
+
+/// The iDRAC 9 HTML5 console page for a one-time login from
+/// `DelliDRACCardService.GetKVMSession` (as Dell's own Redfish scripts
+/// open it).
+pub fn dell_console_path(username: &str, temp_username: &str, temp_password: &str) -> String {
+    let q = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("username", username)
+        .append_pair("tempUsername", temp_username)
+        .append_pair("tempPassword", temp_password)
+        .finish();
+    format!("/console?{q}")
+}
+
+/// The serial console command typed after an SSH login to the controller,
+/// by vendor; empty where its shell is the console already or none is known.
+pub fn text_console_command(vendor: &str) -> &'static str {
+    match vendor {
+        "dell" => "console com2",
+        "hpe" => "vsp",
+        "lenovo" => "console 1",
+        "supermicro" | "asrock" | "ami" => "start /system1/sol1",
+        "cisco" => "connect host",
+        _ => "",
+    }
+}

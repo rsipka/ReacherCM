@@ -180,7 +180,7 @@ pub async fn sync_vaults(
         } else {
             target
         };
-        match sync_engine::sync(&target).await {
+        match sync_engine::sync_with_receipt(&target).await {
             Ok(report) => {
                 tracing::debug!(vault = %target.vault_id, ?report, "Vault synced");
                 if report.changed() {
@@ -3813,7 +3813,7 @@ pub(crate) fn keychain_entry_in(service: &str, user: &str) -> Result<keyring_cor
 /// private app folder. Like a desktop keychain it asks for no user check;
 /// that is the fingerprint's job.
 #[cfg(all(target_os = "android", not(test)))]
-mod android_keychain {
+pub(crate) mod android_keychain {
     use super::{VaultError, BASE64};
     use base64::Engine;
     use serde::{Deserialize, Serialize};

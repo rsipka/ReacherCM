@@ -122,6 +122,10 @@ export interface SshConnectParams {
   x11Desktop?: X11Desktop | null;
   /** Terminal type, Backspace and encoding; absent: the defaults. */
   terminal?: TerminalOptions | null;
+  /** A line typed once the server has gone quiet after login (a server
+   *  management controller's serial console command). Kept on the tab
+   *  only; not sent to the backend. */
+  afterLogin?: string;
   /** A WireGuard profile whose tunnel carries the connection; brought up
    *  first (asking the person) when it is off. */
   wireguard?: string | null;
