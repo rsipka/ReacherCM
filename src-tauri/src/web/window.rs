@@ -43,6 +43,8 @@ pub(crate) struct WebWin {
     /// An HTTP login (Basic/Digest) was answered once already; a second
     /// request means it was refused, and is left to the user.
     basic_used: bool,
+    /// A SOCKS5 proxy into the session's WireGuard tunnel; its popups use it too.
+    proxy: Option<url::Url>,
 }
 
 impl Drop for WebWin {
@@ -186,8 +188,9 @@ fn clear_leftovers() {
 
 /// Open a session's page, or bring its open window to the front.
 /// `password`: already fetched (vault or password manager); `None` signs
-/// nothing in.
-pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>) -> Result<String, String> {
+/// nothing in. `socks`: the port of a local SOCKS5 proxy all of the
+/// window's traffic must go through (a WireGuard tunnel).
+pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>, socks: Option<u16>) -> Result<String, String> {
     let _ = APP.set(app.clone());
     clear_leftovers();
     let opts = s.web.clone().unwrap_or_default();
@@ -222,6 +225,7 @@ pub fn open(app: &AppHandle, s: &SessionConfig, password: Option<String>) -> Res
         had_certs: !opts.certs.is_empty(),
         pending: None,
         basic_used: false,
+        proxy: socks.map(|port| format!("socks5://127.0.0.1:{port}").parse().expect("a URL")),
     }));
 
     let label = {
@@ -286,6 +290,9 @@ fn build(
         });
     if let Some(f) = features {
         b = b.window_features(f);
+    }
+    if let Some(proxy) = entry(label).and_then(|e| lock(&e).proxy.clone()) {
+        b = b.proxy_url(proxy);
     }
     match place {
         #[cfg(not(target_os = "macos"))]

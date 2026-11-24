@@ -194,3 +194,48 @@ pub fn wireguard_generate_key() -> (String, String) {
     private[31] = (private[31] & 127) | 64;
     (encode_key(&private), encode_key(&public_key(&private)))
 }
+
+/// The saved session's WireGuard tunnel for `host:port`, if it routes that
+/// address through one. None for a connection with no saved session.
+async fn session_tunnel(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Option<String> {
+    let id = session_id.filter(|s| !s.is_empty())?;
+    let stored = crate::ipc::session_commands::stored_session(state, id).await.ok()?;
+    crate::ipc::ssh_commands::wireguard_route(&stored, host, port).map(str::to_owned)
+}
+
+/// For a client that opens its own TCP connection (RDP, VNC, SPICE,
+/// WinBox): a port on 127.0.0.1 that reaches `host:port` through the saved
+/// session's WireGuard tunnel, or None when the session is not routed
+/// through one. The tunnel must be on (the webview asks first).
+pub(crate) async fn session_forward(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Result<Option<u16>, String> {
+    session_forward_to(state, session_id, host, port, port).await
+}
+
+/// [`session_forward`] to another port of the same host than the saved one
+/// (SPICE's TLS port).
+pub(crate) async fn session_forward_to(state: &AppState, session_id: Option<&str>, host: &str, port: u16, to_port: u16) -> Result<Option<u16>, String> {
+    let Some(wg) = session_tunnel(state, session_id, host, port).await else { return Ok(None) };
+    crate::wireguard::forward(&wg, host, to_port).await.map(Some).map_err(|e| e.to_string())
+}
+
+/// For a web session: the port of a SOCKS5 proxy on 127.0.0.1 into the
+/// saved session's WireGuard tunnel, or None when it is not routed through one.
+pub(crate) async fn session_socks(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Result<Option<u16>, String> {
+    let Some(wg) = session_tunnel(state, session_id, host, port).await else { return Ok(None) };
+    crate::wireguard::socks(&wg).await.map(Some).map_err(|e| e.to_string())
+}
+
+/// The WireGuard profile the saved session routes `host:port` through (its
+/// main address when not given), so the webview can turn it on first.
+#[tauri::command]
+pub async fn wireguard_session_route(
+    state: State<'_, AppState>,
+    session_id: String,
+    host: Option<String>,
+    port: Option<u16>,
+) -> Result<Option<String>, String> {
+    let Ok(stored) = crate::ipc::session_commands::stored_session(&state, &session_id).await else { return Ok(None) };
+    let host = host.unwrap_or_else(|| stored.host.clone());
+    let port = port.unwrap_or(stored.port);
+    Ok(crate::ipc::ssh_commands::wireguard_route(&stored, &host, port).map(str::to_owned))
+}

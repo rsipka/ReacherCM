@@ -126,6 +126,9 @@ pub struct Config {
     pub(crate) input_keepalive_interval: Option<Duration>,
     pub(crate) fake_events_interval: Option<Duration>,
     pub(crate) tcp_connect_attempt_timeout: Option<Duration>,
+    /// Reacher CM: where the TCP connection really goes (a local port into a
+    /// tunnel), while the destination still names the server for TLS and CredSSP.
+    pub(crate) connect_address: Option<core::net::SocketAddr>,
     pub(crate) channels: ChannelConfig,
     pub(crate) administrative_session: bool,
     pub(crate) load_balance_info: Option<String>,
@@ -1053,6 +1056,7 @@ pub struct ConfigBuilder {
     input_keepalive_interval: Option<Duration>,
     fake_events_interval: Option<Duration>,
     tcp_connect_attempt_timeout: Option<Duration>,
+    connect_address: Option<core::net::SocketAddr>,
     channels: ChannelConfig,
     #[cfg(any(feature = "sound", feature = "rdpdr"))]
     audio_quality_mode: Option<AudioQualityMode>,
@@ -1817,6 +1821,15 @@ impl ConfigBuilder {
     #[must_use]
     pub fn with_tcp_connect_attempt_timeout(mut self, timeout: Duration) -> Self {
         self.tcp_connect_attempt_timeout = Some(timeout);
+        self
+    }
+
+    /// Opens the direct TCP connection to `address` instead of the destination, which still
+    /// names the server for TLS, CredSSP and the certificate check (a local port forwarded
+    /// into a tunnel). Server redirection targets are connected to as they come.
+    #[must_use]
+    pub fn with_connect_address(mut self, address: core::net::SocketAddr) -> Self {
+        self.connect_address = Some(address);
         self
     }
 
@@ -2831,6 +2844,7 @@ impl ConfigBuilder {
             input_keepalive_interval: self.input_keepalive_interval,
             fake_events_interval: self.fake_events_interval,
             tcp_connect_attempt_timeout: self.tcp_connect_attempt_timeout,
+            connect_address: self.connect_address,
             channels: self.channels,
             administrative_session: self.administrative_session,
             load_balance_info: self.load_balance_info,

@@ -7,6 +7,7 @@ import type { RdpOptions } from './rdp';
 import type { HistoryMode } from './history';
 import type { CursorStyle } from '#lib/terminal/cursor.js';
 import { t } from '#lib/state/i18n.svelte.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 export interface AuthMethod {
   type: 'Password' | 'Key' | 'Agent';
@@ -225,6 +226,7 @@ export function webSessionUrl(s: Pick<SessionConfig, 'host' | 'port' | 'web'>): 
 
 /** Open a web session in its own window (desktop); resolves with its label. */
 export async function webSessionOpen(sessionId: string): Promise<string> {
+  await ensureSessionWireguard(sessionId);
   return invoke<string>('web_session_open', { sessionId });
 }
 

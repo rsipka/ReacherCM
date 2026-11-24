@@ -65,6 +65,10 @@ pub async fn vnc_connect(
                         .await
                         .inspect_err(|e| tracing::warn!("VNC {id}: SSH leg failed: {e}"))?
                 }
+                // Or a WireGuard tunnel the saved session goes through.
+                None if !running => crate::ipc::wireguard_commands::session_forward(&state, session_id.as_deref(), &params.host, params.port)
+                    .await?
+                    .map(crate::db::conn::Forward::borrowed),
                 None => None,
             })
         })

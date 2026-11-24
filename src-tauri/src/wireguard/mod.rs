@@ -9,4 +9,4 @@ pub mod stack;
 #[cfg(test)]
 mod tests;
 
-pub use manager::dial;
+pub use manager::{dial, forward, socks};

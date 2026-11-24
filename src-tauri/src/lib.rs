@@ -941,6 +941,7 @@ pub fn run() {
             wireguard_down,
             wireguard_running,
             wireguard_generate_key,
+            wireguard_session_route,
             // Snippet commands
             snippet_list,
             snippet_create,
@@ -1462,6 +1463,7 @@ pub fn run() {
             wireguard_down,
             wireguard_running,
             wireguard_generate_key,
+            wireguard_session_route,
             // Snippet commands
             snippet_list,
             snippet_create,

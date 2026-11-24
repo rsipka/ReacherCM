@@ -1,5 +1,6 @@
 import { Channel, invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /**
  * Remote desktop over RDP.
@@ -142,6 +143,7 @@ export async function rdpConnect(
 		onFrame(copy);
 	};
 	const { sessionId, forwardLockKeys: _forwardLockKeys, ...rest } = params;
+	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('rdp_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }
 

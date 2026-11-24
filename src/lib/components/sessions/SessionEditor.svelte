@@ -594,7 +594,8 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardToSave = () => ((kind === 'ssh' || kind === 'telnet') && wireguardId ? wireguardId : null);
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox'];
+	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
 	let proxyType = $state<'socks5' | 'socks4' | 'http'>('socks5');
@@ -1294,7 +1295,7 @@
 			{#if kind === 'ssh'}
 				<SessionAddresses bind:mainLabel={hostLabel} bind:rows={addressRows} bind:mode={addressMode} bind:check={addressCheck} checkByDefault={getSettings().checkAddresses} jumpSessions={sshSessions.filter((s) => s.id !== editSession?.id).map((s) => ({ id: s.id, name: s.name }))} wireguardProfiles={wgProfiles} routed={jumpEnabled || proxyEnabled} port={portStr} disabled={saving} />
 			{/if}
-			{#if (kind === 'ssh' || kind === 'telnet') && (wgProfiles.length || wireguardId)}
+			{#if wireguardKinds.includes(kind) && (wgProfiles.length || wireguardId)}
 				<div class="shell-field">
 					<label class="via-label" for="session-wireguard">{t('wireguard.session_route')}</label>
 					<select id="session-wireguard" class="via-select" bind:value={wireguardId} disabled={saving}>

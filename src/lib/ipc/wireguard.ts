@@ -71,3 +71,8 @@ export function wireguardRunning(): Promise<string[]> {
 export function wireguardGenerateKey(): Promise<[string, string]> {
 	return invoke<[string, string]>('wireguard_generate_key');
 }
+
+/** The profile a saved session routes `host:port` through (its main address when not given). */
+export async function wireguardSessionRoute(sessionId: string, host?: string, port?: number): Promise<string | null> {
+	return invoke<string | null>('wireguard_session_route', { sessionId, host: host ?? null, port: port ?? null });
+}

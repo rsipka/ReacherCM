@@ -45,13 +45,23 @@ pub const META: &str = "__meta__";
 /// the listener and, for a connection Reach opened itself, logs out.
 pub struct Forward {
     pub port: u16,
-    task: tokio::task::JoinHandle<()>,
+    task: Option<tokio::task::JoinHandle<()>>,
     _ssh: Option<HeadlessConnection>,
+}
+
+impl Forward {
+    /// A local port someone else keeps open (a WireGuard tunnel's forward,
+    /// closed with the tunnel).
+    pub(crate) fn borrowed(port: u16) -> Self {
+        Self { port, task: None, _ssh: None }
+    }
 }
 
 impl Drop for Forward {
     fn drop(&mut self) {
-        self.task.abort();
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
@@ -78,7 +88,7 @@ pub(crate) async fn open_forward(
             });
         }
     });
-    Ok(Forward { port: local, task, _ssh: keep })
+    Ok(Forward { port: local, task: Some(task), _ssh: keep })
 }
 
 // ---------------------------------------------------------------------------

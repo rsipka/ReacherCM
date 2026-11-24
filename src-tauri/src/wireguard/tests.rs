@@ -136,3 +136,58 @@ async fn several_connections_at_once() {
         tokio::time::timeout(Duration::from_secs(10), j).await.expect("in time").unwrap();
     }
 }
+
+/// Answers one connection on `port` inside the server's tunnel with what it
+/// read, upper-cased.
+async fn shout_once(server: &Tunnel, port: u16) {
+    let mut srv = server.accept(port).await.unwrap();
+    let mut buf = [0u8; 5];
+    srv.read_exact(&mut buf).await.unwrap();
+    srv.write_all(&buf.to_ascii_uppercase()).await.unwrap();
+}
+
+#[tokio::test]
+async fn local_port_forward_and_socks() {
+    let (s, c) = pair(free_udp_port());
+    let server = Tunnel::start(&s).await.unwrap();
+    super::manager::up("test-forward", &c).await.unwrap();
+
+    // A plain local port into the tunnel, the same one when asked again.
+    let local = super::manager::forward("test-forward", "10.66.0.1", 5900).await.unwrap();
+    assert_eq!(super::manager::forward("test-forward", "10.66.0.1", 5900).await.unwrap(), local);
+    let client = async {
+        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", local)).await.unwrap();
+        tcp.write_all(b"hello").await.unwrap();
+        let mut got = [0u8; 5];
+        tcp.read_exact(&mut got).await.unwrap();
+        got
+    };
+    let (got, ()) = tokio::join!(client, shout_once(&server, 5900));
+    assert_eq!(&got, b"HELLO");
+
+    // SOCKS5: greeting, then CONNECT to 10.66.0.1:443 by address.
+    let socks = super::manager::socks("test-forward").await.unwrap();
+    let client = async {
+        let mut tcp = tokio::net::TcpStream::connect(("127.0.0.1", socks)).await.unwrap();
+        tcp.write_all(&[5, 1, 0]).await.unwrap();
+        let mut hello = [0u8; 2];
+        tcp.read_exact(&mut hello).await.unwrap();
+        assert_eq!(hello, [5, 0]);
+        tcp.write_all(&[5, 1, 0, 1, 10, 66, 0, 1, 0x01, 0xbb]).await.unwrap();
+        let mut reply = [0u8; 10];
+        tcp.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[1], 0, "connect succeeded");
+        tcp.write_all(b"socks").await.unwrap();
+        let mut got = [0u8; 5];
+        tcp.read_exact(&mut got).await.unwrap();
+        got
+    };
+    let (got, ()) = tokio::join!(client, shout_once(&server, 443));
+    assert_eq!(&got, b"SOCKS");
+
+    // Turning the tunnel off closes its local ports.
+    super::manager::down("test-forward").await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(tokio::net::TcpStream::connect(("127.0.0.1", local)).await.is_err());
+    assert!(super::manager::forward("test-forward", "10.66.0.1", 5900).await.is_err());
+}

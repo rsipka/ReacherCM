@@ -4,7 +4,7 @@
  * tunnel reaches out to a server the person may not expect.
  */
 
-import { wireguardList, wireguardRunning, wireguardUp, type WgProfileInfo } from '#lib/ipc/wireguard.js';
+import { wireguardList, wireguardRunning, wireguardSessionRoute, wireguardUp, type WgProfileInfo } from '#lib/ipc/wireguard.js';
 import { ask } from '#lib/state/ask.svelte.js';
 import { t } from '#lib/state/i18n.svelte.js';
 
@@ -57,4 +57,15 @@ export function ensureWireguard(id: string): Promise<void> {
 	starting.set(id, job);
 	job.finally(() => starting.delete(id)).catch(() => {});
 	return job;
+}
+
+/**
+ * For connections whose route the backend reads from the saved session
+ * (RDP, VNC, SPICE, web, WinBox): turns that session's tunnel on first,
+ * after asking, when it goes through one.
+ */
+export async function ensureSessionWireguard(sessionId: string | null | undefined, host?: string, port?: number): Promise<void> {
+	if (!sessionId) return;
+	const id = await wireguardSessionRoute(sessionId, host, port).catch(() => null);
+	if (id) await ensureWireguard(id);
 }
