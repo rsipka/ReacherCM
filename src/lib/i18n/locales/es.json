@@ -3281,6 +3281,8 @@
   "sync.status_title": "Estado de la sincronización",
   "sync.status_desc": "Cada bóveda se guarda en este dispositivo y funciona sin conexión. Los cambios se envían al backend cuando está disponible.",
   "sync.status_none": "Todavía no se sincroniza ninguna bóveda.",
+  "sync.status_unavailable": "No se pudo cargar el estado de sincronización de las bóvedas.",
+  "sync.status_attention": "La sincronización de las bóvedas requiere atención",
   "sync.personal_vault": "Datos personales",
   "sync.last_synced": "Última sincronización {{time}}",
   "sync.never_synced": "Aún no sincronizada",

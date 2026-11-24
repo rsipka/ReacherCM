@@ -3281,6 +3281,8 @@
   "sync.status_title": "Stato della sincronizzazione",
   "sync.status_desc": "Ogni cassaforte è conservata su questo dispositivo e funziona offline. Le modifiche vanno al backend appena è raggiungibile.",
   "sync.status_none": "Nessuna cassaforte è ancora sincronizzata.",
+  "sync.status_unavailable": "Impossibile caricare lo stato della sincronizzazione dei vault.",
+  "sync.status_attention": "La sincronizzazione dei vault richiede attenzione",
   "sync.personal_vault": "Dati personali",
   "sync.last_synced": "Ultima sincronizzazione {{time}}",
   "sync.never_synced": "Non ancora sincronizzata",

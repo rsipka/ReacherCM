@@ -3281,6 +3281,8 @@
   "sync.status_title": "同步状态",
   "sync.status_desc": "每个保险库都保存在本设备上，可离线使用。后端可用时会发送更改。",
   "sync.status_none": "目前没有正在同步的保险库。",
+  "sync.status_unavailable": "无法加载保险库同步状态。",
+  "sync.status_attention": "保险库同步需要处理",
   "sync.personal_vault": "个人数据",
   "sync.last_synced": "上次同步 {{time}}",
   "sync.never_synced": "尚未同步",

@@ -3281,6 +3281,8 @@
   "sync.status_title": "État de la synchronisation",
   "sync.status_desc": "Chaque coffre est conservé sur cet appareil et fonctionne hors ligne. Les modifications partent vers le backend dès qu'il est joignable.",
   "sync.status_none": "Aucun coffre n'est encore synchronisé.",
+  "sync.status_unavailable": "Impossible de charger l’état de la synchronisation des coffres.",
+  "sync.status_attention": "La synchronisation des coffres nécessite votre attention",
   "sync.personal_vault": "Données personnelles",
   "sync.last_synced": "Dernière synchronisation {{time}}",
   "sync.never_synced": "Pas encore synchronisé",

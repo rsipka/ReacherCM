@@ -107,102 +107,98 @@
 	</span>
 {/snippet}
 
-{#if stats}
-	<!-- Dimmed while the connection is down: the figures are the last ones
-	     read, not the server's now. -->
-	<div class="monitoring-bar" class:stale={link === 'down'}>
+<!-- Dimmed while the connection is down: the figures are the last ones read. -->
+<div class="monitoring-bar" class:stale={link === 'down'} class:disconnected={!stats}>
+	<div class="bar-details">
 		{@render linkState()}
-		<div class="gauge">
-			<span class="gauge-label">{t('monitoring.cpu')}</span>
-			<div class="gauge-track">
-				<div
-					class="gauge-fill"
-					style="width:{stats.cpu}%;background-color:{cpuColor}"
-				></div>
-			</div>
-			<span class="gauge-value" style="color:{cpuColor}">{stats.cpu}%</span>
-		</div>
-
-		<div class="gauge">
-			<span class="gauge-label">{t('monitoring.ram')}</span>
-			<div class="gauge-track">
-				<div
-					class="gauge-fill"
-					style="width:{ramPercent}%;background-color:{ramColor}"
-				></div>
-			</div>
-			<span class="gauge-value" style="color:{ramColor}">{ramPercent}%</span>
-		</div>
-
-		<div class="gauge">
-			<span class="gauge-label">{t('monitoring.disk')}</span>
-			<div class="gauge-track">
-				<div
-					class="gauge-fill"
-					style="width:{stats.disk}%;background-color:{diskColor}"
-				></div>
-			</div>
-			<span class="gauge-value" style="color:{diskColor}">{stats.disk}%</span>
-		</div>
-
-		<div class="net-stats">
-			<span class="net-item">
-				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="net-icon down">
-					<path d="M5 1v8M2 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-				</svg>
-				{netDown}
-			</span>
-			<span class="net-item">
-				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="net-icon up">
-					<path d="M5 9V1M2 4l3-3 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-				</svg>
-				{netUp}
-			</span>
-		</div>
-
-		<!-- Per-session MCP controls live in the gap the bar already has between
-		     the network stats and the user count. They belong on this row
-		     because it is the one piece of chrome already scoped to the session
-		     in front of you, and they render nothing when MCP is off or this
-		     session is not shared. -->
-		<McpSessionBar {sessionId} />
-		<ShareBar />
-
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="users"
-			onmouseenter={() => (showTooltip = true)}
-			onmouseleave={() => (showTooltip = false)}
-		>
-			<span class="users-text">{usersText}</span>
-			{#if showTooltip && usersList.length > 0}
-				<div class="users-tooltip">
-					{#each usersList as { entry, isYou }}
-						<div class="tooltip-user" class:is-you={isYou}>
-							<span class="tooltip-dot"></span>
-							<span>{entry}</span>
-							{#if isYou}<span class="you-tag">{t('monitoring.you')}</span>{/if}
-						</div>
-					{/each}
+		{#if stats}
+			<div class="gauge">
+				<span class="gauge-label">{t('monitoring.cpu')}</span>
+				<div class="gauge-track">
+					<div
+						class="gauge-fill"
+						style="width:{stats.cpu}%;background-color:{cpuColor}"
+					></div>
 				</div>
-			{/if}
-		</div>
+				<span class="gauge-value" style="color:{cpuColor}">{stats.cpu}%</span>
+			</div>
+
+			<div class="gauge">
+				<span class="gauge-label">{t('monitoring.ram')}</span>
+				<div class="gauge-track">
+					<div
+						class="gauge-fill"
+						style="width:{ramPercent}%;background-color:{ramColor}"
+					></div>
+				</div>
+				<span class="gauge-value" style="color:{ramColor}">{ramPercent}%</span>
+			</div>
+
+			<div class="gauge">
+				<span class="gauge-label">{t('monitoring.disk')}</span>
+				<div class="gauge-track">
+					<div
+						class="gauge-fill"
+						style="width:{stats.disk}%;background-color:{diskColor}"
+					></div>
+				</div>
+				<span class="gauge-value" style="color:{diskColor}">{stats.disk}%</span>
+			</div>
+
+			<div class="net-stats">
+				<span class="net-item">
+					<svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="net-icon down">
+						<path d="M5 1v8M2 6l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+					</svg>
+					{netDown}
+				</span>
+				<span class="net-item">
+					<svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="net-icon up">
+						<path d="M5 9V1M2 4l3-3 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+					</svg>
+					{netUp}
+				</span>
+			</div>
+
+			<!-- Per-session MCP controls live in the gap the bar already has between
+			     the network stats and the user count. They belong on this row
+			     because it is the one piece of chrome already scoped to the session
+			     in front of you, and they render nothing when MCP is off or this
+			     session is not shared. -->
+			<McpSessionBar {sessionId} />
+			<ShareBar />
+
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="users"
+				onmouseenter={() => (showTooltip = true)}
+				onmouseleave={() => (showTooltip = false)}
+			>
+				<span class="users-text">{usersText}</span>
+				{#if showTooltip && usersList.length > 0}
+					<div class="users-tooltip">
+						{#each usersList as { entry, isYou }}
+							<div class="tooltip-user" class:is-you={isYou}>
+								<span class="tooltip-dot"></span>
+								<span>{entry}</span>
+								{#if isYou}<span class="you-tag">{t('monitoring.you')}</span>{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		{:else}
+			<!-- A local shell has nothing to monitor and can still be shared. -->
+			<span class="disconnected-text">{monitoringOff && connectionId ? t('monitoring.off') : t('monitoring.not_connected')}</span>
+			<ShareBar />
+		{/if}
+	</div>
+	<div class="bar-end">
 		<HistoryIndicator />
 		<SyncAccountIndicator />
 		<Clock />
 	</div>
-{:else}
-	<!-- No stats means no SSH monitoring, not no session: a local shell has
-	     nothing to monitor and is still something you might share. -->
-	<div class="monitoring-bar disconnected">
-		{@render linkState()}
-		<span class="disconnected-text">{monitoringOff && connectionId ? t('monitoring.off') : t('monitoring.not_connected')}</span>
-		<ShareBar />
-		<HistoryIndicator />
-		<SyncAccountIndicator />
-		<Clock />
-	</div>
-{/if}
+</div>
 </div>
 
 <style>
@@ -212,15 +208,31 @@
 
 	.monitoring-bar {
 		display: flex;
-		flex-direction: row;
 		align-items: center;
-		gap: 16px;
+		--bar-gap: 16px;
+		gap: var(--bar-gap);
 		height: 32px;
 		padding: 0 12px;
 		background-color: var(--color-bg-secondary);
 		border-top: 1px solid var(--color-border);
 		font-family: var(--font-sans);
 		overflow: visible;
+	}
+
+	.bar-details,
+	.bar-end {
+		display: flex;
+		align-items: center;
+		gap: var(--bar-gap);
+	}
+
+	.bar-details {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.bar-end {
+		flex: none;
 	}
 
 	.gauge {
@@ -349,8 +361,7 @@
 	}
 
 	.disconnected {
-		justify-content: center;
-		gap: var(--space-3);
+		--bar-gap: var(--space-3);
 	}
 
 	.disconnected-text {
@@ -404,10 +415,6 @@
 		filter: grayscale(1);
 	}
 
-	.monitoring-bar > :global(.clock) {
-		flex-shrink: 0;
-	}
-
 	/* A short screen (a phone on its side) gets the shorter bar. */
 	@media (max-height: 480px) {
 		.monitoring-bar {
@@ -415,20 +422,22 @@
 		}
 	}
 
-	/* A narrow pane cannot hold the gauges: they shrank into one another
-	   and the figures were drawn over each other (#127). Figures only, then,
-	   at their own width, and the bar scrolls sideways if they still do not
-	   fit. The full row needs about 640px. */
-	@container (max-width: 640px) {
-		.monitoring-bar {
-			height: 26px;
-			gap: 12px;
+	/* Keep the status controls visible while the gauges scroll in narrow panes. */
+	@container (max-width: 760px) {
+		.bar-details {
 			overflow-x: auto;
 			scrollbar-width: none;
 		}
 
-		.monitoring-bar::-webkit-scrollbar {
+		.bar-details::-webkit-scrollbar {
 			display: none;
+		}
+	}
+
+	@container (max-width: 640px) {
+		.monitoring-bar {
+			height: 26px;
+			--bar-gap: 12px;
 		}
 
 		.gauge,

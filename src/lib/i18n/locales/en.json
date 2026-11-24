@@ -3281,6 +3281,8 @@
   "sync.status_title": "Sync status",
   "sync.status_desc": "Every vault is kept on this device and works offline. Changes go to the backend whenever it can be reached.",
   "sync.status_none": "No vault syncs yet.",
+  "sync.status_unavailable": "Could not load vault sync status.",
+  "sync.status_attention": "Vault sync needs attention",
   "sync.personal_vault": "Personal data",
   "sync.last_synced": "Last synced {{time}}",
   "sync.never_synced": "Not synced yet",
