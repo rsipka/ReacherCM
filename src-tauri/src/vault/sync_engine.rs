@@ -321,6 +321,8 @@ pub struct Report {
     pub conflicts: usize,
     /// Whether the backend is still in the legacy format.
     pub legacy: bool,
+    #[cfg(desktop)]
+    pub(super) applied_revision: Option<String>,
 }
 
 impl Report {
@@ -387,6 +389,22 @@ pub async fn sync(target: &Target) -> Result<Report, VaultError> {
         }
     }
     result
+}
+
+/// Sync and report the applied revision for an active account vault.
+pub async fn sync_with_receipt(target: &Target) -> Result<Report, VaultError> {
+    let report = sync(target).await?;
+    #[cfg(desktop)]
+    let report = report_applied(target, report).await;
+    Ok(report)
+}
+
+#[cfg(desktop)]
+pub(super) async fn report_applied(target: &Target, mut report: Report) -> Report {
+    if let (Backend::Account(account), Some(revision)) = (&target.backend, report.applied_revision.take()) {
+        account.report_applied(&revision).await;
+    }
+    report
 }
 
 async fn sync_inner(target: &Target, local: &Connection) -> Result<Report, VaultError> {

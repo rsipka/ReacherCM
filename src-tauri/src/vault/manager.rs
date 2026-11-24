@@ -180,7 +180,7 @@ pub async fn sync_vaults(
         } else {
             target
         };
-        match sync_engine::sync(&target).await {
+        match sync_engine::sync_with_receipt(&target).await {
             Ok(report) => {
                 tracing::debug!(vault = %target.vault_id, ?report, "Vault synced");
                 if report.changed() {
