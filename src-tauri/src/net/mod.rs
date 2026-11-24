@@ -11,6 +11,7 @@ pub mod scan;
 pub mod wol;
 
 use serde::Serialize;
+use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::time::{Duration, Instant};
 
@@ -57,18 +58,29 @@ pub struct PingReply {
 /// connection still answers, so the host is up.
 pub async fn tcp_ping(ip: IpAddr, port: u16, timeout: Duration) -> PingReply {
     let start = Instant::now();
+    let attempt = tcp_connect(ip, port, timeout).await;
+    tcp_ping_reply(attempt, start.elapsed())
+}
+
+/// `None` is the application's deadline. Socket errors keep their OS details.
+async fn tcp_connect(ip: IpAddr, port: u16, timeout: Duration) -> Option<io::Result<()>> {
+    tokio::time::timeout(timeout, tokio::net::TcpStream::connect(SocketAddr::new(ip, port)))
+        .await.ok().map(|result| result.map(drop))
+}
+
+fn tcp_ping_reply(attempt: Option<io::Result<()>>, elapsed: Duration) -> PingReply {
     let reply = |ok: bool, error: Option<String>| PingReply {
         ok,
-        ms: ok.then(|| start.elapsed().as_secs_f64() * 1000.0),
+        ms: ok.then(|| elapsed.as_secs_f64() * 1000.0),
         method: "tcp",
         ttl: None,
         error,
     };
-    match tokio::time::timeout(timeout, tokio::net::TcpStream::connect(SocketAddr::new(ip, port))).await {
-        Ok(Ok(_)) => reply(true, None),
-        Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => reply(true, None),
-        Ok(Err(e)) => reply(false, Some(e.to_string())),
-        Err(_) => reply(false, None),
+    match attempt {
+        Some(Ok(())) => reply(true, None),
+        Some(Err(e)) if e.kind() == io::ErrorKind::ConnectionRefused => reply(true, None),
+        Some(Err(e)) => reply(false, Some(e.to_string())),
+        None => reply(false, None),
     }
 }
 

@@ -1,5 +1,5 @@
 use super::icmp::{checksum, echo_request, parse_reply};
-use super::scan::{probe, scan, PortState, ScanEvent};
+use super::scan::{port_state, probe, scan, PortState, ScanEvent};
 use super::wol::{magic_packet, parse_mac};
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
@@ -56,39 +56,44 @@ fn replies_are_read_with_or_without_the_ip_header() {
 }
 
 #[tokio::test]
-async fn a_listening_port_is_open_and_a_free_one_closed() {
+async fn a_listening_port_is_open_and_reported_by_a_scan() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let open = listener.local_addr().unwrap().port();
-    let closed = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        l.local_addr().unwrap().port()
-    };
     let lo = IpAddr::V4(Ipv4Addr::LOCALHOST);
     assert_eq!(probe(lo, open, Duration::from_secs(2)).await.0, PortState::Open);
-    assert_eq!(probe(lo, closed, Duration::from_secs(2)).await.0, PortState::Closed);
+    assert!(super::tcp_ping(lo, open, Duration::from_secs(2)).await.ok);
 
     let seen = std::sync::Mutex::new(Vec::new());
-    let summary = scan("t1", lo, vec![open, closed], Duration::from_secs(2), 8, |e| {
+    let summary = scan("t1", lo, vec![open], Duration::from_secs(2), 8, |e| {
         if let ScanEvent::Open { port, .. } = e {
             seen.lock().unwrap().push(port);
         }
     })
     .await;
     assert_eq!(summary.open, vec![open]);
-    assert_eq!(summary.closed, 1);
-    assert_eq!(summary.scanned, 2);
+    assert_eq!(summary.closed, 0);
+    assert_eq!(summary.scanned, 1);
     assert!(!summary.cancelled);
     assert_eq!(*seen.lock().unwrap(), vec![open]);
 }
 
-#[tokio::test]
-async fn a_tcp_ping_to_a_refusing_port_still_finds_the_host() {
-    let closed = {
-        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        l.local_addr().unwrap().port()
-    };
-    let r = super::tcp_ping(IpAddr::V4(Ipv4Addr::LOCALHOST), closed, Duration::from_secs(2)).await;
-    assert!(r.ok && r.ms.is_some() && r.method == "tcp");
+#[test]
+fn refusal_and_timeout_have_distinct_tcp_results() {
+    use std::io::ErrorKind;
+    // A runner is free to drop closed-port loopback probes instead of
+    // returning a refusal before our deadline. Test both outcomes directly.
+    let refused = || Some(Err(ErrorKind::ConnectionRefused.into()));
+    assert_eq!(port_state(refused()), PortState::Closed);
+    assert_eq!(port_state(None), PortState::Filtered);
+    let elapsed = Duration::from_millis(12);
+    let reply = super::tcp_ping_reply(refused(), elapsed);
+    assert!(reply.ok);
+    assert_eq!(reply.ms, Some(12.0));
+    assert_eq!(reply.method, "tcp");
+    let timeout = super::tcp_ping_reply(None, elapsed);
+    assert!(!timeout.ok);
+    assert_eq!(timeout.ms, None);
+    assert_eq!(timeout.error, None);
 }
 
 #[tokio::test]
