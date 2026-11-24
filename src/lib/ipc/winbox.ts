@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from './pwmanager';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /** How a saved password reaches WinBox: on its command line (it logs in by
  *  itself), on the clipboard for 45 seconds, or not at all. */
@@ -32,5 +33,6 @@ export async function winboxFind(program?: string | null): Promise<string | null
 
 /** Start WinBox on a saved session; desktop only. */
 export async function winboxLaunch(params: WinboxLaunchParams, sessionId: string | null): Promise<WinboxLaunched> {
+  await ensureSessionWireguard(sessionId, params.host, params.port);
   return invoke<WinboxLaunched>('winbox_launch', { params, sessionId });
 }

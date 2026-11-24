@@ -1378,6 +1378,7 @@
 			password: auth.type === 'Password' && !auth.password_ref ? (auth.password ?? null) : null,
 			passwordRef: auth.type === 'Password' ? (auth.password_ref ?? null) : null,
 			sessionId: session.id,
+			wireguard: session.wireguard_id ?? null,
 		};
 	}
 
@@ -1927,8 +1928,11 @@
 				sessionId: session.id,
 				// An address marked direct goes straight, without the session's
 				// jump hosts or proxy.
-				jumpChain: addr.viaSessionId ? viaChain(addr.viaSessionId) : addr.routed ? jumpChain : undefined,
-				proxy: addr.routed && !addr.viaSessionId && session.proxy ? {
+				jumpChain: addr.viaSessionId ? viaChain(addr.viaSessionId) : addr.routed && !addr.tunnelOnly ? jumpChain : undefined,
+				// The WireGuard tunnel this address goes through, brought up
+				// (after asking) by sshConnect.
+				wireguard: addr.wireguardId ?? null,
+				proxy: addr.routed && !addr.viaSessionId && !addr.tunnelOnly && session.proxy ? {
 					proxy_type: session.proxy.proxy_type,
 					host: session.proxy.host,
 					port: session.proxy.port,

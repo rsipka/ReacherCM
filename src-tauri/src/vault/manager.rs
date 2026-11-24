@@ -42,12 +42,14 @@ pub const SSH_KEYS_VAULT: &str = "__ssh_keys__";
 pub const DATABASES_VAULT: &str = "__databases__";
 /// Saved container hosts and Kubernetes clusters (kubeconfigs).
 pub const DEVOPS_VAULT: &str = "__devops__";
+/// WireGuard profiles (src/wireguard), private keys included.
+pub const WIREGUARD_VAULT: &str = "__wireguard__";
 
 /// Every vault Reach keeps for itself. They are opened together, migrate
 /// together and map together onto the unified vault when personal sync is on,
 /// so the list lives in one place — a vault missing from one of those sites is
 /// a vault whose data silently stops syncing.
-pub const INTERNAL_VAULTS: [&str; 11] = [
+pub const INTERNAL_VAULTS: [&str; 12] = [
     SESSIONS_VAULT,
     CREDENTIALS_VAULT,
     FOLDERS_VAULT,
@@ -59,6 +61,7 @@ pub const INTERNAL_VAULTS: [&str; 11] = [
     SSH_KEYS_VAULT,
     DATABASES_VAULT,
     DEVOPS_VAULT,
+    WIREGUARD_VAULT,
 ];
 
 /// The id a secret had in its own internal vault, if `stored` is the

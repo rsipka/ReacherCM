@@ -7,6 +7,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import UntrustedRefsDialog from '#lib/components/pwmanager/UntrustedRefsDialog.svelte';
 	import TunnelCard from './TunnelCard.svelte';
+	import WireGuardPanel from './WireGuardPanel.svelte';
 	import Input from '#lib/components/shared/Input.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
 
@@ -173,6 +174,8 @@
 </script>
 
 <div class="tunnel-manager">
+	<WireGuardPanel />
+
 	<div class="actions-row">
 		<button class="new-tunnel-btn" onclick={handleNewTunnel}>
 			<svg width="14" height="14" viewBox="0 0 24 24" fill="none">

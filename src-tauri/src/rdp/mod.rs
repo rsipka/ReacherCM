@@ -111,6 +111,10 @@ pub struct RdpConnectParams {
     /// seen at rather than being scaled after the fact.
     pub width: u16,
     pub height: u16,
+    /// A port on 127.0.0.1 forwarded into the session's WireGuard tunnel;
+    /// set by `rdp_connect` from the saved session, never by the webview.
+    #[serde(skip)]
+    pub connect_port: Option<u16>,
 }
 
 /// Lifecycle, sent as a Tauri event named `rdp-status-{id}`.
@@ -762,6 +766,9 @@ fn build_config(p: &RdpConnectParams, app: AppHandle) -> Result<ironrdp_client::
         builder = apply_options(builder, o);
     }
 
+    if let Some(port) = p.connect_port {
+        builder = builder.with_connect_address(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
+    }
     builder.build().map_err(|e| e.to_string())
 }
 
