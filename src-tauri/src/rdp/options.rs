@@ -53,7 +53,14 @@ pub struct RdpOptions {
     /// The folder that program starts in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_dir: Option<String>,
+    /// The SSH port the session menu's Open file manager uses on the same
+    /// host (SFTP). Unset: 22.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_port: Option<u16>,
 }
+
+/// The SSH port Open file manager uses when the session names none.
+pub const FILES_PORT: u16 = 22;
 
 /// The largest keep-alive or jiggler interval taken, one day.
 const MAX_INTERVAL: u32 = 86_400;
@@ -79,8 +86,14 @@ impl RdpOptions {
             admin: self.admin.filter(|a| *a),
             program: text(self.program),
             work_dir: text(self.work_dir),
+            files_port: self.files_port.filter(|p| *p != 0 && *p != FILES_PORT),
         };
         (tidy != Self::default()).then_some(tidy)
+    }
+
+    /// The SSH port of the session's file manager.
+    pub fn files_port(options: Option<&Self>) -> u16 {
+        options.and_then(|o| o.files_port).unwrap_or(FILES_PORT)
     }
 
     pub fn performance_flags(&self) -> Option<PerformanceFlags> {
