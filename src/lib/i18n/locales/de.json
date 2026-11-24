@@ -995,7 +995,7 @@
   "settings.changelog": "Änderungsprotokoll",
   "settings.changelog_desc": "Was sich in jeder Version geändert hat.",
   "settings.license": "Lizenz",
-  "settings.license_desc": "Reach ist freie Software unter der MIT-Lizenz.",
+  "settings.license_desc": "Reacher CM ist freie Software unter der GNU General Public License, Version 3 oder neuer.",
   "settings.open_link": "Öffnen",
   "report.title": "Problem melden",
   "report.desc": "Öffnet ein GitHub-Issue mit dem Reach-Protokoll zum Anhängen, bereinigt um Ihre Hosts, Konten und Ordner.",
