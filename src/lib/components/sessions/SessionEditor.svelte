@@ -124,6 +124,8 @@
 	let rdpAdmin = $state(false);
 	let rdpProgram = $state('');
 	let rdpWorkDir = $state('');
+	let rdpRemoteApp = $state(false);
+	let rdpAppArgs = $state('');
 	const RDP_RESOLUTIONS = ['1280x720', '1280x1024', '1366x768', '1600x900', '1920x1080', '1920x1200', '2560x1440', '3840x2160'];
 	const RDP_SCALES = ['100', '125', '150', '175', '200', '250', '300'];
 	/** Seconds; shown as seconds or minutes. */
@@ -177,6 +179,8 @@
 		rdpAdmin = o?.admin === true;
 		rdpProgram = o?.program ?? '';
 		rdpWorkDir = o?.work_dir ?? '';
+		rdpRemoteApp = o?.remote_app === true;
+		rdpAppArgs = o?.app_args ?? '';
 	}
 
 	/** The settings as saved; null when all are the defaults. */
@@ -196,6 +200,8 @@
 			admin: rdpAdmin || null,
 			program: rdpProgram.trim() || null,
 			work_dir: rdpProgram.trim() ? rdpWorkDir.trim() || null : null,
+			remote_app: rdpProgram.trim() && rdpRemoteApp ? true : null,
+			app_args: rdpProgram.trim() && rdpRemoteApp ? rdpAppArgs.trim() || null : null,
 		};
 		return Object.values(o).some((v) => v !== null) ? o : null;
 	}
@@ -1496,6 +1502,18 @@
 					</div>
 					{#if rdpProgram.trim()}
 						<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
+						{#if rdpClient === 'freerdp' && !isMobile()}
+							<div class="shell-field">
+								<label class="jump-toggle">
+									<input type="checkbox" bind:checked={rdpRemoteApp} disabled={saving} aria-describedby="rdp-remote-app-hint" />
+									<span class="jump-toggle-text">{t('session.rdp_remote_app')}</span>
+								</label>
+								<p id="rdp-remote-app-hint" class="shell-hint">{t('session.rdp_remote_app_hint')}</p>
+							</div>
+							{#if rdpRemoteApp}
+								<Input label={t('session.rdp_app_args')} bind:value={rdpAppArgs} placeholder="C:\Users\Public\notes.txt" disabled={saving} />
+							{/if}
+						{/if}
 					{/if}
 				</div>
 			</details>

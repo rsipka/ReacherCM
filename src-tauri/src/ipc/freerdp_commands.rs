@@ -26,7 +26,7 @@ fn executable(path: &Path) -> bool {
         && is_program(path)
 }
 
-fn find_program(custom: Option<&str>) -> Option<PathBuf> {
+fn find_program(custom: Option<&str>, remote_app: bool) -> Option<PathBuf> {
     if let Some(custom) = custom.map(str::trim).filter(|s| !s.is_empty()) {
         let path = PathBuf::from(custom);
         return executable(&path).then_some(path);
@@ -61,7 +61,9 @@ fn find_program(custom: Option<&str>) -> Option<PathBuf> {
         }
     }
 
-    // Prefer the SDL client, which can show certificate prompts in its GUI.
+    // Prefer the SDL client, which can show certificate prompts in its GUI;
+    // but it has no RemoteApp windows, so a RemoteApp looks for the native
+    // client first.
     let sdl = [
         "sdl-freerdp3",
         "sdl-freerdp",
@@ -73,8 +75,13 @@ fn find_program(custom: Option<&str>) -> Option<PathBuf> {
     } else {
         &["xfreerdp3", "xfreerdp", "wlfreerdp3", "wlfreerdp"]
     };
-    sdl.into_iter()
-        .chain(native.iter().copied())
+    let order: Vec<&str> = if remote_app {
+        native.iter().copied().chain(sdl).collect()
+    } else {
+        sdl.into_iter().chain(native.iter().copied()).collect()
+    };
+    order
+        .into_iter()
         .find_map(|name| {
             let file_name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
             dirs.iter()
@@ -85,7 +92,7 @@ fn find_program(custom: Option<&str>) -> Option<PathBuf> {
 
 #[tauri::command]
 pub fn freerdp_find(program: Option<String>) -> Option<String> {
-    find_program(program.as_deref()).map(|path| path.to_string_lossy().into_owned())
+    find_program(program.as_deref(), false).map(|path| path.to_string_lossy().into_owned())
 }
 
 #[derive(Deserialize)]
@@ -136,6 +143,7 @@ impl FreerdpLaunchParams {
             self.share_path.as_deref().unwrap_or(""),
             self.rdp.as_ref().and_then(|o| o.program.as_deref()).unwrap_or(""),
             self.rdp.as_ref().and_then(|o| o.work_dir.as_deref()).unwrap_or(""),
+            self.rdp.as_ref().and_then(|o| o.app_args.as_deref()).unwrap_or(""),
         ];
         if fields.iter().any(|s| s.contains(['\r', '\n', '\0'])) {
             return Err(
@@ -148,7 +156,7 @@ impl FreerdpLaunchParams {
             None => "/dynamic-resolution\n".to_owned(),
         };
         let mut input = Zeroizing::new(format!("/v:{address}\n/u:{}\n{size}", self.username));
-        input.push_str(&freerdp_option_args(&options));
+        input.push_str(&freerdp_option_args(&options)?);
         if let Some(domain) = self.domain.as_deref().filter(|s| !s.is_empty()) {
             input.push_str("/d:");
             input.push_str(domain);
@@ -185,7 +193,7 @@ impl FreerdpLaunchParams {
 
 /// FreeRDP switches for the session's own settings, one per line. Only those
 /// FreeRDP has; keep-alive, the jiggler and sound quality are IronRDP's alone.
-fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> String {
+fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> Result<String, String> {
     let mut args = String::new();
     let mut line = |arg: &str| {
         args.push_str(arg);
@@ -214,13 +222,32 @@ fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> String {
     if o.admin == Some(true) {
         line("/admin");
     }
-    if let Some(program) = o.program.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let program = o.program.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    if let Some(program) = program.filter(|_| o.is_remote_app()) {
+        // One argument of comma-separated key:value pairs, so no value may
+        // hold a comma. `||alias` names a published RemoteApp.
+        let args = o.app_args.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        let dir = o.work_dir.as_deref().map(str::trim).filter(|s| !s.is_empty());
+        if [Some(program), args, dir].into_iter().flatten().any(|v| v.contains(',')) {
+            return Err("FreeRDP cannot start a RemoteApp whose program, arguments or folder contain a comma.".into());
+        }
+        let mut app = format!("/app:program:{program}");
+        if let Some(args) = args {
+            app.push_str(",cmd:");
+            app.push_str(args);
+        }
+        if let Some(dir) = dir {
+            app.push_str(",workdir:");
+            app.push_str(dir);
+        }
+        line(&app);
+    } else if let Some(program) = program {
         line(&format!("/shell:{program}"));
         if let Some(dir) = o.work_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             line(&format!("/shell-dir:{dir}"));
         }
     }
-    args
+    Ok(args)
 }
 
 /// xfreerdp prompts on stdin, which the launcher closes after writing the
@@ -266,7 +293,8 @@ pub async fn freerdp_launch(
     session_id: String,
     on_failure: Channel<String>,
 ) -> Result<(), String> {
-    let program = find_program(params.program.as_deref()).ok_or_else(|| {
+    let remote_app = params.rdp.as_ref().is_some_and(crate::rdp::options::RdpOptions::is_remote_app);
+    let program = find_program(params.program.as_deref(), remote_app).ok_or_else(|| {
         "FreeRDP was not found. Install a FreeRDP 3 desktop client or set its executable in Settings > Remote desktop.".to_string()
     })?;
 
@@ -416,6 +444,15 @@ mod tests {
         }
         assert!(!lines.contains(&"/dynamic-resolution"));
 
+        session.rdp.as_mut().unwrap().remote_app = Some(true);
+        session.rdp.as_mut().unwrap().app_args = Some("C:\\notes.txt".into());
+        let input = session.input("example", None).unwrap();
+        assert!(input.lines().any(|l| l == "/app:program:notepad.exe,cmd:C:\\notes.txt"));
+        assert!(!input.lines().any(|l| l.starts_with("/shell")));
+        session.rdp.as_mut().unwrap().app_args = Some("a,b".into());
+        assert!(session.input("example", None).is_err());
+
+        session.rdp.as_mut().unwrap().app_args = None;
         session.rdp.as_mut().unwrap().program = Some("x\n/cert:ignore".into());
         assert!(session.input("example", None).is_err());
     }

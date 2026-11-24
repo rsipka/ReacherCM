@@ -65,6 +65,10 @@ export interface RdpOptions {
 	/** Started instead of the desktop. */
 	program?: string | null;
 	work_dir?: string | null;
+	/** Run `program` as a RemoteApp: only its windows. */
+	remote_app?: boolean | null;
+	/** RemoteApp only: the program's arguments. */
+	app_args?: string | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */

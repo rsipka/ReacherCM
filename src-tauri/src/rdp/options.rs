@@ -53,6 +53,12 @@ pub struct RdpOptions {
     /// The folder that program starts in.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_dir: Option<String>,
+    /// Run `program` as a RemoteApp: only its windows, no remote desktop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_app: Option<bool>,
+    /// RemoteApp only: the program's command line arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_args: Option<String>,
 }
 
 /// The largest keep-alive or jiggler interval taken, one day.
@@ -77,10 +83,25 @@ impl RdpOptions {
             keepalive: interval(self.keepalive),
             jiggler: interval(self.jiggler),
             admin: self.admin.filter(|a| *a),
+            remote_app: self.remote_app.filter(|r| *r),
+            app_args: text(self.app_args),
             program: text(self.program),
             work_dir: text(self.work_dir),
         };
+        // A RemoteApp, its arguments and the start folder mean nothing without a program.
+        let tidy = if tidy.program.is_none() {
+            Self { remote_app: None, app_args: None, work_dir: None, ..tidy }
+        } else if tidy.remote_app.is_none() {
+            Self { app_args: None, ..tidy }
+        } else {
+            tidy
+        };
         (tidy != Self::default()).then_some(tidy)
+    }
+
+    /// Whether the session opens a RemoteApp rather than a desktop.
+    pub fn is_remote_app(&self) -> bool {
+        self.remote_app == Some(true) && self.program.as_deref().is_some_and(|p| !p.trim().is_empty())
     }
 
     pub fn performance_flags(&self) -> Option<PerformanceFlags> {
@@ -146,6 +167,17 @@ mod tests {
         .tidy()
         .unwrap();
         assert_eq!(o, RdpOptions { jiggler: Some(60), ..Default::default() });
+    }
+
+    #[test]
+    fn remote_app_needs_a_program() {
+        let o = RdpOptions { remote_app: Some(true), app_args: Some("x".into()), work_dir: Some("C:\\".into()), ..Default::default() };
+        assert_eq!(o.tidy(), None);
+        let o = RdpOptions { program: Some("notepad".into()), app_args: Some("a.txt".into()), ..Default::default() }.tidy().unwrap();
+        assert_eq!(o.app_args, None);
+        let o = RdpOptions { program: Some("notepad".into()), remote_app: Some(true), app_args: Some("a.txt".into()), ..Default::default() }.tidy().unwrap();
+        assert!(o.is_remote_app());
+        assert_eq!(o.app_args.as_deref(), Some("a.txt"));
     }
 
     #[test]
