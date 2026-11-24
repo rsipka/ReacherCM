@@ -255,7 +255,7 @@ async fn post_form(
         .finish();
     client
         .post(endpoint(origin, path))
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(body)
         .send()
         .await

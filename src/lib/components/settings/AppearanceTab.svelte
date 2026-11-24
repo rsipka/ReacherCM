@@ -1091,6 +1091,16 @@
 			<Toggle hideLabel checked={settings.rdpFullscreenButton} label={t('settings.rdp_fs_button')} onchange={(v) => updateSetting('rdpFullscreenButton', v)} />
 		</div>
 	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
+			<span class="setting-label">{t('settings.rdp_bar_pinned')}</span>
+			<span class="setting-description">{t('settings.rdp_bar_pinned_desc')}</span>
+		</div>
+		<div class="setting-control">
+			<Toggle hideLabel checked={settings.rdpBarPinned} label={t('settings.rdp_bar_pinned')} onchange={(v) => updateSetting('rdpBarPinned', v)} />
+		</div>
+	</div>
 	{/if}
 
 	{#if part === 'rdp-adv'}
