@@ -2461,9 +2461,10 @@ mod approval_tests {
         let a = &s.alt_addresses.as_ref().unwrap()[0];
         assert!(a.via_session_id.is_none() && a.via_wireguard.as_deref() == Some("lab"));
         assert!(s.wireguard_id.is_none());
-  }
-  
-  fn an_rdp_file_manager_goes_to_the_same_machine_only() {
+    }
+
+    #[test]
+    fn an_rdp_file_manager_goes_to_the_same_machine_only() {
         use crate::ipc::ssh_commands::{check_matches_session, rdp_files_username};
         let mut s = with_refs();
         s.kind = crate::state::SessionKind::Rdp;
