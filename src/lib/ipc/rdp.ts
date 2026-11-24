@@ -149,6 +149,23 @@ export async function rdpConnect(
 	await invoke('rdp_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }
 
+/** A RemoteApp window as the panel's window row shows it; changes come on `rdp-windows-{id}`. */
+export interface RdpRailWindow {
+	id: number;
+	title: string;
+	state: 'normal' | 'minimized' | 'maximized';
+}
+
+export type RdpRailCommand = 'activate' | 'close' | 'minimize' | 'maximize' | 'restore';
+
+export async function rdpRailWindows(id: string): Promise<RdpRailWindow[]> {
+	return invoke<RdpRailWindow[]>('rdp_rail_windows', { id });
+}
+
+export async function rdpRailCommand(id: string, windowId: number, command: RdpRailCommand): Promise<void> {
+	await invoke('rdp_rail_command', { id, windowId, command });
+}
+
 export async function rdpDisconnect(id: string): Promise<void> {
 	await invoke('rdp_disconnect', { id });
 }

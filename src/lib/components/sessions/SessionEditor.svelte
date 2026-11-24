@@ -1502,17 +1502,15 @@
 					</div>
 					{#if rdpProgram.trim()}
 						<Input label={t('session.rdp_program_dir')} bind:value={rdpWorkDir} placeholder="C:\Users\Public" disabled={saving} />
-						{#if rdpClient === 'freerdp' && !isMobile()}
-							<div class="shell-field">
-								<label class="jump-toggle">
-									<input type="checkbox" bind:checked={rdpRemoteApp} disabled={saving} aria-describedby="rdp-remote-app-hint" />
-									<span class="jump-toggle-text">{t('session.rdp_remote_app')}</span>
-								</label>
-								<p id="rdp-remote-app-hint" class="shell-hint">{t('session.rdp_remote_app_hint')}</p>
-							</div>
-							{#if rdpRemoteApp}
-								<Input label={t('session.rdp_app_args')} bind:value={rdpAppArgs} placeholder="C:\Users\Public\notes.txt" disabled={saving} />
-							{/if}
+						<div class="shell-field">
+							<label class="jump-toggle">
+								<input type="checkbox" bind:checked={rdpRemoteApp} disabled={saving} aria-describedby="rdp-remote-app-hint" />
+								<span class="jump-toggle-text">{t('session.rdp_remote_app')}</span>
+							</label>
+							<p id="rdp-remote-app-hint" class="shell-hint">{t('session.rdp_remote_app_hint')}</p>
+						</div>
+						{#if rdpRemoteApp}
+							<Input label={t('session.rdp_app_args')} bind:value={rdpAppArgs} placeholder="C:\Users\Public\notes.txt" disabled={saving} />
 						{/if}
 					{/if}
 				</div>

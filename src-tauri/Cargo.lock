@@ -7671,6 +7671,7 @@ dependencies = [
  "ironrdp-egfx",
  "ironrdp-graphics",
  "ironrdp-pdu",
+ "ironrdp-rail",
  "ironrdp-rdpdr",
  "ironrdp-session",
  "ironrdp-svc",

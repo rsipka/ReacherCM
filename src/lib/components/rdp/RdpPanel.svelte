@@ -53,6 +53,9 @@
 		rdpWindowFullscreen,
 		rdpUnicode,
 		parseResolution,
+		rdpRailCommand,
+		rdpRailWindows,
+		type RdpRailWindow,
 		type MouseAction,
 		type RdpClipEvent,
 		type RdpConnectParams,
@@ -175,6 +178,20 @@
 
 	let unlisten: UnlistenFn | null = null;
 	let unlistenClip: UnlistenFn | null = null;
+	let unlistenWindows: UnlistenFn | null = null;
+	/** A RemoteApp session: the program's windows, for the row above the picture. */
+	const remoteApp = $derived(protocol === 'rdp' && (params as RdpConnectParams).options?.remote_app === true && !!(params as RdpConnectParams).options?.program?.trim());
+	let railWindows = $state<RdpRailWindow[]>([]);
+
+	/** A window button: bring it forward, or back from minimised. */
+	function railClick(w: RdpRailWindow): void {
+		void rdpRailCommand(id, w.id, w.state === 'minimized' ? 'restore' : 'activate').catch(() => {});
+		canvas?.focus();
+	}
+
+	function railClose(w: RdpRailWindow): void {
+		void rdpRailCommand(id, w.id, 'close').catch(() => {});
+	}
 	let unlistenDrop: UnlistenFn | null = null;
 
 	/* --- clipboard transfers (RDP) ----------------------------------------- */
@@ -1122,6 +1139,12 @@
 			}
 		});
 
+		if (remoteApp) {
+			unlistenWindows = await listen<RdpRailWindow[]>(`rdp-windows-${id}`, (event) => (railWindows = event.payload));
+			// A panel re-attached to a running RemoteApp: the row as it stands.
+			railWindows = await rdpRailWindows(id).catch(() => []);
+		}
+
 		if (!isVnc() && clipMode !== 'off') {
 			unlistenClip = await listen<RdpClipEvent>(`rdp-clipboard-${id}`, (event) => onClipEvent(event.payload));
 			if (!onPhone) await listenForDrops().catch(() => {});
@@ -1196,6 +1219,7 @@
 		unlistenLocks();
 		clearTimeout(lockSyncTimer);
 		unlistenClip?.();
+		unlistenWindows?.();
 		unlistenDrop?.();
 		sizeObserver?.disconnect();
 		if (resizeTimer) clearTimeout(resizeTimer);
@@ -1219,6 +1243,16 @@
 <div class="rdp" class:fullscreen bind:this={host} onmousemove={onHostMove}>
 	<!-- The desktop's area: sized and measured on its own, so a phone's key
 	     bar below it is never drawn over the remote (its taskbar included). -->
+	{#if remoteApp && phase === 'connected' && railWindows.length}
+		<div class="rail-row" role="toolbar" aria-label={t('rdp.remote_app_windows')}>
+			{#each railWindows as w (w.id)}
+				<div class="rail-win" class:minimized={w.state === 'minimized'}>
+					<button type="button" class="rail-title" title={w.title} onclick={() => railClick(w)}>{w.title || t('rdp.remote_app_untitled')}</button>
+					<button type="button" class="rail-close" title={t('rdp.remote_app_close')} aria-label={t('rdp.remote_app_close')} onclick={() => railClose(w)}>×</button>
+				</div>
+			{/each}
+		</div>
+	{/if}
 	<div class="screen" bind:this={screen}>
 	<!-- The canvas is the desktop: it takes focus and every key. The wrapper
 	     only sizes and centres it. -->
@@ -1614,6 +1648,57 @@
 		border: 1px solid var(--color-border);
 		border-radius: var(--radius-btn);
 		cursor: pointer;
+	}
+
+	/* RemoteApp: one button per program window, like a taskbar. */
+	.rail-row {
+		flex: none;
+		display: flex;
+		gap: 4px;
+		padding: 4px 6px;
+		overflow-x: auto;
+		background: var(--color-bg-secondary);
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.rail-win {
+		flex: none;
+		display: flex;
+		align-items: center;
+		max-width: 240px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-btn);
+		background: var(--color-bg-elevated, var(--color-bg-primary));
+	}
+
+	.rail-win.minimized {
+		opacity: 0.6;
+	}
+
+	.rail-title,
+	.rail-close {
+		font: inherit;
+		font-size: 0.75rem;
+		color: var(--color-text-primary);
+		background: transparent;
+		border: none;
+		cursor: pointer;
+	}
+
+	.rail-title {
+		overflow: hidden;
+		padding: 3px 8px;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.rail-close {
+		padding: 3px 6px;
+		color: var(--color-text-secondary);
+	}
+
+	.rail-close:hover {
+		color: var(--color-text-primary);
 	}
 
 	.clip-btn.primary {
