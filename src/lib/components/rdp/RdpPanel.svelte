@@ -24,6 +24,7 @@
 	 */
 	import { onDestroy, onMount } from 'svelte';
 	import { registerCapture } from '#lib/state/capture.js';
+	import { KEY_COMBOS, registerSendKeys, type KeyCombo } from '#lib/state/send-keys.js';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWebview } from '@tauri-apps/api/webview';
 	import { currentMonitor, getCurrentWindow, type Monitor } from '@tauri-apps/api/window';
@@ -388,10 +389,46 @@
 	let barShown = $state(false);
 	let barTimer: ReturnType<typeof setTimeout> | null = null;
 
+	/** Pinned, the bar stays; otherwise it tucks itself away again. */
+	const barPinned = $derived(getSettings().rdpBarPinned);
+	let keysOpen = $state(false);
+
 	function showBar(): void {
 		barShown = true;
 		if (barTimer) clearTimeout(barTimer);
-		barTimer = setTimeout(() => (barShown = false), 2500);
+		barTimer = setTimeout(() => {
+			// Not while its Keys menu is open, or it hides the menu too.
+			if (!keysOpen) barShown = false;
+		}, 2500);
+	}
+
+	function togglePin(): void {
+		updateSetting('rdpBarPinned', !barPinned);
+		// Unpinned, it stays a moment before it tucks away.
+		showBar();
+		canvas?.focus();
+	}
+
+	/** Keys this computer keeps for itself, from the menu: held in order,
+	 *  let go in reverse. */
+	async function sendCombo(codes: string[]): Promise<void> {
+		for (const code of codes) await pressCode(code, true);
+		for (const code of [...codes].reverse()) await pressCode(code, false);
+	}
+
+	function pickCombo(combo: KeyCombo): void {
+		keysOpen = false;
+		if (phase === 'connected') sendInput(sendCombo(combo.codes));
+		canvas?.focus();
+		showBar();
+	}
+
+	async function minimizeWindow(): Promise<void> {
+		try {
+			await getCurrentWindow().minimize();
+		} catch (err) {
+			console.error('minimise:', err);
+		}
 	}
 
 	/**
@@ -426,9 +463,17 @@
 			console.error('full screen:', err);
 		}
 		if (on) showBar();
-		else if (barTimer) clearTimeout(barTimer);
+		else {
+			keysOpen = false;
+			if (barTimer) clearTimeout(barTimer);
+		}
 		// The panel's size just changed; the observer sends the new size.
 		canvas?.focus();
+	}
+
+	/** A click anywhere but the Keys menu closes it. */
+	function onHostDown(e: PointerEvent): void {
+		if (keysOpen && !(e.target as Element | null)?.closest?.('.fs-keys')) keysOpen = false;
 	}
 
 	function onHostMove(e: MouseEvent): void {
@@ -1152,6 +1197,7 @@
 	// A screenshot of the remote desktop: the framebuffer at its own size.
 	// The WebGL context keeps its drawing buffer, so the canvas reads back.
 	let unregisterCapture: (() => void) | undefined;
+	let unregisterKeys: (() => void) | undefined;
 
 	/**
 	 * A view: no connection of its own. It paints the frames the session's
@@ -1194,6 +1240,10 @@
 			return;
 		}
 		unregisterCapture = registerCapture(id, () => (phase === 'connected' && canvas?.width ? canvas : null));
+		// A seamless window's view shares the session's tab; the desktop pane registers.
+		if (railView === undefined) {
+			unregisterKeys = registerSendKeys(id, { ready: () => phase === 'connected', send: (codes) => sendInput(sendCombo(codes)) });
+		}
 		if (seamless) monitor = await currentMonitor().catch(() => null);
 		const size = fitSize();
 
@@ -1310,6 +1360,7 @@
 	onDestroy(() => {
 		if (railView !== undefined) void rdpViewDetach(id, viewKey).catch(() => {});
 		unregisterCapture?.();
+		unregisterKeys?.();
 		unlisten?.();
 		unlistenLocks();
 		clearTimeout(lockSyncTimer);
@@ -1336,7 +1387,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="rdp" class:fullscreen bind:this={host} onmousemove={onHostMove}>
+<div class="rdp" class:fullscreen bind:this={host} onmousemove={onHostMove} onpointerdowncapture={onHostDown}>
 	<!-- The desktop's area: sized and measured on its own, so a phone's key
 	     bar below it is never drawn over the remote (its taskbar included). -->
 	{#if remoteApp && railView === undefined && phase === 'connected' && railWindows.length}
@@ -1427,8 +1478,34 @@
 	{/if}
 
 	{#if fullscreen && !onPhone}
-		<div class="fs-bar" class:shown={barShown}>
+		<div class="fs-bar" class:shown={barShown || barPinned || keysOpen}>
+			<button
+				type="button"
+				class="fs-icon"
+				class:on={barPinned}
+				aria-pressed={barPinned}
+				title={barPinned ? t('rdp.bar_unpin') : t('rdp.bar_pin')}
+				aria-label={barPinned ? t('rdp.bar_unpin') : t('rdp.bar_pin')}
+				onclick={togglePin}
+			>
+				<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<path d="M12 17v5" /><path d="M9 4h6l-1 6 3 3v2H7v-2l3-3-1-6z" />
+				</svg>
+			</button>
 			<span class="fs-host">{label}</span>
+			<div class="fs-keys">
+				<button type="button" class="fs-btn" aria-haspopup="menu" aria-expanded={keysOpen} disabled={phase !== 'connected'} onclick={() => (keysOpen = !keysOpen)}>
+					{t('rdp.send_keys')} ▾
+				</button>
+				{#if keysOpen}
+					<div class="fs-menu" role="menu">
+						{#each KEY_COMBOS as combo (combo.id)}
+							<button type="button" role="menuitem" onclick={() => pickCombo(combo)}>{combo.label}</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+			<button type="button" class="fs-btn" title={t('rdp.minimize')} onclick={() => void minimizeWindow()}>{t('rdp.minimize')}</button>
 			<button type="button" class="fs-exit" onclick={() => setFullscreen(false)}>{t('rdp.exit_fullscreen')}</button>
 		</div>
 	{/if}
@@ -1702,6 +1779,69 @@
 
 	.fs-host {
 		opacity: 0.8;
+	}
+
+	.fs-icon,
+	.fs-btn {
+		display: inline-flex;
+		align-items: center;
+		padding: 3px 8px;
+		font: inherit;
+		font-size: 0.75rem;
+		color: #fff;
+		background: rgba(255, 255, 255, 0.12);
+		border: none;
+		border-radius: var(--radius-btn);
+		cursor: pointer;
+	}
+
+	.fs-icon {
+		padding: 3px 5px;
+		opacity: 0.6;
+	}
+
+	.fs-icon.on {
+		opacity: 1;
+		background: var(--color-accent-fill);
+	}
+
+	.fs-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.fs-keys {
+		position: relative;
+	}
+
+	.fs-menu {
+		position: absolute;
+		top: calc(100% + 6px);
+		left: 0;
+		display: flex;
+		flex-direction: column;
+		min-width: 160px;
+		padding: 4px;
+		background: rgba(0, 0, 0, 0.88);
+		border: 1px solid rgba(255, 255, 255, 0.2);
+		border-radius: var(--radius-btn);
+	}
+
+	.fs-menu button {
+		padding: 5px 10px;
+		font: inherit;
+		font-size: 0.75rem;
+		color: #fff;
+		text-align: left;
+		background: none;
+		border: none;
+		border-radius: var(--radius-btn);
+		cursor: pointer;
+	}
+
+	.fs-menu button:hover,
+	.fs-menu button:focus-visible {
+		background: rgba(255, 255, 255, 0.15);
 	}
 
 	.fs-exit {
