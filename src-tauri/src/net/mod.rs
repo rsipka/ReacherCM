@@ -71,7 +71,7 @@ async fn tcp_connect(ip: IpAddr, port: u16, timeout: Duration) -> Option<io::Res
 fn tcp_ping_reply(attempt: Option<io::Result<()>>, elapsed: Duration) -> PingReply {
     let reply = |ok: bool, error: Option<String>| PingReply {
         ok,
-        ms: ok.then(|| elapsed.as_secs_f64() * 1000.0),
+        ms: ok.then_some(elapsed.as_secs_f64() * 1000.0),
         method: "tcp",
         ttl: None,
         error,
