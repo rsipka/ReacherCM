@@ -830,7 +830,7 @@ mod tests {
             "reachercm-pair1:https://sync.example.com/path#{secret}"
         ))
         .is_err());
-        assert!(parse_pairing(&format!("reachercm-pair1:https://sync.example.com#wrong")).is_err());
+        assert!(parse_pairing("reachercm-pair1:https://sync.example.com#wrong").is_err());
         assert!(parse_pairing(&format!("reachercm-account-link1:{secret}")).is_err());
     }
 
