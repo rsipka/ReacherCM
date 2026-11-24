@@ -103,7 +103,7 @@ impl VaultManager {
             device: self.device_id.clone().ok_or(VaultError::Locked)?,
             my_uuid: self.user_uuid.clone().ok_or(VaultError::Locked)?,
         };
-        sync_engine::sync(&sync_target).await?;
+        let report = sync_engine::sync(&sync_target).await?;
         let (bytes, _) = target
             .get()
             .await?
@@ -141,6 +141,7 @@ impl VaultManager {
                 self.vaults.remove(old_id);
             }
         }
+        sync_engine::report_applied(&sync_target, report).await;
         Ok(id)
     }
 

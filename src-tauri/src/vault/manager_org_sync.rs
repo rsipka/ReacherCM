@@ -456,9 +456,10 @@ impl VaultManager {
             my_uuid: self.user_uuid.clone().ok_or(VaultError::Locked)?,
         };
         vault.save_organization_access("owner", None).await?;
-        sync_engine::sync(&sync).await?;
+        let report = sync_engine::sync(&sync).await?;
         self.save_organization_vault(info.clone(), target.config(), &account.username)
             .await?;
+        sync_engine::report_applied(&sync, report).await;
         Ok(info)
     }
 
@@ -545,7 +546,7 @@ impl VaultManager {
             .sync_targets(Some(&id_string))?
             .pop()
             .ok_or(VaultError::Locked)?;
-        sync_engine::sync(&target).await?;
+        sync_engine::sync_with_receipt(&target).await?;
         Ok(info)
     }
 
