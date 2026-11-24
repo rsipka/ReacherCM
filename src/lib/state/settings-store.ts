@@ -148,6 +148,8 @@ export interface Settings {
 	 * it has across and down; null for its place in the top right corner.
 	 */
 	rdpFullscreenButtonAt: { x: number; y: number } | null;
+	/** Remote desktop: keep the full-screen bar shown instead of tucking it away. */
+	rdpBarPinned: boolean;
 
 	/**
 	 * Confirm a multi-line paste before it reaches the shell.
@@ -309,6 +311,7 @@ export const defaults: Settings = {
 	rdpNewGraphicsFormats: true,
 	rdpFullscreenButton: true,
 	rdpFullscreenButtonAt: null,
+	rdpBarPinned: false,
 	warnOnMultilinePaste: true,
 	multilinePasteThreshold: DEFAULT_PASTE_THRESHOLD,
 	terminalRightClick: DEFAULT_RIGHT_CLICK,
@@ -417,6 +420,7 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	settings.rdpNewGraphicsFormats = parsed.rdpNewGraphicsFormats ?? defaults.rdpNewGraphicsFormats;
 	settings.rdpFullscreenButton = parsed.rdpFullscreenButton ?? defaults.rdpFullscreenButton;
 	settings.rdpFullscreenButtonAt = parsed.rdpFullscreenButtonAt ?? defaults.rdpFullscreenButtonAt;
+	settings.rdpBarPinned = parsed.rdpBarPinned ?? defaults.rdpBarPinned;
 	// These two were saved but never read back, so "don't ask again"
 	// lasted only until the next start.
 	settings.warnOnMultilinePaste = parsed.warnOnMultilinePaste ?? defaults.warnOnMultilinePaste;

@@ -15,6 +15,7 @@
 	import { getSettings } from '#lib/state/settings.svelte.js';
 	import { actionLabel } from '#lib/state/shortcuts.svelte.js';
 	import { canCapture, captureTab } from '#lib/state/capture.js';
+	import { KEY_COMBOS, TAB_MENU_COMBOS, sendKeys, sendKeysReady } from '#lib/state/send-keys.js';
 	import { CAMERA_ICON } from '#lib/terminal/snapshot.js';
 	import {
 		getBroadcastTargets, isTerminalTab, toggleBroadcastTarget, broadcastToAll, stopBroadcast
@@ -333,6 +334,13 @@
 				{ label: t('capture.copy'), icon: CAMERA_ICON, hint: actionLabel('capture.copy'), action: () => void captureTab(tab.id, 'copy', name) },
 				{ label: t('capture.save'), hint: actionLabel('capture.save'), action: () => void captureTab(tab.id, 'save', name) }
 			);
+		}
+		// Keys this computer keeps for itself, sent to a remote desktop.
+		const keysReady = sendKeysReady(tab.id);
+		if (keysReady !== null) {
+			for (const combo of KEY_COMBOS.filter((c) => TAB_MENU_COMBOS.includes(c.id))) {
+				items.push({ label: t('rdp.send_combo', { keys: combo.label }), disabled: !keysReady, action: () => sendKeys(tab.id, combo) });
+			}
 		}
 		const sessionId = tab.sessionId;
 		// The session list is in the main window.
