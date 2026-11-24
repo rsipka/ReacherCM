@@ -73,6 +73,7 @@ const CHANGED = {
 	rdpNewGraphicsFormats: false,
 	rdpFullscreenButton: false,
 	rdpFullscreenButtonAt: { x: 0.2, y: 0.8 },
+	rdpBarPinned: true,
 	warnOnMultilinePaste: false,
 	multilinePasteThreshold: 10,
 	terminalRightClick: 'paste',

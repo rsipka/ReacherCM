@@ -181,9 +181,9 @@ mod tests {
 
     /// The same key encrypted again: another salt, so other text.
     fn another_copy(passphrase: &str) -> String {
-        let key = ssh_key::PrivateKey::from_openssh(ENCRYPTED).unwrap().decrypt(PASSPHRASE).unwrap();
-        let copy = key.encrypt(&mut rsa::rand_core::OsRng, passphrase).unwrap();
-        copy.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string()
+        let key = russh::keys::ssh_key::PrivateKey::from_openssh(ENCRYPTED).unwrap().decrypt(PASSPHRASE).unwrap();
+        let copy = key.encrypt(&mut rand::rng(), passphrase).unwrap();
+        copy.to_openssh(russh::keys::ssh_key::LineEnding::LF).unwrap().to_string()
     }
 
     #[test]
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn a_ppk_is_known_by_its_public_key() {
-        let key = ssh_key::PrivateKey::from_openssh(ENCRYPTED).unwrap();
+        let key = russh::keys::ssh_key::PrivateKey::from_openssh(ENCRYPTED).unwrap();
         let blob = key.public_key().to_bytes().unwrap();
         let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, blob);
         let (a, b) = b64.split_at(40);

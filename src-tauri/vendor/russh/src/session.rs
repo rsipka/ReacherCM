@@ -17,9 +17,10 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::mem::replace;
 use std::num::Wrapping;
+use std::time::Duration;
 
-use bytes::Bytes;
 use byteorder::{BigEndian, ByteOrder};
+use bytes::Bytes;
 use log::{debug, trace};
 use ssh_encoding::Encode;
 use tokio::sync::oneshot;
@@ -148,6 +149,16 @@ impl<C> CommonSession<C> {
             .is_some_and(|channel| channel.confirmed)
     }
 
+    /// `CHANNEL_OPEN_CONFIRMATION` and `CHANNEL_OPEN_FAILURE` are only valid
+    /// as the reply to a local open that is still waiting for one. Channels
+    /// opened by the peer are inserted already confirmed, so they never match.
+    pub(crate) fn is_pending_channel_open(&self, channel: ChannelId) -> bool {
+        self.encrypted
+            .as_ref()
+            .and_then(|enc| enc.channels.get(&channel))
+            .is_some_and(|channel| !channel.confirmed)
+    }
+
     pub fn newkeys(&mut self, newkeys: NewKeys) {
         if let Some(ref mut enc) = self.encrypted {
             enc.exchange = Some(newkeys.exchange);
@@ -203,8 +214,7 @@ impl<C> CommonSession<C> {
                     .init_compress(self.packet_writer.compress());
             }
             if !enc.server_compression.is_deferred() {
-                enc.server_compression
-                    .init_decompress(&mut enc.decompress);
+                enc.server_compression.init_decompress(&mut enc.decompress);
             }
         }
     }
@@ -291,6 +301,12 @@ impl Encrypted {
             self.byte(channel, msg::CHANNEL_CLOSE)?;
             self.channels.remove(&channel);
         }
+        Ok(())
+    }
+
+    pub(crate) fn close_from_peer(&mut self, channel: ChannelId) -> Result<(), crate::Error> {
+        self.byte(channel, msg::CHANNEL_CLOSE)?;
+        self.channels.remove(&channel);
         Ok(())
     }
 
@@ -738,6 +754,23 @@ impl Encrypted {
             || dur >= limits.rekey_time_limit)
     }
 
+    /// Delay until an automatic rekey is due: zero when the write limit is
+    /// already exceeded, otherwise what is left of the time limit.
+    pub(crate) fn rekey_time_remaining(
+        &self,
+        limits: &Limits,
+        writer: &PacketWriter,
+    ) -> Option<Duration> {
+        if self.kex.skip_exchange() {
+            return None;
+        }
+        if writer.bytes_written() >= limits.rekey_write_limit {
+            return Some(Duration::ZERO);
+        }
+        let elapsed = russh_util::time::Instant::now().duration_since(self.last_rekey);
+        Some(limits.rekey_time_limit.saturating_sub(elapsed))
+    }
+
     pub fn new_channel_id(&mut self) -> ChannelId {
         self.last_channel_id += Wrapping(1);
         while self
@@ -832,10 +865,18 @@ pub(crate) enum GlobalRequestResponse {
     CancelStreamLocalForward(oneshot::Sender<bool>),
     /// hostkeys-prove-00@openssh.com: the keys asked about, and where their
     /// checked proofs go (client only).
-    HostKeysProve(
+    HostKeysProveEach(
         Vec<ssh_key::PublicKey>,
         oneshot::Sender<Result<Vec<crate::client::HostKeyProof>, crate::Error>>,
     ),
+    /// OpenSSH host-key ownership proof
+    HostKeysProve {
+        return_channel: oneshot::Sender<Result<(), crate::Error>>,
+        keys: Vec<crate::keys::PublicKey>,
+    },
+    /// request had a custom name; sends `Some` with the response-specific
+    /// payload on success or `None` on failure
+    Other(oneshot::Sender<Option<CryptoVec>>),
 }
 
 #[cfg(test)]
@@ -1189,11 +1230,9 @@ mod tests {
         let mut staged = test_encrypted();
         let mut direct = test_encrypted();
         let mut staged_channel = test_channel(channel_id, 42, false, false);
-        staged_channel.pending_data =
-            VecDeque::from([(Bytes::from_static(b"hello"), Some(1), 0)]);
+        staged_channel.pending_data = VecDeque::from([(Bytes::from_static(b"hello"), Some(1), 0)]);
         let mut direct_channel = test_channel(channel_id, 42, false, false);
-        direct_channel.pending_data =
-            VecDeque::from([(Bytes::from_static(b"hello"), Some(1), 0)]);
+        direct_channel.pending_data = VecDeque::from([(Bytes::from_static(b"hello"), Some(1), 0)]);
         staged.channels.insert(channel_id, staged_channel);
         direct.channels.insert(channel_id, direct_channel);
 
@@ -1272,7 +1311,9 @@ mod tests {
         encrypted
             .flush_pending_with_writer(&mut writer, channel_id, false)
             .unwrap();
-        encrypted.flush(&Limits::default(), &mut writer, false).unwrap();
+        encrypted
+            .flush(&Limits::default(), &mut writer, false)
+            .unwrap();
 
         assert_eq!(
             clear_packet_types(&writer.buffer().buffer),
@@ -1295,11 +1336,15 @@ mod tests {
         encrypted
             .flush_pending_with_writer(&mut writer, channel_id, true)
             .unwrap();
-        encrypted.flush(&Limits::default(), &mut writer, true).unwrap();
+        encrypted
+            .flush(&Limits::default(), &mut writer, true)
+            .unwrap();
         assert!(clear_packet_types(&writer.buffer().buffer).is_empty());
 
         // ...and it all comes out, in order, once the kex is done.
-        encrypted.flush(&Limits::default(), &mut writer, false).unwrap();
+        encrypted
+            .flush(&Limits::default(), &mut writer, false)
+            .unwrap();
         assert_eq!(
             clear_packet_types(&writer.buffer().buffer),
             vec![msg::CHANNEL_DATA, msg::CHANNEL_EOF, msg::CHANNEL_CLOSE]
@@ -1330,10 +1375,7 @@ mod tests {
             .data_with_writer(&mut direct_writer, channel_id, payload, false)
             .unwrap();
 
-        assert_eq!(
-            direct_writer.buffer().buffer,
-            staged_writer.buffer().buffer
-        );
+        assert_eq!(direct_writer.buffer().buffer, staged_writer.buffer().buffer);
         assert_eq!(
             direct.channels[&channel_id].recipient_window_size,
             staged.channels[&channel_id].recipient_window_size
@@ -1367,10 +1409,7 @@ mod tests {
             .extended_data_with_writer(&mut direct_writer, channel_id, 1, payload, false)
             .unwrap();
 
-        assert_eq!(
-            direct_writer.buffer().buffer,
-            staged_writer.buffer().buffer
-        );
+        assert_eq!(direct_writer.buffer().buffer, staged_writer.buffer().buffer);
         assert_eq!(
             direct.channels[&channel_id].recipient_window_size,
             staged.channels[&channel_id].recipient_window_size
@@ -1398,7 +1437,9 @@ mod tests {
             vec![msg::REQUEST_SUCCESS, msg::CHANNEL_DATA]
         );
 
-        encrypted.flush(&Limits::default(), &mut writer, false).unwrap();
+        encrypted
+            .flush(&Limits::default(), &mut writer, false)
+            .unwrap();
         assert_eq!(
             clear_packet_types(&writer.buffer().buffer),
             vec![msg::REQUEST_SUCCESS, msg::CHANNEL_DATA]
@@ -1508,7 +1549,10 @@ mod tests {
             .unwrap();
 
         let channel = &encrypted.channels[&channel_id];
-        assert_eq!(clear_packet_types(&writer.buffer().buffer), vec![msg::CHANNEL_DATA]);
+        assert_eq!(
+            clear_packet_types(&writer.buffer().buffer),
+            vec![msg::CHANNEL_DATA]
+        );
         assert_eq!(channel.recipient_window_size, 0);
         assert_eq!(channel.pending_data.len(), 1);
         let pending = channel.pending_data.back().unwrap();
