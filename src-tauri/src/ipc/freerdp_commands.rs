@@ -145,7 +145,11 @@ impl FreerdpLaunchParams {
             self.rdp.as_ref().and_then(|o| o.work_dir.as_deref()).unwrap_or(""),
             self.rdp.as_ref().and_then(|o| o.app_args.as_deref()).unwrap_or(""),
         ];
-        if fields.iter().any(|s| s.contains(['\r', '\n', '\0'])) {
+        let o = self.rdp.as_ref();
+        let more = o.into_iter().flat_map(|o| {
+            o.drives.iter().flatten().map(String::as_str).chain([o.kdc.as_deref(), o.gateway.as_deref(), o.gateway_user.as_deref(), o.gateway_password.as_deref()].into_iter().flatten())
+        });
+        if fields.into_iter().chain(more).any(|s| s.contains(['\r', '\n', '\0'])) {
             return Err(
                 "FreeRDP cannot pass connection fields containing a line break or NUL.".into(),
             );
@@ -234,6 +238,24 @@ fn freerdp_option_args(o: &crate::rdp::options::RdpOptions) -> Result<String, St
     if o.all_drives == Some(true) {
         line("+drives");
         line("+home-drive");
+    }
+    // An RD Gateway. FreeRDP logs in to it with the session's login unless
+    // given one of its own; values go in one comma-separated argument.
+    if let Some((host, port)) = o.gateway_endpoint() {
+        let mut gw = format!("/gateway:g:{host}:{port}");
+        if let Some(user) = o.gateway_user.as_deref() {
+            let password = o.gateway_password.as_deref().unwrap_or("");
+            if user.contains(',') || password.contains(',') {
+                return Err("FreeRDP cannot use an RD Gateway login that contains a comma.".into());
+            }
+            gw.push_str(&format!(",u:{user}"));
+            if !password.is_empty() {
+                gw.push_str(&format!(",p:{password}"));
+            }
+        }
+        gw.push_str(if o.gateway_detect == Some(true) { ",usage-method:detect" } else { ",usage-method:direct" });
+        gw.push_str(if o.gateway_rpc == Some(true) { ",type:rpc" } else { ",type:auto" });
+        line(&gw);
     }
     // Kerberos: FreeRDP negotiates it by itself; a KDC proxy is passed on.
     if o.auth.as_deref() == Some("kerberos") {
@@ -476,6 +498,17 @@ mod tests {
 
         session.rdp.as_mut().unwrap().app_args = None;
         session.rdp.as_mut().unwrap().program = Some("x\n/cert:ignore".into());
+        assert!(session.input("example", None).is_err());
+    }
+
+    #[test]
+    fn gateway_switch() {
+        let o = crate::rdp::options::RdpOptions { gateway: Some("gw.example.com".into()), gateway_detect: Some(true), ..Default::default() };
+        assert!(freerdp_option_args(&o).unwrap().contains("/gateway:g:gw.example.com:443,usage-method:detect,type:auto\n"));
+        let o = crate::rdp::options::RdpOptions { gateway_user: Some("a,b".into()), ..o };
+        assert!(freerdp_option_args(&o).is_err());
+        let mut session = params();
+        session.rdp = Some(crate::rdp::options::RdpOptions { gateway: Some("gw.example.com".into()), gateway_user: Some("u".into()), gateway_password: Some("p\n/cert:ignore".into()), ..Default::default() });
         assert!(session.input("example", None).is_err());
     }
 

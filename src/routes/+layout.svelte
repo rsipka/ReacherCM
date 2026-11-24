@@ -40,7 +40,6 @@
 	import { initScreenEdges } from '#lib/edges.js';
 	import { initKeyboardViewport } from '#lib/keyboard-viewport.js';
 	import { onMount } from 'svelte';
-	import { isMobile } from '#lib/platform.js';
 	import { startPreferenceSync } from '#lib/state/preference-sync.svelte.js';
 
 	let { children }: { children: Snippet } = $props();
@@ -105,7 +104,7 @@
 		startAutoLock();
 		// The tray's tooltip and menu follow the main window's state.
 		if (!isEditorWindow) startTray();
-		const stopPreferenceSync = !isEditorWindow && !isMobile() ? startPreferenceSync() : undefined;
+		const stopPreferenceSync = !isEditorWindow ? startPreferenceSync() : undefined;
 		// After loadSettings, or the count read back as zero and reset itself
 		// every launch, which would hold the community prompt off forever.
 		recordLaunch();
