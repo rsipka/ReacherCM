@@ -1397,6 +1397,22 @@
 	}
 
 	/**
+	 * Open a saved server management session (iDRAC, iLO...) in a tab of
+	 * its own. Its panel logs in, asking for a password or about a
+	 * certificate there. An open one is switched to.
+	 */
+	function openBmc(session: SessionConfig): void {
+		setActivePage('terminal');
+		const open = getTabs().find((tab) => tab.type === 'bmc' && tab.bmcConnectParams?.sessionId === session.id);
+		if (open) {
+			activateTab(open.id);
+			return;
+		}
+		const tab = createTab('bmc', session.host, undefined, session.name, null);
+		tab.bmcConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
+	}
+
+	/**
 	 * Open a saved serial session in a terminal tab, which opens the port by
 	 * itself once it is listening. The port is the session's `host`.
 	 */
@@ -1725,6 +1741,10 @@
 		}
 		if (sessionKind(session) === 'ftp') {
 			openFtp(session);
+			return;
+		}
+		if (sessionKind(session) === 'bmc') {
+			openBmc(session);
 			return;
 		}
 		if (session.files && isMobile()) {

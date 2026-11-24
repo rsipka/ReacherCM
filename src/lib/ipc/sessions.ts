@@ -142,6 +142,8 @@ export interface SessionConfig {
   files?: FilesProtocol | null;
   /** FTP only: encryption, and the certificates it trusts. */
   ftp?: FtpOptions | null;
+  /** Server management (BMC) only: trusted certificates, read only here. */
+  bmc?: { certs?: string[] } | null;
 }
 
 /** How to wake a session's machine over the network. */
@@ -365,7 +367,7 @@ export interface SshOptions {
 }
 
 /** `winbox`: MikroTik's WinBox 4, started as a program of its own (desktop). */
-export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp';
+export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc';
 
 export function sessionKind(session: Pick<SessionConfig, 'kind'>): SessionKind {
   return session.kind ?? 'ssh';
