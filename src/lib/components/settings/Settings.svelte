@@ -257,7 +257,7 @@
 		<SettingsCard><SecurityTab /></SettingsCard>
 	{:else if id === 'pwmanagers'}
 		<PasswordManagersTab />
-	{:else if id === 'account' && !mobile}
+	{:else if id === 'account'}
 		<SettingsCard><AccountTab /></SettingsCard>
 	{:else if id === 'sync'}
 		<SyncTab />

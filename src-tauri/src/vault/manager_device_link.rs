@@ -204,7 +204,7 @@ impl VaultManager {
             if account {
                 let id = self.internal_vault_ids.get("__personal__").ok_or(VaultError::Locked)?;
                 let target = self.sync_targets(Some(id))?.into_iter().next().ok_or(VaultError::Locked)?;
-                sync_engine::sync(&target).await?;
+                sync_engine::sync_with_receipt(&target).await?;
             }
             Ok::<_, VaultError>(())
         }.await;

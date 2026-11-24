@@ -83,6 +83,15 @@ export interface RdpOptions {
 	auth?: 'kerberos' | null;
 	/** Kerberos only: the KDC host or KDC proxy URL; unset: found in DNS. */
 	kdc?: string | null;
+	/** An RD Gateway, `host` or `host:port` (443). */
+	gateway?: string | null;
+	/** Gateway: try the server directly first. */
+	gateway_detect?: boolean | null;
+	/** Gateway: RPC over HTTP, for older gateways. */
+	gateway_rpc?: boolean | null;
+	/** Gateway: its own login; absent: the session's. */
+	gateway_user?: string | null;
+	gateway_password?: string | null;
 }
 
 /** `1920x1080` as width and height, or null when it is not a size the server takes. */

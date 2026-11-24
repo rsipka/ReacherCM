@@ -28,7 +28,7 @@ export interface IndexedRow {
 }
 
 export const SETTINGS_INDEX: IndexedRow[] = [
-	{ page: 'account', label: 'sync_account.server', words: 'self hosted sign in login devices', desktopOnly: true },
+	{ page: 'account', label: 'sync_account.server', words: 'self hosted sign in login devices pair QR' },
 	{ page: 'ai', label: 'ai_settings.enable', desc: 'ai_settings.enable_desc', words: 'llm openrouter assistant' },
 	{ page: 'ai', label: 'ai_settings.api_key', desc: 'ai_settings.api_key_desc' },
 	{ page: 'ai', label: 'ai_settings.model_browser' },
@@ -96,7 +96,7 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'sessions', label: 'settings.check_addresses', desc: 'settings.check_addresses_desc', words: 'address silent probe reachability ip' },
 	{ page: 'about', label: 'settings.website', desc: 'settings.website_desc', words: 'home page download' },
 	{ page: 'about', label: 'settings.changelog', desc: 'settings.changelog_desc', words: 'release notes what is new history' },
-	{ page: 'about', label: 'settings.license', desc: 'settings.license_desc', words: 'mit copyright licence' },
+	{ page: 'about', label: 'settings.license', desc: 'settings.license_desc', words: 'gpl gnu mit copyright licence' },
 	{ page: 'about', label: 'settings.community', desc: 'settings.community_desc' },
 	{ page: 'about', label: 'report.title', desc: 'report.desc' },
 	{ page: 'about', label: 'settings.support', desc: 'settings.support_desc' },

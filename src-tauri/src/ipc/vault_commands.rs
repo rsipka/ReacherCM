@@ -1266,7 +1266,7 @@ pub async fn vault_set_personal_sync(
 #[tauri::command]
 pub async fn vault_account_sync_enabled(state: State<'_, AppState>) -> Result<bool, String> {
     use crate::vault::sync_account_store::AccountTarget;
-    let Some(account) = crate::ipc::sync_account_commands::sync_account_status().map_err(str::to_owned)? else {
+    let Some(account) = crate::ipc::sync_account_commands::account_status().map_err(str::to_owned)? else {
         return Ok(false);
     };
     let manager = state.vault_manager.lock().await;
@@ -1283,7 +1283,7 @@ pub async fn vault_account_sync_enabled(state: State<'_, AppState>) -> Result<bo
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_enable_account_sync(state: State<'_, AppState>) -> Result<String, String> {
-    let account = crate::ipc::sync_account_commands::sync_account_status()
+    let account = crate::ipc::sync_account_commands::account_status()
         .map_err(|error| error.to_string())?
         .ok_or_else(|| "Sign in to Reacher CM Sync first".to_string())?;
     let _operation = crate::vault::manager::SYNC_OPERATIONS.write().await;
@@ -1292,7 +1292,7 @@ pub async fn vault_enable_account_sync(state: State<'_, AppState>) -> Result<Str
 
 #[cfg(desktop)]
 fn organization_account() -> Result<crate::ipc::sync_account_commands::AccountView, String> {
-    crate::ipc::sync_account_commands::sync_account_status()
+    crate::ipc::sync_account_commands::account_status()
         .map_err(str::to_owned)?
         .ok_or_else(|| "Sign in to Reacher CM Sync first".to_string())
 }

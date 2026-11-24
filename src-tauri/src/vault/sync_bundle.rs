@@ -316,8 +316,14 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
         let mut tombstones: BTreeMap<String, i64> = BTreeMap::new();
         let mut records = Vec::new();
+        #[cfg(desktop)]
+        let mut unreadable = false;
         for (remote_id, sealed) in &body.records {
-            let Ok(sealed) = BASE64.decode(sealed) else { continue };
+            let Ok(sealed) = BASE64.decode(sealed) else {
+                #[cfg(desktop)]
+                { unreadable = true; }
+                continue;
+            };
             match target.key.open(remote_id, &sealed) {
                 Ok(record) => {
                     if record.row.is_none() {
@@ -327,7 +333,11 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
                 }
                 // Kept as it is: one record that does not open must not stop
                 // the rest, nor be lost for a device that can open it.
-                Err(e) => tracing::error!(vault = %target.vault_id, "Skipping a record: {}", e),
+                Err(e) => {
+                    #[cfg(desktop)]
+                    { unreadable = true; }
+                    tracing::error!(vault = %target.vault_id, "Skipping a record: {}", e);
+                }
             }
             entries.insert(remote_id.clone(), sealed);
         }
@@ -335,14 +345,13 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         report.pulled += merged.pulled;
         report.conflicts += merged.conflicts;
 
-        if read_only {
+        let out = if read_only { Vec::new() } else { outgoing(target, local).await? };
+        if read_only || (out.is_empty() && revision.is_some()) {
             sync_local::set_state(local, STATE_COUNTER, &body.counter.max(seen).to_string()).await?;
-            return Ok(report);
-        }
-
-        let out = outgoing(target, local).await?;
-        if out.is_empty() && revision.is_some() {
-            sync_local::set_state(local, STATE_COUNTER, &body.counter.max(seen).to_string()).await?;
+            #[cfg(desktop)]
+            if !unreadable && !rolled_back && matches!(store, Store::Account(_)) {
+                report.applied_revision = revision;
+            }
             return Ok(report);
         }
         for (_, record) in &out {
@@ -366,6 +375,11 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
             sent(local, &out).await?;
             sync_local::set_state(local, STATE_COUNTER, &counter.to_string()).await?;
             report.pushed += out.len();
+            #[cfg(desktop)]
+            if !unreadable && matches!(store, Store::Account(_)) {
+                // Account bundle ETags are the SHA-256 of the uploaded bytes.
+                report.applied_revision = Some(format!("\"{}\"", super::sync_store::revision_of(&data)));
+            }
             return Ok(report);
         }
         // Another device wrote first: read its file and merge again.
