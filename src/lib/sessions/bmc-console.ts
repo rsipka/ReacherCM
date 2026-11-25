@@ -87,10 +87,21 @@ export function rememberedVncPort(sessionId: string): number | null {
 	}
 }
 
-export function rememberVncPort(sessionId: string, port: number): void {
+export function rememberVncPort(sessionId: string, port: number, tls: boolean): void {
 	try {
 		localStorage.setItem(`reach-bmc-vnc:${sessionId}`, String(port));
+		localStorage.setItem(`reach-bmc-vnc-tls:${sessionId}`, tls ? '1' : '0');
 	} catch {
 		// Remembered next time, or not.
+	}
+}
+
+/** Whether the VNC server wants TLS (an iDRAC with SSL encryption on, the
+ *  iDRAC's default): on unless turned off last time. */
+export function rememberedVncTls(sessionId: string): boolean {
+	try {
+		return localStorage.getItem(`reach-bmc-vnc-tls:${sessionId}`) !== '0';
+	} catch {
+		return true;
 	}
 }

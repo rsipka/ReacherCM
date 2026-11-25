@@ -28,7 +28,7 @@ export type SessionRequest =
 	| { kind: 'bmc-console'; sessionId: string; port: number; command: string }
 	/** An iDRAC's own VNC server: a VNC tab to the controller at `port`,
 	 *  with the VNC password typed for it (not saved). */
-	| { kind: 'bmc-vnc'; sessionId: string; port: number; password: string };
+	| { kind: 'bmc-vnc'; sessionId: string; port: number; password: string; tls: boolean };
 
 let open = $state(false);
 let request = $state<SessionRequest | null>(null);

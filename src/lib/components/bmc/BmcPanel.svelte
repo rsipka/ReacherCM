@@ -33,7 +33,7 @@
 	import { isMobile } from '#lib/platform.js';
 	import { tooltip } from '#lib/utils/tooltip.js';
 	import { requestSessionAction } from '#lib/state/palette.svelte.js';
-	import { BMC_SSH_PORT, BMC_VNC_PORT, rememberedConsole, rememberConsole, rememberedVncPort, rememberVncPort } from '#lib/sessions/bmc-console.js';
+	import { BMC_SSH_PORT, BMC_VNC_PORT, rememberedConsole, rememberConsole, rememberedVncPort, rememberedVncTls, rememberVncPort } from '#lib/sessions/bmc-console.js';
 	import BmcLogs from './BmcLogs.svelte';
 	import BmcTasks from './BmcTasks.svelte';
 	import { healthClass, healthLabel, word, when, num, bmcError, vendorName } from './bmc-format.js';
@@ -224,11 +224,11 @@
 
 	/** An iDRAC's own VNC server (iDRAC Settings > Services > VNC Server):
 	 *  its port and VNC password, asked for each time. */
-	let vnc = $state<{ port: string; password: string } | null>(null);
+	let vnc = $state<{ port: string; password: string; tls: boolean } | null>(null);
 	function askVnc(): void {
 		const p = params;
 		if (!p) return;
-		vnc = { port: String(rememberedVncPort(p.sessionId) ?? BMC_VNC_PORT), password: '' };
+		vnc = { port: String(rememberedVncPort(p.sessionId) ?? BMC_VNC_PORT), password: '', tls: rememberedVncTls(p.sessionId) };
 	}
 	function openVncTab(): void {
 		const p = params;
@@ -239,9 +239,9 @@
 			addToast(t('bmc.console_bad_port'), 'error');
 			return;
 		}
-		rememberVncPort(p.sessionId, port);
+		rememberVncPort(p.sessionId, port, v.tls);
 		vnc = null;
-		requestSessionAction({ kind: 'bmc-vnc', sessionId: p.sessionId, port, password: v.password });
+		requestSessionAction({ kind: 'bmc-vnc', sessionId: p.sessionId, port, password: v.password, tls: v.tls });
 	}
 
 	/** A plain SSH shell to the controller (racadm, SMASH CLP), as the same
@@ -579,6 +579,16 @@
 		font-size: 12px;
 		color: var(--color-text-secondary);
 	}
+	.console-form label.check {
+		flex-direction: row;
+		align-items: center;
+		gap: 8px;
+		font-size: 13px;
+		color: var(--color-text-primary);
+	}
+	.console-form label.check input {
+		padding: 0;
+	}
 	.console-form input {
 		padding: 6px 8px;
 		border: 1px solid var(--color-border);
@@ -855,6 +865,10 @@
 			<label>
 				<span>{t('bmc.vnc_password')}</span>
 				<input type="password" bind:value={vnc.password} autocomplete="off" maxlength="8" />
+			</label>
+			<label class="check">
+				<input type="checkbox" bind:checked={vnc.tls} />
+				<span>{t('bmc.vnc_tls')}</span>
 			</label>
 			<p class="note dim">{t('bmc.vnc_hint')}</p>
 			<div class="console-actions">

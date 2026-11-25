@@ -52,6 +52,17 @@ pub async fn vnc_connect(
         //
         // The password and the SSH leg's own entries are one operation: a
         // password manager passphrase that must be asked for is asked once.
+        // TLS to a server management session's controller (an iDRAC's VNC
+        // server): its certificate may be one that session trusts.
+        if params.tls && !running {
+            if let Some(sid) = session_id.as_deref() {
+                if let Ok(stored) = crate::ipc::session_commands::stored_session(&state, sid).await {
+                    if stored.host.eq_ignore_ascii_case(&params.host) {
+                        params.tls_trusted = stored.bmc.map(|b| b.certs).unwrap_or_default();
+                    }
+                }
+            }
+        }
         let reason = crate::pwmanager::Reason::Connect(params.host.clone());
         let forward = crate::pwmanager::with_prompt(&app_handle, reason, async {
             let mut pin = None;

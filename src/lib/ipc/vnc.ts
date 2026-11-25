@@ -27,6 +27,8 @@ export interface VncConnectParams {
 	/** A Proxmox guest's display: opened through the Proxmox session's tab,
 	 *  with a password made for each connect. */
 	proxmox?: ProxmoxConsole | null;
+	/** The whole connection in TLS (an iDRAC's VNC server with SSL encryption on). */
+	tls?: boolean;
 }
 
 export type VncStatus = RdpStatus;

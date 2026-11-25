@@ -61,6 +61,15 @@ pub struct VncConnectParams {
     /// the Proxmox session's connection, over its websocket.
     #[serde(default)]
     pub proxmox: Option<crate::proxmox::ConsoleTarget>,
+    /// The whole connection in TLS from its first byte, as a Dell iDRAC's
+    /// VNC server with *SSL encryption* on wants (not VeNCrypt, which is
+    /// negotiated inside RFB).
+    #[serde(default)]
+    pub tls: bool,
+    /// Certificate fingerprints trusted for `tls` besides those the system
+    /// trusts: the saved session's own, filled in by `vnc_connect`.
+    #[serde(skip)]
+    pub tls_trusted: Vec<String>,
 }
 
 /// How a desktop is reached.
@@ -237,6 +246,7 @@ async fn session(
     let opening = async {
         match link {
             Some(l) => start(l, &params.password).await,
+            None if params.tls => open_tls(&host, port, &params.host, &params.tls_trusted, &login).await,
             None => open(&host, port, &login).await,
         }
     };
@@ -279,6 +289,29 @@ async fn open(host: &str, port: u16, login: &apple::Login<'_>) -> Result<VncClie
     let _ = tcp.set_nodelay(true);
     let prelude = apple::negotiate(&mut tcp, login).await?;
     start(apple::Shim::new(tcp, prelude), login.password).await
+}
+
+/// As [`open`], inside TLS: an iDRAC's VNC server with SSL encryption on.
+/// `name` is the server's own name for its certificate (`host` may be a
+/// local forward); a certificate the system does not trust must be one the
+/// session trusts.
+async fn open_tls(host: &str, port: u16, name: &str, trusted: &[String], login: &apple::Login<'_>) -> Result<VncClient, String> {
+    let tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("Could not reach {host}:{port}: {e}"))?;
+    let _ = tcp.set_nodelay(true);
+    let tls = crate::ftp::tls::Tls::new(name, trusted)?;
+    let mut stream = match tls.connector.connect(tls.name.clone(), tcp).await {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(match tls.refused() {
+                Some(fp) => format!(
+                    "The server's certificate is not trusted (SHA-256 {fp}). Connect its server management tab and trust the certificate there, then try again."
+                ),
+                None => format!("TLS to {name}:{port} failed: {e}. Is SSL encryption on for this VNC server?"),
+            });
+        }
+    };
+    let prelude = apple::negotiate(&mut stream, login).await?;
+    start(apple::Shim::new(stream, prelude), login.password).await
 }
 
 /// The RFB handshake and a VNC password login over `stream`.

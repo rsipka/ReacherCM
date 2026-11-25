@@ -237,7 +237,7 @@
 				void sessionGet(r.sessionId)
 					.then((s) => {
 						setActivePage('terminal');
-						openVnc(bmcVncSession(s, r.port, r.password));
+						openVnc(bmcVncSession(s, r.port, r.password), { tls: r.tls });
 					})
 					.catch((err) => addToast(String(err), 'error'));
 			} else if (r.kind === 'connect-many') {
@@ -1309,7 +1309,7 @@
 	 * password at all, so a session without one connects as it is; one that
 	 * does ask says so on the panel.
 	 */
-	function openVnc(session: SessionConfig): void {
+	function openVnc(session: SessionConfig, extra?: { tls?: boolean }): void {
 		const tab = createTab('vnc', session.host, undefined, session.name, session.detected_os ?? null);
 		tab.vncConnectParams = {
 			id: tab.id,
@@ -1321,6 +1321,7 @@
 			passwordRef: session.auth_method.type === 'Password' ? (session.auth_method.password_ref ?? null) : null,
 			sessionId: session.id,
 			viaSessionId: session.via_session_id ?? null,
+			tls: extra?.tls ?? false,
 		};
 		addToast(t('session.connected_toast', { name: session.name }), 'success');
 	}
