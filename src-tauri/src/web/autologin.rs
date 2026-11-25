@@ -146,10 +146,16 @@ pub fn script(origin: &str, username: &str, password: &str, spec: &LoginSpec, su
     return found;
   }}
   function type(el, v) {{
+    // An unfocused window may send no focus events of its own: a form that
+    // waits for them (Angular's touched state) gets them here.
     el.focus();
+    el.dispatchEvent(new FocusEvent('focus'));
+    el.dispatchEvent(new FocusEvent('focusin', {{ bubbles: true }}));
     setValue.call(el, v);
     el.dispatchEvent(new Event('input', {{ bubbles: true }}));
     el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+    el.dispatchEvent(new FocusEvent('blur'));
+    el.dispatchEvent(new FocusEvent('focusout', {{ bubbles: true }}));
   }}
   function pressEnter(el) {{
     el.focus();
@@ -179,14 +185,24 @@ pub fn script(origin: &str, username: &str, password: &str, spec: &LoginSpec, su
     if (f && f.requestSubmit) {{ f.requestSubmit(); return; }}
     pressEnter(pw);
   }}
-  var started = Date.now();
-  (function wait() {{
-    var pw = first(SPEC.p.concat(['input[type="password"]']));
-    if (!pw) {{
-      if (Date.now() - started < 20000) {{ setTimeout(wait, 250); return; }}
-      try {{ if (store) store.removeItem(KEY); }} catch (e) {{}}
-      return;
-    }}
+  // An iDRAC 9's console sign-in page (`/restgui/start.html?console`) takes
+  // a few seconds to draw its form: say that the app is on it.
+  var veil = null;
+  if (!sent && /\/restgui\/start\.html$/.test(location.pathname) && /console/.test(location.search)) {{
+    veil = document.createElement('div');
+    veil.textContent = 'Reacher CM: signing in to open the console\u2026';
+    veil.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;' +
+      'background:rgba(20,22,28,.82);color:#fff;font:600 16px system-ui,sans-serif;pointer-events:none');
+    (document.body || document.documentElement).appendChild(veil);
+    setTimeout(function () {{ if (veil) veil.remove(); }}, 35000);
+  }}
+  // The form can come late (an iDRAC's start page draws it after a few
+  // seconds) and a window that is not focused may hold its timers back, so
+  // the page's own changes are watched as well as the clock.
+  var started = Date.now(), filling = false, obs = null;
+  function fill(pw) {{
+    filling = true;
+    if (obs) obs.disconnect();
     // A moment for the page to finish wiring the form up.
     setTimeout(function () {{
       if (location.origin !== {origin}) return;
@@ -198,7 +214,42 @@ pub fn script(origin: &str, username: &str, password: &str, spec: &LoginSpec, su
         try {{ if (store) store.setItem(KEY, '1'); }} catch (e) {{}}
         setTimeout(function () {{ send(pw); }}, 300);
       }}
+      // Once sent, the page goes on; if it stays (a wrong password), the
+      // form is left in view.
+      setTimeout(function () {{ if (veil) veil.remove(); }}, 3000);
     }}, 400);
+  }}
+  // Some pages keep the password field read-only until it is clicked (to
+  // stop browsers filling it): click such a field once, then look again.
+  var poked = [];
+  function pokeReadOnly() {{
+    var l = document.querySelectorAll('input[type="password"]');
+    for (var i = 0; i < l.length; i++) {{
+      var el = l[i];
+      if (!el.readOnly || el.disabled || poked.indexOf(el) >= 0) continue;
+      var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      poked.push(el);
+      try {{ el.focus(); el.click(); }} catch (e) {{}}
+    }}
+  }}
+  function look() {{
+    if (filling) return true;
+    var pw = first(SPEC.p.concat(['input[type="password"]']));
+    if (pw) {{ fill(pw); return true; }}
+    pokeReadOnly();
+    return false;
+  }}
+  try {{
+    obs = new MutationObserver(function () {{ look(); }});
+    obs.observe(document.documentElement, {{ childList: true, subtree: true, attributes: true }});
+  }} catch (e) {{}}
+  (function wait() {{
+    if (look()) return;
+    if (Date.now() - started < 30000) {{ setTimeout(wait, 250); return; }}
+    if (obs) obs.disconnect();
+    if (veil) veil.remove();
+    try {{ if (store) store.removeItem(KEY); }} catch (e) {{}}
   }})();
 }})();"#,
         origin = js_str(origin),

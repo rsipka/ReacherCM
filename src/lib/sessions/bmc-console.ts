@@ -56,3 +56,23 @@ export function rememberConsole(sessionId: string, port: number, command: string
 		// Remembered next time, or not.
 	}
 }
+
+/** An iDRAC's VNC server port unless set otherwise (VNCServer.1.Port). */
+export const BMC_VNC_PORT = 5901;
+
+/** The session as a VNC session to its controller, never saved: same id,
+ *  host, the VNC port and the VNC password typed for it. */
+export function bmcVncSession(session: SessionConfig, port: number, password: string): SessionConfig {
+	return {
+		...session,
+		kind: 'vnc',
+		port: port || BMC_VNC_PORT,
+		username: '',
+		auth_method: { type: 'Password', password, password_ref: null },
+		via_session_id: null,
+		jump_chain: null,
+		proxy: null,
+		alt_addresses: null,
+		bmc: null,
+	};
+}

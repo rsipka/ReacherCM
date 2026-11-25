@@ -52,6 +52,17 @@ pub async fn vnc_connect(
         //
         // The password and the SSH leg's own entries are one operation: a
         // password manager passphrase that must be asked for is asked once.
+        // TLS to a server management session's controller (an iDRAC's VNC
+        // server): its certificate may be one that session trusts.
+        if params.tls && !running {
+            if let Some(sid) = session_id.as_deref() {
+                if let Ok(stored) = crate::ipc::session_commands::stored_session(&state, sid).await {
+                    if stored.host.eq_ignore_ascii_case(&params.host) {
+                        params.tls_trusted = stored.bmc.map(|b| b.certs).unwrap_or_default();
+                    }
+                }
+            }
+        }
         let reason = crate::pwmanager::Reason::Connect(params.host.clone());
         let forward = crate::pwmanager::with_prompt(&app_handle, reason, async {
             let mut pin = None;
@@ -102,6 +113,13 @@ pub async fn vnc_disconnect(state: State<'_, AppState>, id: String) -> Result<()
 pub async fn vnc_disconnect_all(state: State<'_, AppState>) -> Result<(), String> {
     state.vnc_manager.lock().await.disconnect_all();
     Ok(())
+}
+
+/// How a connected VNC session is protected, for its tab's tooltip; `None`
+/// before it is up.
+#[tauri::command]
+pub async fn vnc_security(state: State<'_, AppState>, id: String) -> Result<Option<crate::vnc::Security>, String> {
+    Ok(state.vnc_manager.lock().await.security(&id))
 }
 
 /// The webview painted one frame message; see [`crate::rdp::Flow`].

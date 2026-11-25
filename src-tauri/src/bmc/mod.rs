@@ -34,11 +34,30 @@ pub struct BmcOptions {
     /// Changed only by answering the prompt; an editor's save keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub certs: Vec<String>,
+    /// The controller's own VNC server (an iDRAC's), as saved from the
+    /// session editor or the VNC dialog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vnc: Option<BmcVnc>,
+}
+
+/// How to reach a server management session's VNC server.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BmcVnc {
+    /// Its port; unset: the iDRAC's default, 5901.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// The whole connection in TLS (an iDRAC's *SSL encryption*).
+    #[serde(default)]
+    pub tls: bool,
+    /// The VNC password (up to 8 characters on an iDRAC); unset: asked for
+    /// at each connect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 impl BmcOptions {
     pub fn is_empty(&self) -> bool {
-        self.certs.is_empty()
+        self.certs.is_empty() && self.vnc.is_none()
     }
 }
 
@@ -416,19 +435,25 @@ pub struct ConsoleLaunch {
 
 impl BmcConn {
     /// Where the controller's remote console opens. An iDRAC 9 hands out a
-    /// one-time login for its HTML5 console; the others open their web
+    /// one-time login for its HTML5 console (`GetKVMSession`, then
+    /// `/console?username&tempUsername&tempPassword`). Firmware 7.00.00.185
+    /// answers Not Found to it: the console window then goes to plain
+    /// `/console` (see `web::window`), which signs in on the iDRAC's start
+    /// page (filled in by the `idrac` preset) and opens the console in a
+    /// pop-up. Older iDRACs (no `/restgui`) and the others open their web
     /// interface, signed in, with the console a click away.
     pub async fn console(&self) -> Result<ConsoleLaunch, BmcError> {
         match self.vendor {
-            "dell" => match self.dell_kvm().await {
-                Ok(path) => Ok(ConsoleLaunch { path, login: Some("off") }),
+            "dell" if self.client.web_page_exists("/restgui/start.html").await => match self.dell_kvm().await {
+                Ok(path) => Ok(ConsoleLaunch { path, login: Some("idrac") }),
                 // No console without the licence: said as it is.
                 Err(e @ BmcError::Licence(_)) => Err(e),
                 Err(e) => {
-                    tracing::info!("iDRAC one-time console login not offered ({e}); opening its web interface");
-                    Ok(ConsoleLaunch { path: "/".into(), login: Some("idrac") })
+                    tracing::info!("iDRAC one-time console login not offered ({e}); signing in to its console page");
+                    Ok(ConsoleLaunch { path: "/console".into(), login: Some("idrac") })
                 }
             },
+            "dell" => Ok(ConsoleLaunch { path: "/".into(), login: Some("idrac") }),
             "hpe" => Ok(ConsoleLaunch { path: "/".into(), login: Some("ilo") }),
             _ => Ok(ConsoleLaunch { path: "/".into(), login: None }),
         }
@@ -445,10 +470,6 @@ impl BmcConn {
         let (Some(user), Some(pass)) = (s(&v, "TempUsername"), s(&v, "TempPassword")) else {
             return Err(BmcError::Other("The iDRAC gave no console login".into()));
         };
-        // Dell's own launcher waits 5 seconds before opening the console:
-        // some firmware (seen on 7.00.00.185) answers Not Found to a one-time
-        // login used at once.
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         Ok(model::dell_console_path(self.client.username(), &user, &pass))
     }
 

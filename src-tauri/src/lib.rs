@@ -511,6 +511,7 @@ pub fn run() {
             vnc_disconnect,
             vnc_disconnect_all,
             vnc_ack,
+            vnc_security,
             vnc_mouse,
             vnc_key,
             vnc_resize,
@@ -661,6 +662,7 @@ pub fn run() {
             bmc_connect,
             bmc_disconnect,
             bmc_session_cert_trust,
+            bmc_session_vnc_save,
             bmc_overview,
             bmc_sensors,
             bmc_hardware,
@@ -1143,6 +1145,7 @@ pub fn run() {
             vnc_disconnect,
             vnc_disconnect_all,
             vnc_ack,
+            vnc_security,
             vnc_mouse,
             vnc_key,
             vnc_resize,
@@ -1293,6 +1296,7 @@ pub fn run() {
             bmc_connect,
             bmc_disconnect,
             bmc_session_cert_trust,
+            bmc_session_vnc_save,
             bmc_overview,
             bmc_sensors,
             bmc_hardware,
@@ -2060,6 +2064,10 @@ pub fn run() {
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // A web window on an iDRAC logs out first, then closes itself.
+                if web::is_web_label(window.label()) && web::window::close_requested(tauri::Manager::app_handle(window), window.label()) {
+                    api.prevent_close();
+                }
                 // Editor windows: ALWAYS hide instead of close (prevents WebView2 crash on Windows)
                 if window.label().starts_with("editor") {
                     api.prevent_close();
@@ -2072,8 +2080,29 @@ pub fn run() {
                 // (e.g. hide the window while the frontend tries to destroy it).
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Reach application");
+        .build(tauri::generate_context!())
+        .expect("error while building Reach application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                logout_bmcs(app);
+            }
+        });
+}
+
+/// Log out of every open server management connection as the app quits:
+/// controllers allow only a few sessions, and one left behind holds a slot
+/// until it times out. Best-effort, at most 3 seconds.
+fn logout_bmcs(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let conns = state.bmc_manager.drain();
+    if conns.is_empty() {
+        return;
+    }
+    tauri::async_runtime::block_on(async move {
+        let all = futures_util::future::join_all(conns.iter().map(|c| c.client.logout()));
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), all).await;
+    });
 }
 
 /// Messages from a web session's window never reach a command, whatever

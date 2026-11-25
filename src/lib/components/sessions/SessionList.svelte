@@ -69,11 +69,12 @@
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
 	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
-	import { bmcConsoleSession } from '#lib/sessions/bmc-console.js';
+	import { BMC_SSH_PORT, BMC_VNC_PORT, bmcConsoleSession, bmcVncSession, rememberedConsole } from '#lib/sessions/bmc-console.js';
+	import BmcVncDialog from '#lib/components/bmc/BmcVncDialog.svelte';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
-	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView } from '#lib/state/tabs.svelte.js';
+	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView, closeTab } from '#lib/state/tabs.svelte.js';
 	import { getSettings, sessionLogConfig } from '#lib/state/settings.svelte.js';
 	import { isMobile, isWindows } from '#lib/platform.js';
 	import { unsupportedReason } from '#lib/sessions/support.js';
@@ -232,6 +233,10 @@
 						consoleOnConnect = { id: s.id, command: r.command };
 						return handleConnect(bmcConsoleSession(s, r.port));
 					})
+					.catch((err) => addToast(String(err), 'error'));
+			} else if (r.kind === 'bmc-vnc') {
+				void sessionGet(r.sessionId)
+					.then((s) => openBmcVnc(s, { ask: r.ask, failedTabId: r.failedTabId }))
 					.catch((err) => addToast(String(err), 'error'));
 			} else if (r.kind === 'connect-many') {
 				setActivePage('terminal');
@@ -1302,7 +1307,7 @@
 	 * password at all, so a session without one connects as it is; one that
 	 * does ask says so on the panel.
 	 */
-	function openVnc(session: SessionConfig): void {
+	function openVnc(session: SessionConfig, extra?: { tls?: boolean; bmcSessionId?: string }): void {
 		const tab = createTab('vnc', session.host, undefined, session.name, session.detected_os ?? null);
 		tab.vncConnectParams = {
 			id: tab.id,
@@ -1314,6 +1319,8 @@
 			passwordRef: session.auth_method.type === 'Password' ? (session.auth_method.password_ref ?? null) : null,
 			sessionId: session.id,
 			viaSessionId: session.via_session_id ?? null,
+			tls: extra?.tls ?? false,
+			bmcSessionId: extra?.bmcSessionId,
 		};
 		addToast(t('session.connected_toast', { name: session.name }), 'success');
 	}
@@ -1694,6 +1701,33 @@
 	/** The session whose new SSH tab opens on the file manager, not the
 	 *  terminal (Open file manager in its menu). */
 	let filesOnConnect: string | undefined;
+
+	/** A server management session's controller over SSH, as the same user,
+	 *  on the port its text console last used: a plain shell (racadm, CLP). */
+	/** A server management session's VNC server (an iDRAC's): straight in
+	 *  with its saved VNC login; asked for when none is saved, `ask` says
+	 *  so, or the tab `failedTabId` was refused the saved password. */
+	let bmcVncAsk = $state<{ session: SessionConfig; refused: boolean; failedTabId?: string } | null>(null);
+	function openBmcVnc(session: SessionConfig, opts: { ask?: boolean; failedTabId?: string } = {}): void {
+		const saved = session.bmc?.vnc;
+		if (!opts.ask && !opts.failedTabId && saved?.password) {
+			openBmcVncTab(session, saved.port ?? BMC_VNC_PORT, saved.password, saved.tls ?? false);
+			return;
+		}
+		bmcVncAsk = { session, refused: !!opts.failedTabId, failedTabId: opts.failedTabId };
+	}
+	function openBmcVncTab(session: SessionConfig, port: number, password: string, tls: boolean, replace?: string): void {
+		if (replace) closeTab(replace);
+		setActivePage('terminal');
+		openVnc(bmcVncSession(session, port, password), { tls, bmcSessionId: session.id });
+	}
+
+	function openBmcSsh(session: SessionConfig): void {
+		const port = rememberedConsole(session.id)?.port ?? BMC_SSH_PORT;
+		setActivePage('terminal');
+		consoleOnConnect = { id: session.id, command: '' };
+		void handleConnect(bmcConsoleSession(session, port));
+	}
 
 	/** Session menu > Open file manager: the full-pane file manager of an
 	 *  SSH session. A connected tab of it switches over; otherwise it is
@@ -2807,6 +2841,16 @@
 						{sessionKind(contextMenu.session) === 'rdp' ? t('session.open_file_manager_sftp') : t('session.open_file_manager')}
 					</button>
 				{/if}
+				{#if sessionKind(contextMenu.session) === 'bmc'}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) openBmcSsh(contextMenu.session); closeContextMenu(); }} type="button" title={t('session.open_ssh_bmc_hint')}>
+						{t('session.open_ssh')}
+					</button>
+					{#if contextMenu.session.bmc?.vnc?.password && !isMobile()}
+						<button class="context-item" onclick={() => { if (contextMenu?.session) openBmcVnc(contextMenu.session); closeContextMenu(); }} type="button" title={t('session.open_vnc_bmc_hint')}>
+							{t('session.open_vnc')}
+						</button>
+					{/if}
+				{/if}
 				{#if tmuxFor(contextMenu.session, folders)}
 					<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(withoutTmux(contextMenu.session)); closeContextMenu(); }} type="button">
 						{t('session.connect_no_tmux')}
@@ -2992,6 +3036,18 @@
 	credentials={savedCredentials}
 	onclose={() => (bulkEditOpen = false)}
 	onapplied={(r) => void bulkEdited(r)}
+/>
+
+<BmcVncDialog
+	ask={bmcVncAsk}
+	onclose={() => (bmcVncAsk = null)}
+	onopen={(port, password, tls) => {
+		const a = bmcVncAsk;
+		bmcVncAsk = null;
+		if (!a) return;
+		void loadSessions();
+		openBmcVncTab(a.session, port, password, tls, a.failedTabId);
+	}}
 />
 
 <Modal open={sftpHelp !== undefined} onclose={() => (sftpHelp = undefined)} title={t('session.rdp_sftp_help_title')} maxWidth="560px">

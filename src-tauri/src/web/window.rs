@@ -347,6 +347,75 @@ fn popup(app: &AppHandle, opener: &str, url: url::Url, features: NewWindowFeatur
     }
 }
 
+/// An iDRAC 9's web pages (`/restgui/...`) keep their session's XSRF token
+/// in a header; this keeps a copy in the window's session storage, so that
+/// closing the window can log out (see [`close_requested`]).
+const IDRAC_TOKEN_WATCH: &str = r#"(function () {
+  if (window.__reachercmXsrf) return;
+  window.__reachercmXsrf = 1;
+  function keep(v) { if (v) { try { sessionStorage.setItem('__reachercm_xsrf', v); } catch (e) {} } }
+  var X = XMLHttpRequest.prototype, setH = X.setRequestHeader, send = X.send;
+  X.setRequestHeader = function (n, v) { if (String(n).toLowerCase() === 'xsrf-token') keep(v); return setH.apply(this, arguments); };
+  X.send = function () {
+    var x = this;
+    x.addEventListener('load', function () { try { keep(x.getResponseHeader('XSRF-TOKEN')); } catch (e) {} });
+    return send.apply(this, arguments);
+  };
+  if (window.fetch) {
+    var f = window.fetch;
+    window.fetch = function () {
+      return f.apply(this, arguments).then(function (r) { try { keep(r.headers.get('XSRF-TOKEN')); } catch (e) {} return r; });
+    };
+  }
+})();"#;
+
+/// The iDRAC 9 web interface's own Log out: frees the session slot.
+const IDRAC_LOGOUT: &str = r#"(function () {
+  var t = null;
+  try { t = sessionStorage.getItem('__reachercm_xsrf'); } catch (e) {}
+  var h = {};
+  if (t) h['XSRF-TOKEN'] = t;
+  try { fetch('/sysmgmt/2015/bmc/session', { method: 'DELETE', headers: h, credentials: 'same-origin', keepalive: true }); } catch (e) {}
+})();"#;
+
+/// A web window is asked to close. The last open window of a session on an
+/// iDRAC 9's web interface logs out first (the iDRAC allows only a few
+/// sessions, and one left open holds a slot until it times out), then
+/// closes a moment later. True: the close was taken over.
+pub fn close_requested(app: &AppHandle, label: &str) -> bool {
+    let Some(w) = app.get_webview_window(label) else { return false };
+    let on_idrac = w.url().map(|u| u.path().starts_with("/restgui/")).unwrap_or(false);
+    if !on_idrac {
+        return false;
+    }
+    let last = {
+        let reg = registry();
+        let Some(mine) = reg.windows.get(label) else { return false };
+        let id = lock(mine).session_id.clone();
+        !reg.windows.iter().any(|(l, e)| l != label && lock(e).session_id == id)
+    };
+    if !last || w.eval(IDRAC_LOGOUT).is_err() {
+        return false;
+    }
+    tracing::info!("Web session window {label}: logging out of the iDRAC before closing");
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let _ = w.destroy();
+    });
+    true
+}
+
+/// Leaves a one-time console login page that says Not Found for the
+/// iDRAC's plain console address (`replace`, so the login is not kept in
+/// the window's history either).
+const CONSOLE_FALLBACK: &str = r#"(function () {
+  var t = ((document.title || '') + ' ' + (document.body ? document.body.innerText.slice(0, 300) : '')).toLowerCase();
+  if (t.indexOf('not found') < 0) return;
+  document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+    'background:#14161c;color:#fff;font:600 16px system-ui,sans-serif">Reacher CM: signing in to open the console\u2026</div>';
+  location.replace('/console');
+})();"#;
+
 /// A page finished loading: the login script, if it is the session's own
 /// origin and there is a login to type.
 fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
@@ -356,6 +425,24 @@ fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
     // The path only, for a page that fails to open (a console that answers
     // Not Found): the query can hold one-time logins and the host stays out.
     tracing::info!("Web session window {}: loaded {}", w.label(), p.url().path());
+    // An iDRAC 9's one-time console login (see `bmc::BmcConn::console`) that
+    // the firmware refused (7.00.00.185 answers Not Found): plain `/console`
+    // instead, which asks for the sign-in this window fills in.
+    if p.url().path() == "/console" && p.url().query_pairs().any(|(k, _)| k == "tempUsername") {
+        if let Err(err) = w.eval(CONSOLE_FALLBACK) {
+            tracing::warn!("Web session console fallback: {err}");
+        }
+    }
+    if p.url().path().starts_with("/restgui/") {
+        if let Err(err) = w.eval(IDRAC_TOKEN_WATCH) {
+            tracing::warn!("Web session iDRAC token watch: {err}");
+        }
+    }
+    // An iDRAC 9's console sign-in page: the window comes forward, so that
+    // the page runs at full speed and its pop-up console opens on top.
+    if p.url().path() == "/restgui/start.html" {
+        let _ = w.set_focus();
+    }
     let Some(e) = entry(w.label()) else { return };
     let script = {
         let e = lock(&e);

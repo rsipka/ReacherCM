@@ -52,6 +52,7 @@
 		| { kind: 'password'; error?: string }
 		| { kind: 'cert'; fingerprint: string }
 		| { kind: 'error'; message: string }
+		| { kind: 'out' }
 		| { kind: 'up' };
 
 	type Page = 'overview' | 'sensors' | 'hardware' | 'logs' | 'tasks';
@@ -221,6 +222,15 @@
 		requestSessionAction({ kind: 'bmc-console', sessionId: p.sessionId, port, command });
 	}
 
+	/** An iDRAC's own VNC server (iDRAC Settings > Services > VNC Server):
+	 *  straight in with the session's saved VNC login, else asked for (the
+	 *  session list owns that dialog, as its menu opens it too). */
+	function askVnc(): void {
+		const p = params;
+		if (!p) return;
+		requestSessionAction({ kind: 'bmc-vnc', sessionId: p.sessionId });
+	}
+
 	/** A plain SSH shell to the controller (racadm, SMASH CLP), as the same
 	 *  user, on the text console's port: no command typed. */
 	function openSsh(): void {
@@ -257,6 +267,16 @@
 	/** After a task changed something (power, boot once): the overview again. */
 	function changed(): void {
 		void load('overview', true);
+	}
+
+	/** Log out of the controller and free its session slot; the tab stays,
+	 *  with a button to sign in again. */
+	async function logout(): Promise<void> {
+		const id = connectionId;
+		setBmcConnection(tab.id, undefined);
+		setTabLink(tab.id, 'down');
+		stage = { kind: 'out' };
+		if (id) await bmcDisconnect(id).catch(() => {});
 	}
 
 	/** The controller was restarted: its login is gone. */
@@ -333,10 +353,18 @@
 					</span>
 				{/if}
 				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
+				{#if opened?.vendor === 'dell' && !isMobile()}
+					<span class="tip-wrap" use:tooltip={t('bmc.vnc_tip')}>
+						<Button variant="secondary" size="sm" onclick={askVnc}>{t('bmc.vnc')}</Button>
+					</span>
+				{/if}
 				<span class="tip-wrap" use:tooltip={t('bmc.ssh_tip')}>
 					<Button variant="secondary" size="sm" onclick={openSsh}>{t('bmc.ssh')}</Button>
 				</span>
 				<Button variant="ghost" size="sm" onclick={openWeb}>{t('bmc.open_web')}</Button>
+				<span class="tip-wrap" use:tooltip={t('bmc.logout_tip')}>
+					<Button variant="ghost" size="sm" onclick={() => void logout()}>{t('bmc.logout')}</Button>
+				</span>
 				<Button variant="secondary" size="sm" disabled={loading !== null} onclick={() => void load(page, true)}>{t('bmc.refresh')}</Button>
 			</div>
 		</header>
@@ -444,6 +472,11 @@
 				<div class="actions">
 					<Button variant="secondary" onclick={() => (stage = { kind: 'error', message: t('bmc.cert_refused') })}>{t('common.cancel')}</Button>
 					<Button onclick={() => void trust((stage as { fingerprint: string }).fingerprint)}>{t('bmc.cert_trust')}</Button>
+				</div>
+			{:else if stage.kind === 'out'}
+				<p class="note">{t('bmc.logged_out')}</p>
+				<div class="actions">
+					<Button onclick={() => void connect()}>{t('bmc.connect')}</Button>
 				</div>
 			{:else if stage.kind === 'error'}
 				<p class="note error">{stage.message}</p>

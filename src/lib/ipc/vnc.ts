@@ -27,6 +27,25 @@ export interface VncConnectParams {
 	/** A Proxmox guest's display: opened through the Proxmox session's tab,
 	 *  with a password made for each connect. */
 	proxmox?: ProxmoxConsole | null;
+	/** The whole connection in TLS (an iDRAC's VNC server with SSL encryption on). */
+	tls?: boolean;
+	/** A server management session's VNC server: a refused password asks
+	 *  for another one there. */
+	bmcSessionId?: string;
+}
+
+/** How a connected VNC session is protected on the network. */
+export interface VncSecurity {
+	/** `tls`, `ssh` (through an SSH session), `proxmox` (inside its HTTPS) or `none`. */
+	kind: 'tls' | 'ssh' | 'proxmox' | 'none';
+	protocol: string | null;
+	cipher: string | null;
+	bits: number | null;
+}
+
+/** `null` before the session is up. */
+export async function vncSecurity(id: string): Promise<VncSecurity | null> {
+	return invoke<VncSecurity | null>('vnc_security', { id });
 }
 
 export type VncStatus = RdpStatus;
@@ -43,7 +62,7 @@ export async function vncConnect(params: VncConnectParams, onFrame: (frame: Arra
 		new Uint8Array(copy).set(bytes);
 		onFrame(copy);
 	};
-	const { sessionId, ...rest } = params;
+	const { sessionId, bmcSessionId: _bmc, ...rest } = params;
 	await ensureSessionWireguard(sessionId, params.host, params.port);
 	await invoke('vnc_connect', { params: rest, sessionId: sessionId ?? null, onFrame: onFrameChannel });
 }

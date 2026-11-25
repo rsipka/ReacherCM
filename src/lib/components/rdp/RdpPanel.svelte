@@ -88,6 +88,7 @@
 	} from '#lib/ipc/spice.js';
 	import { keysymForChar, keysymForCode, keysymForEvent } from '#lib/vnc/keysym.js';
 	import { t } from '#lib/state/i18n.svelte.js';
+	import { requestSessionAction } from '#lib/state/palette.svelte.js';
 	import { untrustedRefsFromError } from '#lib/ipc/sessions.js';
 	import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
 	import { isMac, isMobile } from '#lib/platform.js';
@@ -1274,6 +1275,7 @@
 				if (retryWithGraphicsPipeline(s.message)) return;
 				phase = 'error';
 				message = s.message;
+				askBmcVncPassword(s.message);
 			}
 		});
 
@@ -1330,6 +1332,15 @@
 		});
 		sizeObserver.observe(screen ?? host);
 	});
+
+	/** A server management session's VNC server refused the saved (or
+	 *  typed) password: the session list asks for another one, and its tab
+	 *  replaces this one. */
+	function askBmcVncPassword(error: string): void {
+		const bmcSessionId = isVnc() ? (params as VncConnectParams).bmcSessionId : undefined;
+		if (!bmcSessionId || !/VNC password/.test(error)) return;
+		requestSessionAction({ kind: 'bmc-vnc', sessionId: bmcSessionId, failedTabId: id });
+	}
 
 	/** Send the panel's current size, unless the desktop already has it. */
 	function requestResize(): void {
