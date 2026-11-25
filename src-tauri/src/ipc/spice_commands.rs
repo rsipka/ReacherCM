@@ -26,6 +26,25 @@ pub async fn spice_connect(
         let id = params.id.clone();
         let running = state.spice_manager.lock().await.running(&id);
         let mut params = params;
+        // A Proxmox VM's SPICE console: its ticket, proxy and CA from the
+        // session's open connection, made for this connect.
+        if let Some(target) = params.proxmox.clone().filter(|_| !running) {
+            if session_id.as_deref() != Some(target.session_id.as_str()) {
+                return Err("This console is not the session's".into());
+            }
+            let conn = crate::ipc::session_commands::proxmox::console_conn(&state, &target.session_id)?;
+            let t = conn.spice(&target).await.map_err(|e| e.to_string())?;
+            params.host = t.host;
+            params.password = t.password;
+            params.password_ref = None;
+            params.via_session_id = None;
+            params.tls_port = t.tls_port;
+            params.ca = t.ca;
+            params.host_subject = t.host_subject;
+            params.proxy = t.proxy;
+            state.spice_manager.lock().await.connect(app_handle, params, None, on_frame);
+            return Ok(());
+        }
         // The password manager entry and the SSH leg are checked and built
         // as for VNC: from the stored session, against the way in the entry
         // was approved for.

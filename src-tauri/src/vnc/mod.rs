@@ -57,6 +57,20 @@ pub struct VncConnectParams {
     /// encrypted; through SSH it is.
     #[serde(default)]
     pub via_session_id: Option<String>,
+    /// A Proxmox guest's display instead of a VNC server: opened through
+    /// the Proxmox session's connection, over its websocket.
+    #[serde(default)]
+    pub proxmox: Option<crate::proxmox::ConsoleTarget>,
+}
+
+/// How a desktop is reached.
+pub enum Way {
+    /// TCP to the server, or through an SSH or WireGuard leg kept alive for
+    /// as long as the session is.
+    Direct(Option<Forward>),
+    /// A Proxmox console's websocket, already open; the password is in the
+    /// params.
+    Proxmox(crate::proxmox::ws::WsLink),
 }
 
 /// How often to ask the server for what changed: sixty times a second, the
@@ -129,13 +143,13 @@ impl VncManager {
     }
 
     /// Open a desktop and start streaming it to `frames`. Returns at once;
-    /// the outcome arrives as `vnc-status-{id}` events. `forward` is the SSH
-    /// leg when there is one, kept alive for as long as the session is.
+    /// the outcome arrives as `vnc-status-{id}` events. `way` is how the
+    /// server is reached (see [`Way`]).
     pub fn connect(
         &mut self,
         app: AppHandle,
         params: VncConnectParams,
-        forward: Option<Forward>,
+        way: Way,
         frames: Channel<InvokeResponseBody>,
     ) {
         let id = params.id.clone();
@@ -156,7 +170,7 @@ impl VncManager {
         let (input, rx) = mpsc::channel(INPUT_QUEUE);
         let flow = Arc::new(Flow::new());
         let frames = Arc::new(std::sync::Mutex::new(frames));
-        let task = tokio::spawn(session(app, params, forward, rx, Arc::clone(&frames), Arc::clone(&flow)));
+        let task = tokio::spawn(session(app, params, way, rx, Arc::clone(&frames), Arc::clone(&flow)));
         self.open.insert(id, Open { input, task, flow, frames });
     }
 
@@ -196,7 +210,7 @@ impl VncManager {
 async fn session(
     app: AppHandle,
     params: VncConnectParams,
-    forward: Option<Forward>,
+    way: Way,
     input: mpsc::Receiver<Input>,
     frames: Arc<std::sync::Mutex<Channel<InvokeResponseBody>>>,
     flow: Arc<Flow>,
@@ -206,17 +220,27 @@ async fn session(
         let _ = app.emit(&format!("vnc-status-{id}"), s);
     };
 
+    let (forward, link) = match way {
+        Way::Direct(f) => (f, None),
+        Way::Proxmox(l) => (None, Some(l)),
+    };
     let (host, port) = match &forward {
         Some(f) => ("127.0.0.1".to_string(), f.port),
         None => (params.host.clone(), params.port),
     };
-    tracing::info!("VNC {id}: connecting to {}:{}{}", params.host, params.port, if forward.is_some() { " through SSH" } else { "" });
+    tracing::info!("VNC {id}: connecting to {}:{}{}", params.host, params.port, if forward.is_some() { " through SSH" } else if link.is_some() { " (Proxmox console)" } else { "" });
 
     // The older Mac login is readable on the way, so it is used only where
     // nobody can be on the way: through SSH, or to this machine.
     let private_path = forward.is_some() || is_loopback(&params.host);
     let login = apple::Login { username: &params.username, password: &params.password, private_path };
-    let client = match tokio::time::timeout(CONNECT_TIMEOUT, open(&host, port, &login)).await {
+    let opening = async {
+        match link {
+            Some(l) => start(l, &params.password).await,
+            None => open(&host, port, &login).await,
+        }
+    };
+    let client = match tokio::time::timeout(CONNECT_TIMEOUT, opening).await {
         Ok(Ok(client)) => client,
         Ok(Err(e)) => {
             tracing::warn!("VNC {id}: connection failed: {e}");
@@ -254,8 +278,16 @@ async fn open(host: &str, port: u16, login: &apple::Login<'_>) -> Result<VncClie
     // also wants each login message to arrive in one piece.
     let _ = tcp.set_nodelay(true);
     let prelude = apple::negotiate(&mut tcp, login).await?;
-    VncConnector::new(apple::Shim::new(tcp, prelude))
-        .set_auth_method(std::future::ready(Ok(login.password.to_string())))
+    start(apple::Shim::new(tcp, prelude), login.password).await
+}
+
+/// The RFB handshake and a VNC password login over `stream`.
+async fn start<S>(stream: S, password: &str) -> Result<VncClient, String>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + Sync + 'static,
+{
+    VncConnector::new(stream)
+        .set_auth_method(std::future::ready(Ok(password.to_string())))
         // In order of preference. Tight is the smallest on the wire, ZRLE
         // is lossless; CopyRect makes scrolling and dragging nearly free.
         .add_encoding(VncEncoding::Tight)
