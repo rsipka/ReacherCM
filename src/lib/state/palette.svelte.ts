@@ -25,7 +25,10 @@ export type SessionRequest =
 	| { kind: 'quick-connect'; prefill?: TypedAddress }
 	/** A server management session's serial console: SSH to the controller
 	 *  at `port`, then type `command`. */
-	| { kind: 'bmc-console'; sessionId: string; port: number; command: string };
+	| { kind: 'bmc-console'; sessionId: string; port: number; command: string }
+	/** An iDRAC's own VNC server: a VNC tab to the controller at `port`,
+	 *  with the VNC password typed for it (not saved). */
+	| { kind: 'bmc-vnc'; sessionId: string; port: number; password: string };
 
 let open = $state(false);
 let request = $state<SessionRequest | null>(null);

@@ -69,7 +69,7 @@
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
 	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
-	import { bmcConsoleSession } from '#lib/sessions/bmc-console.js';
+	import { bmcConsoleSession, bmcVncSession } from '#lib/sessions/bmc-console.js';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
@@ -231,6 +231,13 @@
 						setActivePage('terminal');
 						consoleOnConnect = { id: s.id, command: r.command };
 						return handleConnect(bmcConsoleSession(s, r.port));
+					})
+					.catch((err) => addToast(String(err), 'error'));
+			} else if (r.kind === 'bmc-vnc') {
+				void sessionGet(r.sessionId)
+					.then((s) => {
+						setActivePage('terminal');
+						openVnc(bmcVncSession(s, r.port, r.password));
 					})
 					.catch((err) => addToast(String(err), 'error'));
 			} else if (r.kind === 'connect-many') {

@@ -33,7 +33,7 @@
 	import { isMobile } from '#lib/platform.js';
 	import { tooltip } from '#lib/utils/tooltip.js';
 	import { requestSessionAction } from '#lib/state/palette.svelte.js';
-	import { BMC_SSH_PORT, rememberedConsole, rememberConsole } from '#lib/sessions/bmc-console.js';
+	import { BMC_SSH_PORT, BMC_VNC_PORT, rememberedConsole, rememberConsole, rememberedVncPort, rememberVncPort } from '#lib/sessions/bmc-console.js';
 	import BmcLogs from './BmcLogs.svelte';
 	import BmcTasks from './BmcTasks.svelte';
 	import { healthClass, healthLabel, word, when, num, bmcError, vendorName } from './bmc-format.js';
@@ -222,6 +222,28 @@
 		requestSessionAction({ kind: 'bmc-console', sessionId: p.sessionId, port, command });
 	}
 
+	/** An iDRAC's own VNC server (iDRAC Settings > Services > VNC Server):
+	 *  its port and VNC password, asked for each time. */
+	let vnc = $state<{ port: string; password: string } | null>(null);
+	function askVnc(): void {
+		const p = params;
+		if (!p) return;
+		vnc = { port: String(rememberedVncPort(p.sessionId) ?? BMC_VNC_PORT), password: '' };
+	}
+	function openVncTab(): void {
+		const p = params;
+		const v = vnc;
+		if (!p || !v) return;
+		const port = Number.parseInt(v.port, 10);
+		if (!(port > 0 && port < 65536)) {
+			addToast(t('bmc.console_bad_port'), 'error');
+			return;
+		}
+		rememberVncPort(p.sessionId, port);
+		vnc = null;
+		requestSessionAction({ kind: 'bmc-vnc', sessionId: p.sessionId, port, password: v.password });
+	}
+
 	/** A plain SSH shell to the controller (racadm, SMASH CLP), as the same
 	 *  user, on the text console's port: no command typed. */
 	function openSsh(): void {
@@ -344,6 +366,11 @@
 					</span>
 				{/if}
 				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
+				{#if opened?.vendor === 'dell' && !isMobile()}
+					<span class="tip-wrap" use:tooltip={t('bmc.vnc_tip')}>
+						<Button variant="secondary" size="sm" onclick={askVnc}>{t('bmc.vnc')}</Button>
+					</span>
+				{/if}
 				<span class="tip-wrap" use:tooltip={t('bmc.ssh_tip')}>
 					<Button variant="secondary" size="sm" onclick={openSsh}>{t('bmc.ssh')}</Button>
 				</span>
@@ -816,3 +843,24 @@
 		}
 	}
 </style>
+
+<Modal open={vnc !== null} onclose={() => (vnc = null)} title={t('bmc.vnc_title')} maxWidth="440px">
+	{#if vnc}
+		<form class="console-form" onsubmit={(e) => { e.preventDefault(); openVncTab(); }}>
+			<p class="note">{t('bmc.vnc_intro')}</p>
+			<label>
+				<span>{t('bmc.vnc_port')}</span>
+				<input type="text" inputmode="numeric" bind:value={vnc.port} />
+			</label>
+			<label>
+				<span>{t('bmc.vnc_password')}</span>
+				<input type="password" bind:value={vnc.password} autocomplete="off" maxlength="8" />
+			</label>
+			<p class="note dim">{t('bmc.vnc_hint')}</p>
+			<div class="console-actions">
+				<Button variant="ghost" size="sm" type="button" onclick={() => (vnc = null)}>{t('common.cancel')}</Button>
+				<Button variant="primary" size="sm" type="submit">{t('bmc.console_open')}</Button>
+			</div>
+		</form>
+	{/if}
+</Modal>

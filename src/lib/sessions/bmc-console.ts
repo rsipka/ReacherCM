@@ -56,3 +56,41 @@ export function rememberConsole(sessionId: string, port: number, command: string
 		// Remembered next time, or not.
 	}
 }
+
+/** An iDRAC's VNC server port unless set otherwise (VNCServer.1.Port). */
+export const BMC_VNC_PORT = 5901;
+
+/** The session as a VNC session to its controller, never saved: same id,
+ *  host, the VNC port and the VNC password typed for it. */
+export function bmcVncSession(session: SessionConfig, port: number, password: string): SessionConfig {
+	return {
+		...session,
+		kind: 'vnc',
+		port: port || BMC_VNC_PORT,
+		username: '',
+		auth_method: { type: 'Password', password, password_ref: null },
+		via_session_id: null,
+		jump_chain: null,
+		proxy: null,
+		alt_addresses: null,
+		bmc: null,
+	};
+}
+
+/** The VNC port last used for a session, kept on this computer only. */
+export function rememberedVncPort(sessionId: string): number | null {
+	try {
+		const v = Number.parseInt(localStorage.getItem(`reach-bmc-vnc:${sessionId}`) ?? '', 10);
+		return v > 0 && v < 65536 ? v : null;
+	} catch {
+		return null;
+	}
+}
+
+export function rememberVncPort(sessionId: string, port: number): void {
+	try {
+		localStorage.setItem(`reach-bmc-vnc:${sessionId}`, String(port));
+	} catch {
+		// Remembered next time, or not.
+	}
+}
