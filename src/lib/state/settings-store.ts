@@ -66,6 +66,9 @@ export interface Settings {
 	/** Sessions in the list open on a double click; a single click only
 	 *  focuses the row. Off: one click connects, as before. */
 	doubleClickToOpen: boolean;
+	/** Sessions this device cannot open (WinBox or serial on a phone, WSL off
+	 *  Windows) stay in the list, greyed out. Off: they are hidden. */
+	showUnsupportedSessions: boolean;
 	/** A session that ends on its own (exit typed, the shell finished) closes
 	 *  its tab rather than offering Reconnect. A dropped connection still does. */
 	closeTabOnExit: boolean;
@@ -277,6 +280,7 @@ export const defaults: Settings = {
 	terminalBar: 'always',
 	mobileBarKeys: null,
 	doubleClickToOpen: false,
+	showUnsupportedSessions: true,
 	closeTabOnExit: false,
 	reopenFloatWindows: false,
 	serverMonitoring: true,
@@ -383,6 +387,7 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 		: null;
 	settings.terminalBar = parsed.terminalBar === 'hover' || parsed.terminalBar === 'hidden' ? parsed.terminalBar : defaults.terminalBar;
 	settings.doubleClickToOpen = parsed.doubleClickToOpen ?? defaults.doubleClickToOpen;
+	settings.showUnsupportedSessions = parsed.showUnsupportedSessions !== false;
 	settings.closeTabOnExit = parsed.closeTabOnExit ?? defaults.closeTabOnExit;
 	settings.reopenFloatWindows = parsed.reopenFloatWindows === true;
 	settings.serverMonitoring = parsed.serverMonitoring ?? defaults.serverMonitoring;
