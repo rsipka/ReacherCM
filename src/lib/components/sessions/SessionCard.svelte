@@ -7,6 +7,8 @@
 	import { sessionAddress } from '#lib/utils/address.js';
 	import { addressLabelled, hasAltAddresses, sessionAddresses } from '#lib/sessions/addresses.js';
 	import { isMobile, isWindows } from '#lib/platform.js';
+	import { unsupportedReason } from '#lib/sessions/support.js';
+	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
 	import { tooltip } from '#lib/utils/tooltip.js';
 	import { longPress } from '#lib/utils/longPress.js';
@@ -42,7 +44,14 @@
 	}
 
 	let { session, vault = null, onconnect, onedit, ondelete, oncontextmenu, ondragstart, ondragend, selecting = false, selected = false, onselect, viaName = null, open = false, current = false, connected = false }: Props = $props();
-	let unavailable = $derived((session.kind === 'wsl' && !isWindows()) || ((session.kind === 'serial' || session.kind === 'winbox' || session.kind === 'ftp' || !!session.files || !!session.x11_desktop) && isMobile()));
+	/** This device cannot open it (WinBox on a phone, WSL off Windows): the
+	 *  row stays, greyed, and a tap says why. Editing and the menu still work. */
+	let unavailableKey = $derived(unsupportedReason(session, { mobile: isMobile(), windows: isWindows() }));
+	let unavailable = $derived(!!unavailableKey);
+
+	function explainUnavailable(): void {
+		if (unavailableKey) addToast(t(unavailableKey), 'info');
+	}
 	/** A session that opens in the file manager: which protocol, for its badge. */
 	let filesBadge = $derived(session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
 	/** WinBox only ever manages a MikroTik: its logo until another is picked. */
@@ -53,7 +62,10 @@
 	let needsDouble = $derived(settings.doubleClickToOpen && !selecting);
 
 	function onMain(e: MouseEvent): void {
-		if (unavailable && !selecting) return;
+		if (unavailable && !selecting) {
+			explainUnavailable();
+			return;
+		}
 		if (onselect && (selecting || e.ctrlKey || e.metaKey || e.shiftKey)) {
 			e.preventDefault();
 			onselect(e);
@@ -67,7 +79,7 @@
 	}
 
 	let mainTitle = $derived.by(() => {
-		if (unavailable) return t('session.wsl_windows_only');
+		if (unavailable && !selecting) return t(unavailableKey!);
 		if (selecting) return t('session.select_name', { name: session.name });
 		return t(needsDouble ? 'session.double_click_connect_to' : 'session.connect_to', { name: session.name });
 	});
@@ -181,7 +193,7 @@
 			<circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
 		</svg>
 	</span>
-	<button class="card-main" onclick={onMain} ondblclick={onMainDouble} disabled={unavailable && !selecting} aria-pressed={selecting ? selected : undefined} title={showDetails ? undefined : mainTitle} use:tooltip={showDetails ? detailsTooltip : ''} >
+	<button class="card-main" onclick={onMain} ondblclick={onMainDouble} aria-disabled={unavailable && !selecting} aria-pressed={selecting ? selected : undefined} title={showDetails ? undefined : mainTitle} use:tooltip={showDetails ? detailsTooltip : ''} >
 		<!-- Every row has the icon's place, so names line up whether or not the
 		     OS is known yet: its logo once detected, until then a quiet mark for
 		     the kind of session. -->
@@ -294,7 +306,7 @@
 				<span class="session-detail">
 					{session.username ? `${session.username} · ` : ''}{session.wsl_distro || 'WSL'}
 					{#if unavailable}
-						· <span class="unavailable-text">({t('session.wsl_windows_only')})</span>
+						· <span class="unavailable-text">({t(unavailableKey!)})</span>
 					{/if}
 				</span>
 			{:else}
@@ -346,7 +358,7 @@
 	</button>
 
 	<div class="session-actions">
-		<button class="action-btn connect-btn" disabled={unavailable} onclick={onconnect} title={t('session.connect')} aria-label={t('session.connect_to', { name: session.name })}>
+		<button class="action-btn connect-btn" aria-disabled={unavailable} onclick={unavailable ? explainUnavailable : onconnect} title={unavailable ? t(unavailableKey!) : t('session.connect')} aria-label={t('session.connect_to', { name: session.name })}>
 			<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
 				<path d="M8 5v14l11-7z"/>
 			</svg>

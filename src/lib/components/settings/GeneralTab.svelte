@@ -522,6 +522,21 @@
 
 	<div class="setting-row">
 		<div class="setting-info">
+			<span class="setting-label">{t('settings.show_unsupported_sessions')}</span>
+			<span class="setting-description">{t('settings.show_unsupported_sessions_desc')}</span>
+		</div>
+		<div class="setting-control">
+			<Toggle
+				hideLabel
+				checked={settings.showUnsupportedSessions}
+				label={t('settings.show_unsupported_sessions')}
+				onchange={(v) => updateSetting('showUnsupportedSessions', v)}
+			/>
+		</div>
+	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
 			<span class="setting-label">{t('settings.close_tab_on_exit')}</span>
 			<span class="setting-description">{t('settings.close_tab_on_exit_desc')}</span>
 		</div>
