@@ -375,6 +375,11 @@ fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
             tracing::warn!("Web session console fallback: {err}");
         }
     }
+    // An iDRAC 9's console sign-in page: the window comes forward, so that
+    // the page runs at full speed and its pop-up console opens on top.
+    if p.url().path() == "/restgui/start.html" {
+        let _ = w.set_focus();
+    }
     let Some(e) = entry(w.label()) else { return };
     let script = {
         let e = lock(&e);
