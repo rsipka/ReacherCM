@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Изчистване на терминала",
   "terminal.menu_find": "Търсене…",
   "session.connect": "Свържи",
+  "session.open_ssh": "Отвори SSH",
+  "session.open_ssh_bmc_hint": "SSH към командния ред на контролера със същия потребител",
   "session.disconnect": "Прекъсни",
   "session.edit": "Редактирай",
   "session.clone": "Клониране",

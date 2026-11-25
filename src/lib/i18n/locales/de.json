@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Terminal leeren",
   "terminal.menu_find": "Suchen…",
   "session.connect": "Verbinden",
+  "session.open_ssh": "SSH öffnen",
+  "session.open_ssh_bmc_hint": "SSH zur Befehlszeile des Controllers als derselbe Benutzer",
   "session.disconnect": "Trennen",
   "session.edit": "Bearbeiten",
   "session.clone": "Klonen",

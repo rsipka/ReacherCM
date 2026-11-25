@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Очистить терминал",
   "terminal.menu_find": "Найти…",
   "session.connect": "Подключиться",
+  "session.open_ssh": "Открыть SSH",
+  "session.open_ssh_bmc_hint": "SSH в командную строку контроллера под тем же пользователем",
   "session.disconnect": "Отключиться",
   "session.edit": "Редактировать",
   "session.clone": "Клонировать",

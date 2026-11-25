@@ -69,7 +69,7 @@
 	import { osNeedsDetection } from '#lib/data/distro-icons.js';
 	import { sshConnect, sshDisconnect, sshDetectOs, sshProbeAddresses, sshTmuxChosen, tmuxStartScript, type JumpHostConnectParams } from '#lib/ipc/ssh.js';
 	import { rdpFilesSession, rdpFilesPort } from '#lib/sessions/rdp-files.js';
-	import { bmcConsoleSession, bmcVncSession } from '#lib/sessions/bmc-console.js';
+	import { BMC_SSH_PORT, bmcConsoleSession, bmcVncSession, rememberedConsole } from '#lib/sessions/bmc-console.js';
 	import { addressKey, addressName, addressText, autoOrder, checksAddresses, plainOrder, connectMode, hasAltAddresses, isUnreachable, lastAddress, rememberAddress, sessionAddresses, type ResolvedAddress } from '#lib/sessions/addresses.js';
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
@@ -1706,6 +1706,15 @@
 	 *  SSH session. A connected tab of it switches over; otherwise it is
 	 *  connected first. An RDP session's is the same machine over SFTP, in
 	 *  a tab of its own (see #lib/sessions/rdp-files). */
+	/** A server management session's controller over SSH, as the same user,
+	 *  on the port its text console last used: a plain shell (racadm, CLP). */
+	function openBmcSsh(session: SessionConfig): void {
+		const port = rememberedConsole(session.id)?.port ?? BMC_SSH_PORT;
+		setActivePage('terminal');
+		consoleOnConnect = { id: session.id, command: '' };
+		void handleConnect(bmcConsoleSession(session, port));
+	}
+
 	function openFileManager(session: SessionConfig): void {
 		const open = getTabs().find((tab) => tab.type === 'ssh' && tab.sessionId === session.id && tab.connectionId && !tab.link);
 		if (open) {
@@ -2812,6 +2821,11 @@
 				{#if (sessionKind(contextMenu.session) === 'ssh' || sessionKind(contextMenu.session) === 'rdp') && !isMobile()}
 					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button" title={sessionKind(contextMenu.session) === 'rdp' ? t('session.rdp_files_hint') : undefined}>
 						{sessionKind(contextMenu.session) === 'rdp' ? t('session.open_file_manager_sftp') : t('session.open_file_manager')}
+					</button>
+				{/if}
+				{#if sessionKind(contextMenu.session) === 'bmc'}
+					<button class="context-item" onclick={() => { if (contextMenu?.session) openBmcSsh(contextMenu.session); closeContextMenu(); }} type="button" title={t('session.open_ssh_bmc_hint')}>
+						{t('session.open_ssh')}
 					</button>
 				{/if}
 				{#if tmuxFor(contextMenu.session, folders)}

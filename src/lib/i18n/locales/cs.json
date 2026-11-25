@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Vymazat terminál",
   "terminal.menu_find": "Hledat…",
   "session.connect": "Připojit",
+  "session.open_ssh": "Otevřít SSH",
+  "session.open_ssh_bmc_hint": "SSH do příkazového řádku řadiče jako stejný uživatel",
   "session.disconnect": "Odpojit",
   "session.edit": "Upravit",
   "session.clone": "Klonovat",

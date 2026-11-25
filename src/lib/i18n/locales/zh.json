@@ -284,6 +284,8 @@
   "terminal.menu_clear": "清空终端",
   "terminal.menu_find": "查找…",
   "session.connect": "连接",
+  "session.open_ssh": "打开 SSH",
+  "session.open_ssh_bmc_hint": "以同一用户通过 SSH 连接到控制器的命令行",
   "session.disconnect": "断开",
   "session.edit": "编辑",
   "session.clone": "克隆",

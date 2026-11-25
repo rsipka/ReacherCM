@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Καθαρισμός τερματικού",
   "terminal.menu_find": "Εύρεση…",
   "session.connect": "Σύνδεση",
+  "session.open_ssh": "Άνοιγμα SSH",
+  "session.open_ssh_bmc_hint": "SSH στη γραμμή εντολών του ελεγκτή με τον ίδιο χρήστη",
   "session.disconnect": "Αποσύνδεση",
   "session.edit": "Επεξεργασία",
   "session.clone": "Κλωνοποίηση",

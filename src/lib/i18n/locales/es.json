@@ -284,6 +284,8 @@
   "terminal.menu_clear": "Limpiar terminal",
   "terminal.menu_find": "Buscar…",
   "session.connect": "Conectar",
+  "session.open_ssh": "Abrir SSH",
+  "session.open_ssh_bmc_hint": "SSH a la línea de comandos del controlador con el mismo usuario",
   "session.disconnect": "Desconectar",
   "session.edit": "Editar",
   "session.clone": "Clonar",
