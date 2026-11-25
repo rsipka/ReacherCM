@@ -4310,6 +4310,7 @@
   "organization.finish_rotation": "Terminer le renouvellement de la clé",
   "organization.key_rotated": "Clé du coffre renouvelée.",
   "bmc.remote_console": "Console distante",
+  "bmc.remote_console_tip": "Un iDRAC 9 ouvre directement sa console HTML5. Les iDRAC plus anciens (7, 8) et les autres contrôleurs ouvrent leur interface web, connectée : lancez-y la console (sur un iDRAC, Dashboard › Virtual Console › Launch).",
   "bmc.text_console": "Console texte",
   "bmc.text_console_intro": "Ouvre un onglet SSH vers le contrôleur et tape sa commande de console série, pour voir la console texte du serveur (BIOS, démarrage, connexion série Linux). La connexion se fait comme pour cette session.",
   "bmc.console_port": "Port SSH",

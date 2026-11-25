@@ -4310,6 +4310,7 @@
   "organization.finish_rotation": "Finish key rotation",
   "organization.key_rotated": "Vault key rotated.",
   "bmc.remote_console": "Remote console",
+  "bmc.remote_console_tip": "An iDRAC 9 opens its HTML5 console straight away. Older iDRACs (7, 8) and other controllers open their web interface, signed in: start the console there (on an iDRAC, Dashboard › Virtual Console › Launch).",
   "bmc.text_console": "Text console",
   "bmc.text_console_intro": "Opens an SSH tab to the controller and types its serial console command, so you see the server's text console (BIOS, boot, a Linux serial login). It logs in as this session does.",
   "bmc.console_port": "SSH port",

@@ -31,6 +31,7 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
 	import { isMobile } from '#lib/platform.js';
+	import { tooltip } from '#lib/utils/tooltip.js';
 	import { requestSessionAction } from '#lib/state/palette.svelte.js';
 	import { BMC_SSH_PORT, rememberedConsole, rememberConsole } from '#lib/sessions/bmc-console.js';
 	import BmcLogs from './BmcLogs.svelte';
@@ -318,7 +319,9 @@
 					<span class="power {overview.powerState === 'On' ? 'on' : 'off'}">{word('bmc.power_state_', overview.powerState)}</span>
 				{/if}
 				{#if !isMobile()}
-					<Button variant="secondary" size="sm" disabled={consoleOpening} onclick={() => void remoteConsole()}>{t('bmc.remote_console')}</Button>
+					<span class="tip-wrap" use:tooltip={t('bmc.remote_console_tip')}>
+						<Button variant="secondary" size="sm" disabled={consoleOpening} onclick={() => void remoteConsole()}>{t('bmc.remote_console')}</Button>
+					</span>
 				{/if}
 				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
 				<Button variant="ghost" size="sm" onclick={openWeb}>{t('bmc.open_web')}</Button>
@@ -463,6 +466,10 @@
 </Modal>
 
 <style>
+	.tip-wrap {
+		display: inline-flex;
+	}
+
 	.bmc {
 		position: absolute;
 		inset: 0;

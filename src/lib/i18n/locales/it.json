@@ -4310,6 +4310,7 @@
   "organization.finish_rotation": "Completa il cambio della chiave",
   "organization.key_rotated": "Chiave della cassaforte cambiata.",
   "bmc.remote_console": "Console remota",
+  "bmc.remote_console_tip": "Un iDRAC 9 apre subito la sua console HTML5. Gli iDRAC più vecchi (7, 8) e gli altri controller aprono la loro interfaccia web, con accesso già effettuato: avvia lì la console (su un iDRAC, Dashboard › Virtual Console › Launch).",
   "bmc.text_console": "Console testuale",
   "bmc.text_console_intro": "Apre una scheda SSH verso il controller e digita il suo comando di console seriale, per vedere la console testuale del server (BIOS, avvio, login seriale Linux). Accede come questa sessione.",
   "bmc.console_port": "Porta SSH",
