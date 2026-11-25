@@ -36,6 +36,8 @@
 	import BmcLogs from './BmcLogs.svelte';
 	import BmcTasks from './BmcTasks.svelte';
 	import { healthClass, healthLabel, word, when, num, bmcError, vendorName } from './bmc-format.js';
+	import { sessionGet, sessionUpdate } from '#lib/ipc/sessions.js';
+	import { bmcVendorOs } from '#lib/data/distro-icons.js';
 
 	interface Props {
 		tab: Tab;
@@ -76,6 +78,21 @@
 	let serverName = $derived(tab.sessionName ?? tab.title);
 	let connectionId = $derived(tab.bmcConnectionId);
 
+	/** The session list shows the maker's logo (Dell, Lenovo) or the server
+	 *  icon: saved like an SSH session's detected OS, unless one was picked
+	 *  by hand. */
+	async function saveVendorIcon(sessionId: string, vendor: string | null | undefined): Promise<void> {
+		try {
+			const stored = await sessionGet(sessionId);
+			const os = bmcVendorOs(vendor);
+			if (stored.os_manual || stored.detected_os === os) return;
+			await sessionUpdate({ ...stored, detected_os: os });
+			window.dispatchEvent(new Event('reach:sessions-changed'));
+		} catch {
+			// Only the icon: it shows next time.
+		}
+	}
+
 	async function connect(typed?: string): Promise<void> {
 		const p = params;
 		if (!p) return;
@@ -89,6 +106,7 @@
 		const id = crypto.randomUUID();
 		try {
 			opened = await bmcConnect(id, p.sessionId, typed);
+			void saveVendorIcon(p.sessionId, opened.vendor);
 			setBmcConnection(tab.id, id);
 			setTabLink(tab.id, undefined);
 			password = '';

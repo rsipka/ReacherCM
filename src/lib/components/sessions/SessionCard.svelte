@@ -2,7 +2,7 @@
 	import type { SessionConfig } from '#lib/ipc/sessions.js';
 	import type { VaultInfo } from '#lib/state/vault.svelte.js';
 	import DistroIcon from './DistroIcon.svelte';
-	import { getDistroIcon } from '#lib/data/distro-icons.js';
+	import { getDistroIcon, defaultSessionOs } from '#lib/data/distro-icons.js';
 	import { brandIcons } from '#lib/data/brand-icons.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { sessionAddress } from '#lib/utils/address.js';
@@ -55,8 +55,9 @@
 	}
 	/** A session that opens in the file manager: which protocol, for its badge. */
 	let filesBadge = $derived(session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
-	/** WinBox only ever manages a MikroTik: its logo until another is picked. */
-	let osId = $derived(session.detected_os ?? (session.kind === 'winbox' ? 'mikrotik' : null));
+	/** WinBox only ever manages a MikroTik, a Server management session a
+	 *  BMC: their logo until another is found or picked. */
+	let osId = $derived(session.detected_os ?? defaultSessionOs(session.kind, session.web?.login));
 	/** Double-click to open (Settings > General): a mouse click only focuses
 	 *  the row. Enter or Space (a click with no detail) and a tap still
 	 *  connect, as there is no double press for either. */
