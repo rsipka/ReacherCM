@@ -7,13 +7,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_util::{SinkExt, StreamExt};
-use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio_tungstenite::tungstenite::Message;
 
-const CERT: &[u8] = include_bytes!("testdata/cert.pem");
-const KEY: &[u8] = include_bytes!("testdata/key.pem");
+// A self-signed test certificate for localhost; DER, as *.pem is ignored by git.
+const CERT: &[u8] = include_bytes!("testdata/cert.der");
+const KEY: &[u8] = include_bytes!("testdata/key.der");
 const FINGERPRINT: &str = "D0:D6:4D:85:26:A4:69:2B:1C:29:BA:7A:D8:C4:0A:E7:82:43:88:F1:DB:CB:00:EE:D3:F9:B6:0C:0B:0C:F3:67";
 const FULL: &str = "PVE:alice@pam:6750A1B2::full";
 const TOKEN: &str = "PVEAPIToken=alice@pam!ci=11111111-2222-3333-4444-555555555555";
@@ -241,8 +241,8 @@ async fn serve_one<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(mut s: S)
 
 /// Start the mock; its port.
 async fn mock() -> u16 {
-    let certs = vec![CertificateDer::from_pem_slice(CERT).unwrap()];
-    let key = PrivateKeyDer::from_pem_slice(KEY).unwrap();
+    let certs = vec![CertificateDer::from(CERT.to_vec())];
+    let key = PrivatePkcs8KeyDer::from(KEY.to_vec()).into();
     let config = rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .with_safe_default_protocol_versions()
         .unwrap()
