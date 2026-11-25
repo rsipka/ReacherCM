@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /** A connect that needs a password typed in. */
 export const FTP_PASSWORD_NEEDED = 'FTP_PASSWORD_NEEDED';
@@ -10,6 +11,7 @@ export const FTP_UNTRUSTED_CERT = 'FTP_UNTRUSTED_CERT:';
  *  `password` is one typed in for this connect. Resolves to the folder
  *  the login starts in. */
 export async function ftpConnect(id: string, sessionId: string, password?: string): Promise<{ home: string }> {
+  await ensureSessionWireguard(sessionId);
   return invoke('ftp_connect', { id, sessionId, password: password || null });
 }
 

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
 /** Server management sessions: a server's BMC (iDRAC, iLO...) over Redfish.
  *  See src-tauri/src/bmc. Every page call names the tab's connection id. */
@@ -121,6 +122,7 @@ export interface BmcVirtualMedia {
 }
 
 export async function bmcConnect(id: string, sessionId: string, password?: string): Promise<BmcOpened> {
+	await ensureSessionWireguard(sessionId);
 	return invoke('bmc_connect', { id, sessionId, password: password || null });
 }
 

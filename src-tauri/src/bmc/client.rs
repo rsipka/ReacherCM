@@ -64,6 +64,10 @@ pub struct Params {
     pub password: String,
     /// Fingerprints (`AB:CD:..`) of certificates trusted for this session.
     pub trusted: Vec<String>,
+    /// A local SOCKS5 proxy into the session's WireGuard tunnel, and the
+    /// hold that keeps the tunnel on while the session is open.
+    pub socks: Option<u16>,
+    pub tunnel: Option<crate::wireguard::manager::Hold>,
 }
 
 pub struct Redfish {
@@ -127,8 +131,14 @@ impl Redfish {
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
             // A BMC's links are its own; never follow one elsewhere.
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none());
+        // Never the system's proxy; the tunnel's own when the session goes
+        // through WireGuard (names resolved inside it: socks5h).
+        let http = match p.socks {
+            Some(port) => http.proxy(reqwest::Proxy::all(format!("socks5h://127.0.0.1:{port}")).map_err(|e| BmcError::Other(e.to_string()))?),
+            None => http.no_proxy(),
+        };
+        let http = http
             .build()
             .map_err(|e| BmcError::Other(format!("HTTPS setup failed: {e}")))?;
         let port = if p.port == 0 { 443 } else { p.port };

@@ -103,6 +103,10 @@ pub struct Params {
     pub security: Security,
     /// Fingerprints of certificates the session trusts.
     pub trusted: Vec<String>,
+    /// A WireGuard profile whose tunnel carries the control and data
+    /// connections (it must be on), and the hold that keeps it on.
+    pub wireguard: Option<String>,
+    pub tunnel: Option<std::sync::Arc<crate::wireguard::manager::Hold>>,
 }
 
 impl std::fmt::Debug for Params {
@@ -228,10 +232,29 @@ fn validate_command(line: &str) -> Result<(), FtpError> {
     Ok(())
 }
 
+/// Where data connections go: the address the control connection reached,
+/// or the host through a WireGuard tunnel.
+#[derive(Debug, Clone)]
+enum Peer {
+    Ip(IpAddr),
+    Tunnel { host: String, wireguard: String },
+}
+
+async fn open_tcp(peer: &Peer, port: u16) -> Result<Box<dyn Stream>, std::io::Error> {
+    match peer {
+        Peer::Ip(ip) => {
+            let tcp = TcpStream::connect(SocketAddr::new(*ip, port)).await?;
+            let _ = tcp.set_nodelay(true);
+            Ok(Box::new(tcp))
+        }
+        Peer::Tunnel { host, wireguard } => Ok(Box::new(crate::wireguard::dial(wireguard, host, port).await?)),
+    }
+}
+
 pub struct Client {
     ctrl: Box<dyn Stream>,
     buf: Vec<u8>,
-    peer: IpAddr,
+    peer: Peer,
     tls: Option<Tls>,
     pub mlsd: bool,
     epsv: bool,
@@ -240,7 +263,7 @@ pub struct Client {
     pub broken: bool,
 }
 
-async fn tls_wrap(tls: &Tls, tcp: TcpStream) -> Result<Box<dyn Stream>, FtpError> {
+async fn tls_wrap(tls: &Tls, tcp: Box<dyn Stream>) -> Result<Box<dyn Stream>, FtpError> {
     match tokio::time::timeout(CONNECT_TIMEOUT, tls.connector.connect(tls.name.clone(), tcp)).await {
         Ok(Ok(s)) => Ok(Box::new(s)),
         Ok(Err(e)) => Err(FtpError::Tls { message: format!("TLS failed: {e}"), untrusted: tls.refused() }),
@@ -250,12 +273,25 @@ async fn tls_wrap(tls: &Tls, tcp: TcpStream) -> Result<Box<dyn Stream>, FtpError
 
 impl Client {
     pub async fn connect(p: &Params) -> Result<Self, FtpError> {
-        let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((p.host.trim_matches(['[', ']']), p.port)))
+        let host = p.host.trim_matches(['[', ']']);
+        let opened = async {
+            match p.wireguard.as_deref().filter(|w| !w.is_empty()) {
+                Some(wg) => {
+                    let s = crate::wireguard::dial(wg, host, p.port).await?;
+                    Ok::<_, std::io::Error>((Box::new(s) as Box<dyn Stream>, Peer::Tunnel { host: host.to_string(), wireguard: wg.to_string() }))
+                }
+                None => {
+                    let tcp = TcpStream::connect((host, p.port)).await?;
+                    let _ = tcp.set_nodelay(true);
+                    let ip = tcp.peer_addr()?.ip();
+                    Ok((Box::new(tcp) as Box<dyn Stream>, Peer::Ip(ip)))
+                }
+            }
+        };
+        let (tcp, peer) = tokio::time::timeout(CONNECT_TIMEOUT, opened)
             .await
             .map_err(|_| FtpError::Io(format!("{}:{}: no answer", p.host, p.port)))?
             .map_err(|e| FtpError::Io(format!("{}:{}: {e}", p.host, p.port)))?;
-        let _ = tcp.set_nodelay(true);
-        let peer = tcp.peer_addr().map_err(io)?.ip();
         let tls = match p.security {
             Security::None => None,
             _ => Some(Tls::new(&p.host, &p.trusted).map_err(FtpError::Other)?),
@@ -283,7 +319,7 @@ impl Client {
             Security::None => {
                 let mut tcp = tcp;
                 read_reply(&mut tcp, &mut buf).await?.ok(&[220])?;
-                Box::new(tcp)
+                tcp
             }
         };
         let mut c = Client { ctrl, buf, peer, tls, mlsd: false, epsv: true, home: "/".into(), broken: false };
@@ -379,31 +415,29 @@ impl Client {
         Ok(r)
     }
 
-    async fn passive(&mut self) -> Result<TcpStream, FtpError> {
-        let mut addr = None;
+    async fn passive(&mut self) -> Result<Box<dyn Stream>, FtpError> {
+        let mut port = None;
         if self.epsv {
             let r = self.cmd("EPSV").await?;
             match (r.code, parse_epsv(&r.text)) {
-                (229, Some(port)) => addr = Some(SocketAddr::new(self.peer, port)),
+                (229, Some(p)) => port = Some(p),
                 _ => self.epsv = false,
             }
         }
-        let addr = match addr {
-            Some(a) => a,
+        let port = match port {
+            Some(p) => p,
             None => {
                 let r = self.ok("PASV", &[227]).await?;
                 let (_, port) = parse_pasv(&r.text).ok_or_else(|| FtpError::Other(format!("Cannot read the server's passive address: {}", r.text)))?;
                 // The address in the reply is often a private one behind
                 // NAT: the server's own, as connected to, is used instead.
-                SocketAddr::new(self.peer, port)
+                port
             }
         };
-        let tcp = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(addr))
+        tokio::time::timeout(CONNECT_TIMEOUT, open_tcp(&self.peer, port))
             .await
-            .map_err(|_| FtpError::Io(format!("Data connection to port {} timed out", addr.port())))?
-            .map_err(|e| FtpError::Io(format!("Data connection to port {} failed: {e}", addr.port())))?;
-        let _ = tcp.set_nodelay(true);
-        Ok(tcp)
+            .map_err(|_| FtpError::Io(format!("Data connection to port {port} timed out")))?
+            .map_err(|e| FtpError::Io(format!("Data connection to port {port} failed: {e}")))
     }
 
     /// Open a data connection for `line` (RETR, STOR, LIST...). The caller
@@ -503,7 +537,7 @@ mod tests {
         let mut client = Client {
             ctrl: Box::new(ctrl),
             buf: Vec::new(),
-            peer: "127.0.0.1".parse().unwrap(),
+            peer: Peer::Ip("127.0.0.1".parse().unwrap()),
             tls: Some(Tls::new("localhost", &[]).unwrap()),
             mlsd: false,
             epsv: true,
@@ -517,6 +551,8 @@ mod tests {
             password: String::new(),
             security: Security::Explicit,
             trusted: Vec::new(),
+            wireguard: None,
+            tunnel: None,
         };
         let server = async {
             let mut peer = BufReader::new(peer);

@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type { MouseAction, RdpStatus } from '#lib/ipc/rdp.js';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
 import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
+import type { ProxmoxConsole } from '#lib/ipc/proxmox.js';
 
 /**
  * Remote desktop over SPICE: KVM/QEMU virtual machines (Proxmox VE, libvirt,
@@ -31,6 +32,9 @@ export interface SpiceConnectParams {
 	hostSubject?: string | null;
 	/** An HTTP proxy to go through (Proxmox's spiceproxy); from a .vv file only. */
 	proxy?: string | null;
+	/** A Proxmox VM's console: the backend asks the Proxmox session for a
+	 *  fresh ticket at each connect. */
+	proxmox?: ProxmoxConsole | null;
 }
 
 /** A saved SPICE session's own settings (snake_case, as stored). */

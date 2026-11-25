@@ -52,6 +52,11 @@ pub struct TelnetConnectParams {
     /// A WireGuard profile whose tunnel (already up) carries the connection.
     #[serde(default)]
     pub wireguard: Option<String>,
+    /// A Proxmox text console instead of a Telnet device: a container's, a
+    /// VM's serial port or a node's shell, through the session's open
+    /// connection (see `crate::proxmox`).
+    #[serde(default)]
+    pub proxmox: Option<crate::proxmox::ConsoleTarget>,
 }
 
 enum Command {

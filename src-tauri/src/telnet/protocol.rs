@@ -51,6 +51,10 @@ pub enum TelnetMode {
     /// No Telnet at all: bytes go through untouched. For the raw TCP ports
     /// of console servers in front of serial-only gear.
     Raw,
+    /// A Proxmox text console (termproxy): no Telnet, what is typed goes as
+    /// `0:<length>:<bytes>` and a new size as `1:<cols>:<rows>:`. Set by
+    /// the backend for a console tab only.
+    Proxmox,
 }
 
 /// What the Enter key sends.
@@ -143,12 +147,20 @@ impl TelnetCodec {
     }
 
     fn telnet(&self) -> bool {
-        self.options.mode != TelnetMode::Raw
+        !matches!(self.options.mode, TelnetMode::Raw | TelnetMode::Proxmox)
+    }
+
+    fn proxmox(&self) -> bool {
+        self.options.mode == TelnetMode::Proxmox
     }
 
     /// What to send as soon as the connection is up: in active mode, the
     /// options Reach wants. Nothing otherwise.
     pub fn start(&mut self) -> Vec<u8> {
+        // A Proxmox console starts at 80x24: it is told the terminal's size.
+        if self.proxmox() {
+            return crate::proxmox::ws::term_resize(self.cols, self.rows);
+        }
         if self.options.mode != TelnetMode::Active {
             return Vec::new();
         }
@@ -328,6 +340,9 @@ impl TelnetCodec {
         }
         self.cols = cols;
         self.rows = rows;
+        if self.proxmox() {
+            return crate::proxmox::ws::term_resize(cols, rows);
+        }
         if self.telnet() && self.local[OPT_NAWS as usize].enabled {
             self.naws()
         } else {
@@ -340,6 +355,9 @@ impl TelnetCodec {
     /// by NUL, which the server takes off again. No newline or backspace
     /// changes.
     pub fn encode_raw(&self, input: &[u8]) -> Vec<u8> {
+        if self.proxmox() {
+            return crate::proxmox::ws::term_input(input);
+        }
         if !self.telnet() {
             return input.to_vec();
         }
@@ -357,6 +375,10 @@ impl TelnetCodec {
 
     /// What the user typed, as it goes on the wire.
     pub fn encode(&self, input: &[u8]) -> Vec<u8> {
+        // A Proxmox console is a terminal of its own: keys go as typed.
+        if self.proxmox() {
+            return crate::proxmox::ws::term_input(input);
+        }
         let telnet = self.telnet();
         let binary_out = self.local[OPT_BINARY as usize].enabled;
         let mut out = Vec::with_capacity(input.len() + 4);
@@ -690,5 +712,17 @@ mod tests {
             a.feed(b"router login: "),
             Some(LoginStep::Username("u".into()))
         );
+    }
+
+    #[test]
+    fn a_proxmox_console_frames_what_is_typed() {
+        let opts = TelnetOptions { mode: TelnetMode::Proxmox, newline: TelnetNewline::Crlf, backspace: TelnetBackspace::CtrlH };
+        let mut c = TelnetCodec::new(opts, 100, 30);
+        assert_eq!(c.start(), b"1:100:30:");
+        assert_eq!(c.encode(b"ls\r\x7f"), b"0:4:ls\r\x7f");
+        assert_eq!(c.encode_raw(&[0xff]), [b"0:1:".as_slice(), &[0xff]].concat());
+        assert_eq!(c.receive(&[0xff, b'a']).data, vec![0xff, b'a']);
+        assert_eq!(c.resize(120, 40), b"1:120:40:");
+        assert!(c.resize(120, 40).is_empty());
     }
 }

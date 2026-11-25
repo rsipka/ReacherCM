@@ -3,10 +3,13 @@
 	import type { VaultInfo } from '#lib/state/vault.svelte.js';
 	import DistroIcon from './DistroIcon.svelte';
 	import { getDistroIcon, defaultSessionOs } from '#lib/data/distro-icons.js';
+	import { brandIcons } from '#lib/data/brand-icons.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { sessionAddress } from '#lib/utils/address.js';
 	import { addressLabelled, hasAltAddresses, sessionAddresses } from '#lib/sessions/addresses.js';
 	import { isMobile, isWindows } from '#lib/platform.js';
+	import { unsupportedReason } from '#lib/sessions/support.js';
+	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
 	import { tooltip } from '#lib/utils/tooltip.js';
 	import { longPress } from '#lib/utils/longPress.js';
@@ -42,7 +45,14 @@
 	}
 
 	let { session, vault = null, onconnect, onedit, ondelete, oncontextmenu, ondragstart, ondragend, selecting = false, selected = false, onselect, viaName = null, open = false, current = false, connected = false }: Props = $props();
-	let unavailable = $derived((session.kind === 'wsl' && !isWindows()) || ((session.kind === 'serial' || session.kind === 'winbox' || session.kind === 'ftp' || !!session.files || !!session.x11_desktop) && isMobile()));
+	/** This device cannot open it (WinBox on a phone, WSL off Windows): the
+	 *  row stays, greyed, and a tap says why. Editing and the menu still work. */
+	let unavailableKey = $derived(unsupportedReason(session, { mobile: isMobile(), windows: isWindows() }));
+	let unavailable = $derived(!!unavailableKey);
+
+	function explainUnavailable(): void {
+		if (unavailableKey) addToast(t(unavailableKey), 'info');
+	}
 	/** A session that opens in the file manager: which protocol, for its badge. */
 	let filesBadge = $derived(session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
 	/** WinBox only ever manages a MikroTik, a Server management session a
@@ -54,7 +64,10 @@
 	let needsDouble = $derived(settings.doubleClickToOpen && !selecting);
 
 	function onMain(e: MouseEvent): void {
-		if (unavailable && !selecting) return;
+		if (unavailable && !selecting) {
+			explainUnavailable();
+			return;
+		}
 		if (onselect && (selecting || e.ctrlKey || e.metaKey || e.shiftKey)) {
 			e.preventDefault();
 			onselect(e);
@@ -68,7 +81,7 @@
 	}
 
 	let mainTitle = $derived.by(() => {
-		if (unavailable) return t('session.wsl_windows_only');
+		if (unavailable && !selecting) return t(unavailableKey!);
 		if (selecting) return t('session.select_name', { name: session.name });
 		return t(needsDouble ? 'session.double_click_connect_to' : 'session.connect_to', { name: session.name });
 	});
@@ -182,7 +195,7 @@
 			<circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
 		</svg>
 	</span>
-	<button class="card-main" onclick={onMain} ondblclick={onMainDouble} disabled={unavailable && !selecting} aria-pressed={selecting ? selected : undefined} title={showDetails ? undefined : mainTitle} use:tooltip={showDetails ? detailsTooltip : ''} >
+	<button class="card-main" onclick={onMain} ondblclick={onMainDouble} aria-disabled={unavailable && !selecting} aria-pressed={selecting ? selected : undefined} title={showDetails ? undefined : mainTitle} use:tooltip={showDetails ? detailsTooltip : ''} >
 		<!-- Every row has the icon's place, so names line up whether or not the
 		     OS is known yet: its logo once detected, until then a quiet mark for
 		     the kind of session. -->
@@ -201,6 +214,9 @@
 					{:else if session.kind === 'web'}
 						<!-- A globe: a device's web page. -->
 						<circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+					{:else if session.kind === 'proxmox'}
+						<!-- Proxmox's own mark. -->
+						<path d={brandIcons.proxmox.path} fill="currentColor" stroke="none" />
 					{:else if session.kind === 'bmc'}
 						<!-- A rack server with a pulse: its management controller. -->
 						<path d="M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01M11 17h2l1-2 2 4 1-2h1" />
@@ -295,7 +311,7 @@
 				<span class="session-detail">
 					{session.username ? `${session.username} · ` : ''}{session.wsl_distro || 'WSL'}
 					{#if unavailable}
-						· <span class="unavailable-text">({t('session.wsl_windows_only')})</span>
+						· <span class="unavailable-text">({t(unavailableKey!)})</span>
 					{/if}
 				</span>
 			{:else}
@@ -328,6 +344,9 @@
 		{:else if filesBadge}
 			<!-- Opens in the file manager, not a terminal. -->
 			<span class="auth-badge" title={authLabel}>{unavailable ? t('serial.desktop_only_short') : filesBadge}</span>
+		{:else if session.kind === 'proxmox'}
+			<!-- Talks to Proxmox VE's API. -->
+			<span class="auth-badge" title={t('proxmox.badge_hint')}>{session.port === 8007 ? (session.proxmox?.token_id ? t('proxmox.badge_pbs_token') : 'PBS') : session.proxmox?.token_id ? t('proxmox.badge_token') : t('proxmox.badge')}</span>
 		{:else if session.kind === 'bmc'}
 			<!-- Talks Redfish to the server's management controller. -->
 			<span class="auth-badge" title={t('bmc.badge_hint')}>{t('bmc.badge')}</span>
@@ -347,7 +366,7 @@
 	</button>
 
 	<div class="session-actions">
-		<button class="action-btn connect-btn" disabled={unavailable} onclick={onconnect} title={t('session.connect')} aria-label={t('session.connect_to', { name: session.name })}>
+		<button class="action-btn connect-btn" aria-disabled={unavailable} onclick={unavailable ? explainUnavailable : onconnect} title={unavailable ? t(unavailableKey!) : t('session.connect')} aria-label={t('session.connect_to', { name: session.name })}>
 			<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
 				<path d="M8 5v14l11-7z"/>
 			</svg>

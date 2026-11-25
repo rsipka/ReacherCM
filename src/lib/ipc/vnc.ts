@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core';
 import type { MouseAction, RdpStatus } from '#lib/ipc/rdp.js';
 import type { SecretRef } from '#lib/ipc/pwmanager.js';
 import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
+import type { ProxmoxConsole } from '#lib/ipc/proxmox.js';
 
 /**
  * Remote desktop over VNC. The backend sends frames in the RDP wire format
@@ -23,6 +24,9 @@ export interface VncConnectParams {
 	sessionId?: string | null;
 	/** A saved SSH session to reach the server through. */
 	viaSessionId?: string | null;
+	/** A Proxmox guest's display: opened through the Proxmox session's tab,
+	 *  with a password made for each connect. */
+	proxmox?: ProxmoxConsole | null;
 }
 
 export type VncStatus = RdpStatus;
