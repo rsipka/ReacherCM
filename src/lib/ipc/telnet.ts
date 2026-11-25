@@ -37,7 +37,8 @@ export interface TelnetConnectParams {
 
 /** Connect; output then arrives as `telnet-data-{id}` until `telnet-exit-{id}`. */
 export async function telnetConnect(id: string, params: TelnetConnectParams, cols: number, rows: number): Promise<void> {
-	if (params.wireguard) await ensureWireguard(params.wireguard);
+	// Without the tunnel when the person chose to connect straight.
+	const wireguard = params.wireguard && (await ensureWireguard(params.wireguard)) ? params.wireguard : null;
 	return invoke('telnet_connect', {
 		params: {
 			id,
@@ -49,7 +50,7 @@ export async function telnetConnect(id: string, params: TelnetConnectParams, col
 			username: params.username || null,
 			password: params.password || null,
 			passwordRef: params.passwordRef ?? null,
-			wireguard: params.wireguard ?? null,
+			wireguard,
 			proxmox: params.proxmox ?? null,
 		},
 		sessionId: params.sessionId ?? null,

@@ -193,7 +193,8 @@ export function sessionLogStop(stream: string): Promise<boolean> {
 }
 
 export async function sshConnect(params: SshConnectParams): Promise<string> {
-  if (params.wireguard) await ensureWireguard(params.wireguard);
+  // Without the tunnel when the person chose to connect straight.
+  const wireguard = params.wireguard && (await ensureWireguard(params.wireguard)) ? params.wireguard : null;
   return invoke<string>('ssh_connect', {
     id: params.id,
     host: params.host,
@@ -220,7 +221,7 @@ export async function sshConnect(params: SshConnectParams): Promise<string> {
     tmux: params.tmux ?? null,
     x11Desktop: params.x11Desktop ?? null,
     terminal: params.terminal ?? null,
-    wireguard: params.wireguard ?? null,
+    wireguard,
   });
 }
 

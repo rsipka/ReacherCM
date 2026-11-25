@@ -202,7 +202,14 @@ pub fn wireguard_generate_key() -> (String, String) {
 async fn session_tunnel(state: &AppState, session_id: Option<&str>, host: &str, port: u16) -> Option<String> {
     let id = session_id.filter(|s| !s.is_empty())?;
     let stored = crate::ipc::session_commands::stored_session(state, id).await.ok()?;
-    crate::ipc::ssh_commands::wireguard_route(&stored, host, port).map(str::to_owned)
+    let wg = crate::ipc::ssh_commands::wireguard_route(&stored, host, port)?;
+    // Off: the webview asked first, and the person chose to connect without
+    // it (their computer's own VPN, or the same network).
+    if !crate::wireguard::manager::is_up(wg).await {
+        tracing::info!("Session {id}: WireGuard tunnel {wg} is off; connecting without it");
+        return None;
+    }
+    Some(wg.to_owned())
 }
 
 /// For a client that opens its own TCP connection (RDP, VNC, SPICE,

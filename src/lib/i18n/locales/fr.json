@@ -4573,5 +4573,6 @@
   "sync_account.mobile_vault_link_help": "Sur un appareil de confiance dont le coffre personnel est synchronisé, ouvrez Synchronisation et sauvegarde et affichez son code d’association. Scannez-le ou collez-le sur cet appareil.",
   "sync_account.vault_link_confirm": "Cet appareil ouvrira le coffre personnel associé. Son coffre local précédent y restera et pourra être restauré dans Synchronisation et sauvegarde.",
   "sync_account.local_vault_restore": "Restaurer le coffre local précédent",
-  "sync_account.local_vault_restore_confirm": "Rouvrir le coffre local précédent ? Le coffre associé reste sur l’appareil et sur le serveur. L’ancien mot de passe peut être nécessaire."
+  "sync_account.local_vault_restore_confirm": "Rouvrir le coffre local précédent ? Le coffre associé reste sur l’appareil et sur le serveur. L’ancien mot de passe peut être nécessaire.",
+  "wireguard.connect_direct": "Se connecter sans tunnel"
 }

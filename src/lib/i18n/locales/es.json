@@ -4573,5 +4573,6 @@
   "sync_account.mobile_vault_link_help": "En un dispositivo de confianza con la sincronización de la bóveda personal activada, abre Sincronización y copias y muestra su código de vinculación. Escanéalo o pégalo en este dispositivo.",
   "sync_account.vault_link_confirm": "Este dispositivo abrirá la bóveda personal vinculada. Su bóveda local anterior seguirá en el dispositivo y podrás recuperarla en Sincronización y copias.",
   "sync_account.local_vault_restore": "Restaurar la bóveda local anterior",
-  "sync_account.local_vault_restore_confirm": "¿Volver a abrir la bóveda local anterior? La bóveda vinculada seguirá en el dispositivo y en el servidor. Puede que necesites la contraseña anterior."
+  "sync_account.local_vault_restore_confirm": "¿Volver a abrir la bóveda local anterior? La bóveda vinculada seguirá en el dispositivo y en el servidor. Puede que necesites la contraseña anterior.",
+  "wireguard.connect_direct": "Conectar sin túnel"
 }

@@ -5,7 +5,7 @@
  */
 
 import { wireguardList, wireguardRunning, wireguardSessionRoute, wireguardUp, type WgProfileInfo } from '#lib/ipc/wireguard.js';
-import { ask } from '#lib/state/ask.svelte.js';
+import { askChoice } from '#lib/state/ask.svelte.js';
 import { t } from '#lib/state/i18n.svelte.js';
 
 let profiles = $state<WgProfileInfo[]>([]);
@@ -51,26 +51,34 @@ export function wireguardName(id: string | null | undefined): string {
 }
 
 /** Tunnels being brought up, so two tabs of the same session ask once. */
-const starting = new Map<string, Promise<void>>();
+const starting = new Map<string, Promise<boolean>>();
 
 /**
  * Makes sure the tunnel of profile `id` is up before a connection through
  * it: nothing to do when it is, else the person is asked and it is brought
- * up. Rejects when they say no or the server does not answer.
+ * up. Resolves false when they chose to connect without it (the computer's
+ * own VPN is on, or they are on the same network). Rejects when they
+ * cancel or the server does not answer.
  */
-export function ensureWireguard(id: string): Promise<void> {
+export function ensureWireguard(id: string): Promise<boolean> {
 	const already = starting.get(id);
 	if (already) return already;
 	const job = (async () => {
 		const running = await wireguardRunning().catch(() => [] as string[]);
-		if (running.includes(id)) return;
+		if (running.includes(id)) return true;
 		if (!loaded || !profiles.some((p) => p.id === id)) await refreshWireguard();
 		const p = profiles.find((x) => x.id === id);
 		if (!p) throw new Error(t('wireguard.missing_error'));
-		const ok = await ask(t('wireguard.confirm_up', { name: p.name, endpoint: p.endpoint ?? '' }), { confirmLabel: t('wireguard.turn_on') });
-		if (!ok) throw new Error(t('wireguard.declined', { name: p.name }));
+		const choice = await askChoice(t('wireguard.confirm_up', { name: p.name, endpoint: p.endpoint ?? '' }), {
+			confirmLabel: t('wireguard.turn_on'),
+			confirmVariant: 'primary',
+			otherLabel: t('wireguard.connect_direct')
+		});
+		if (choice === 'other') return false;
+		if (choice === 'cancel') throw new Error(t('wireguard.declined', { name: p.name }));
 		await wireguardUp(id, true);
 		await refreshWireguard();
+		return true;
 	})();
 	starting.set(id, job);
 	job.finally(() => starting.delete(id)).catch(() => {});
@@ -85,5 +93,6 @@ export function ensureWireguard(id: string): Promise<void> {
 export async function ensureSessionWireguard(sessionId: string | null | undefined, host?: string, port?: number): Promise<void> {
 	if (!sessionId) return;
 	const id = await wireguardSessionRoute(sessionId, host, port).catch(() => null);
+	// Without the tunnel: the backend connects straight when it is off.
 	if (id) await ensureWireguard(id);
 }

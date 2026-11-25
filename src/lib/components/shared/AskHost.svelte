@@ -24,7 +24,10 @@
 	{#snippet actions()}
 		<span class="buttons" bind:this={buttons}>
 			<Button variant="secondary" size="sm" onclick={() => answer(false)}>{t('common.cancel')}</Button>
-			<Button variant="danger" size="sm" onclick={() => answer(true)}>{question?.options.confirmLabel ?? t('common.confirm')}</Button>
+			{#if question?.options.otherLabel}
+				<Button variant="secondary" size="sm" onclick={() => answer('other')}>{question.options.otherLabel}</Button>
+			{/if}
+			<Button variant={question?.options.confirmVariant ?? 'danger'} size="sm" onclick={() => answer(true)}>{question?.options.confirmLabel ?? t('common.confirm')}</Button>
 		</span>
 	{/snippet}
 </Modal>
