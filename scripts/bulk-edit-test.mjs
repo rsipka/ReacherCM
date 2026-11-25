@@ -68,6 +68,21 @@ check(
 	changedFields({ auth: { type: 'Agent' }, fields_remove: ['x'], telnet: {}, tmux: { mouse: true }, via_session: 'clear' }).join() === 'auth,custom_fields,tmux,via_session'
 );
 
+console.log('Newer fields');
+const multi = { ...base, id: 'multi', alt_addresses: [{ host: '10.0.0.2' }] };
+const woken = { ...base, id: 'wol', wol: { mac: '00:11:22:33:44:55' } };
+check('WireGuard on SSH, RDP and VNC, not WSL', appliesTo('wireguard', ssh) && appliesTo('wireguard', rdp) && appliesTo('wireguard', vnc) && !appliesTo('wireguard', wsl));
+check('connect mode only with other addresses', appliesTo('connect_mode', multi) && !appliesTo('connect_mode', ssh) && appliesTo('address_check', multi));
+check('terminal settings and files on SSH only', appliesTo('terminal', ssh) && !appliesTo('terminal', wsl) && appliesTo('files', ssh) && !appliesTo('files', rdp));
+check('RDP settings on RDP only', appliesTo('rdp', rdp) && !appliesTo('rdp', ssh));
+check('Wake-on-LAN only where a MAC is set', appliesTo('wol', woken) && !appliesTo('wol', ssh));
+check('favorite everywhere, OS icon not on RDP or WSL', countApplying('favorite', all) === all.length && appliesTo('os_icon', vnc) && !appliesTo('os_icon', rdp) && !appliesTo('os_icon', wsl));
+check(
+	'new changes are listed',
+	changedFields({ os_icon: 'clear', rdp: { admin: true }, terminal: {}, wireguard: { set: 'wg' }, favorite: false, wol: { port: 'clear' } }).join() ===
+		'wireguard,rdp,wol,favorite,os_icon'
+);
+
 console.log('Summaries');
 const users = summarize([ssh, rdp, linked, { ...base, username: '' }], (s) => s.username);
 check('mixed values have no common value', users.same === null);

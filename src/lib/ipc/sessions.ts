@@ -753,6 +753,56 @@ export interface SessionPatch {
   tmux?: { mode?: 'off' | 'attach' | 'ask' | 'inherit'; mouse?: boolean };
   /** VNC: the saved SSH session it goes through, or directly. */
   via_session?: BulkChange<string>;
+  /** A WireGuard profile the connection goes through, or none. */
+  wireguard?: BulkChange<string>;
+  /** Sessions with other addresses: how one is picked. */
+  connect_mode?: ConnectMode;
+  /** Sessions with other addresses: check them first; `'clear'`: as Settings says. */
+  address_check?: BulkChange<boolean>;
+  /** SSH: open in the file manager; `'clear'`: a terminal. */
+  files?: BulkChange<FilesProtocol>;
+  /** SSH: terminal type, Backspace and encoding; `'clear'`: the default. */
+  terminal?: { term?: BulkChange<string>; backspace?: BulkChange<'del' | 'ctrlh'>; encoding?: BulkChange<string> };
+  /** RDP: the settings to change; `'clear'`: the default. */
+  rdp?: RdpPatch;
+  /** Sessions with a Wake-on-LAN MAC: where the packet goes. */
+  wol?: { broadcast?: BulkChange<string>; port?: BulkChange<number> };
+  favorite?: boolean;
+  /** The list icon by OS id (`unknown`: none), kept on connect; `'clear'`:
+   *  found on connect again (SSH), else none. */
+  os_icon?: BulkChange<string>;
+}
+
+/** An RD Gateway set on many sessions at once. */
+export interface RdpGatewayPatch {
+  host: string;
+  detect: boolean;
+  rpc: boolean;
+  user?: string | null;
+  password?: string | null;
+}
+
+/** The RDP settings a bulk edit changes (see src-tauri/src/ipc/session_bulk.rs). */
+export interface RdpPatch {
+  client?: 'ironrdp' | 'freerdp';
+  clipboard?: BulkChange<'text' | 'off'>;
+  forward_lock_keys?: boolean;
+  resolution?: BulkChange<string>;
+  scale?: BulkChange<number>;
+  color_depth?: BulkChange<number>;
+  keyboard_layout?: BulkChange<number>;
+  sound?: BulkChange<'off'>;
+  audio_quality?: BulkChange<'dynamic' | 'medium' | 'high'>;
+  performance?: BulkChange<'fast' | 'best'>;
+  compression?: boolean;
+  keepalive?: BulkChange<number>;
+  jiggler?: BulkChange<number>;
+  admin?: boolean;
+  all_drives?: boolean;
+  auth?: BulkChange<'kerberos'>;
+  kdc?: BulkChange<string>;
+  gateway?: BulkChange<RdpGatewayPatch>;
+  files_port?: BulkChange<number>;
 }
 
 export interface BulkOutcome {

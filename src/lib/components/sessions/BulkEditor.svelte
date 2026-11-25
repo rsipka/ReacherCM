@@ -10,6 +10,10 @@
 	import TerminalThemeList from '#lib/components/terminal/TerminalThemeList.svelte';
 	import KeyPicker from './KeyPicker.svelte';
 	import BulkSelectRow from './BulkSelectRow.svelte';
+	import OsIconSelect from './OsIconSelect.svelte';
+	import { wireguardProfiles } from '#lib/state/wireguard.svelte.js';
+	import { osChoices } from '#lib/data/distro-icons.js';
+	import { RDP_INTERVALS, RDP_KEYBOARDS, RDP_RESOLUTIONS, RDP_SCALES, rdpIntervalLabel } from '#lib/sessions/rdp-choices.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { findTerminalTheme, terminalPalette } from '#lib/state/terminal-themes.svelte.js';
 	import {
@@ -17,8 +21,11 @@
 		type AuthMethod,
 		type BulkResult,
 		type JumpHostConfig,
+		type RdpPatch,
 		type SessionConfig,
-		type SessionPatch
+		type SessionPatch,
+		TERMINAL_ENCODINGS,
+		TERMINAL_TYPES
 	} from '#lib/ipc/sessions.js';
 	import { savedCredentialCreate, credentialsFor, type SavedCredential } from '#lib/ipc/savedCredentials.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
@@ -103,6 +110,34 @@
 	let tmuxMode = $state(KEEP);
 	let tmuxMouse = $state(KEEP);
 	let via = $state(KEEP);
+	// Phase 3: settings added to sessions since.
+	let wireguard = $state(KEEP);
+	let connectMode = $state(KEEP);
+	let addressCheck = $state(KEEP);
+	let filesMode = $state(KEEP);
+	let termType = $state<string | null>(null);
+	let termTypeClear = $state(false);
+	let backspace = $state(KEEP);
+	let encoding = $state(KEEP);
+	/** RDP choices by row key (see `rdpRows`): KEEP, or an option's value. */
+	let rdpSel = $state<Record<string, string>>({});
+	let rdpKdc = $state<string | null>(null);
+	let rdpKdcClear = $state(false);
+	let gatewayMode = $state(KEEP);
+	let gatewayHost = $state('');
+	let gatewayDetect = $state(false);
+	let gatewayRpc = $state(false);
+	let gatewayOwnLogin = $state(false);
+	let gatewayUser = $state('');
+	let gatewayPass = $state('');
+	let filesPort = $state<string | null>(null);
+	let filesPortClear = $state(false);
+	let wolBroadcast = $state<string | null>(null);
+	let wolBroadcastClear = $state(false);
+	let wolPort = $state<string | null>(null);
+	let wolPortClear = $state(false);
+	let favorite = $state(KEEP);
+	let osIcon = $state(KEEP);
 
 	let phase = $state<'edit' | 'confirm' | 'saving' | 'report'>('edit');
 	let error = $state('');
@@ -126,6 +161,12 @@
 		shellClear = false;
 		fieldsSet = [];
 		fieldsRemove = '';
+		wireguard = connectMode = addressCheck = filesMode = backspace = encoding = gatewayMode = favorite = osIcon = KEEP;
+		termType = rdpKdc = filesPort = wolBroadcast = wolPort = null;
+		termTypeClear = rdpKdcClear = filesPortClear = wolBroadcastClear = wolPortClear = false;
+		rdpSel = Object.fromEntries(rdpRows.map((r) => [r.key, KEEP]));
+		gatewayHost = gatewayUser = gatewayPass = '';
+		gatewayDetect = gatewayRpc = gatewayOwnLogin = false;
 		tagsAdd = tagsRemove = notesText = '';
 		notesOp = 'keep';
 		phase = 'edit';
@@ -258,6 +299,116 @@
 	let withNotes = $derived(sessions.filter((s) => s.notes?.trim()).length);
 	let allTags = $derived(summarize(sessions.flatMap((s) => s.tags.map((tag) => ({ tag }))), (x) => x.tag));
 
+	// ---- Phase 3: summaries and the RDP rows ----------------------------------
+	/** What the sessions that take `field` have now, as `name` shows it. */
+	const nowOf = (field: BulkField, name: (s: SessionConfig) => string) => summarize(sessions.filter((s) => appliesTo(field, s)), name);
+	/** The Keep option's text: the shared value or Mixed. */
+	const currentOf = (summary: ReturnType<typeof summarize>): string =>
+		summary.counts.length === 0 ? '' : summary.same === null ? t('bulk.mixed') : summary.same;
+	const onOffDefault = (v: boolean | null | undefined): string =>
+		v == null ? t('history.session_default') : v ? t('session.monitoring_on') : t('session.monitoring_off');
+	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
+	const wgName = (id: string | null | undefined): string =>
+		!id ? t('wireguard.none') : (wgProfiles.find((p) => p.id === id)?.name ?? t('wireguard.missing'));
+	let wireguards = $derived(nowOf('wireguard', (s) => wgName(s.wireguard_id)));
+	const connectModeName = (m: string | null | undefined): string => t(`session.connect_mode_${m || 'auto'}`);
+	let connectModes = $derived(nowOf('connect_mode', (s) => connectModeName(s.connect_mode)));
+	let addressChecks = $derived(nowOf('address_check', (s) => onOffDefault(s.address_check)));
+	const filesName = (f: string | null | undefined): string => (f ? t(`bulk.opens_${f}`) : t('bulk.opens_terminal'));
+	let filesNow = $derived(nowOf('files', (s) => filesName(s.files)));
+	let termTypes = $derived(nowOf('terminal', (s) => s.terminal?.term ?? ''));
+	let backspaces = $derived(nowOf('terminal', (s) => (s.terminal?.backspace === 'ctrlh' ? 'Ctrl+H (^H)' : 'DEL (^?)')));
+	let encodings = $derived(nowOf('terminal', (s) => s.terminal?.encoding ?? 'UTF-8'));
+	let wolBroadcasts = $derived(nowOf('wol', (s) => s.wol?.broadcast ?? ''));
+	let wolPorts = $derived(nowOf('wol', (s) => (s.wol?.port ? String(s.wol.port) : '')));
+	let favorites = $derived(nowOf('favorite', (s) => (s.favorite ? t('bulk.favorite_on') : t('bulk.favorite_off'))));
+	const osOptions = osChoices();
+	const osTitle = (id: string): string => (id === 'unknown' ? t('session.os_none') : (osOptions.find((o) => o.id === id)?.title ?? id));
+	/** Whether SSH sessions are among them: they can go back to Automatic. */
+	let osAuto = $derived(sessions.some((s) => appliesTo('os_icon', s) && (s.kind ?? 'ssh') === 'ssh'));
+	let osIcons = $derived(
+		nowOf('os_icon', (s) => (s.os_manual ? osTitle(s.detected_os ?? 'unknown') : (s.kind ?? 'ssh') === 'ssh' ? t('session.os_auto') : s.detected_os ? osTitle(s.detected_os) : t('session.os_none')))
+	);
+	let osIconOptions = $derived([
+		{ value: KEEP, label: t('bulk.keep_value', { value: currentOf(osIcons) }), osId: osIcons.same !== null ? (osOptions.find((o) => o.title === osIcons.same)?.id ?? null) : null },
+		{ value: '', label: osAuto ? t('session.os_auto') : t('session.os_none'), osId: null },
+		...(osAuto ? [{ value: 'unknown', label: t('session.os_none'), osId: null }] : []),
+		...osOptions.map((o) => ({ value: o.id, label: o.title, osId: o.id }))
+	]);
+
+	interface RdpRow {
+		key: keyof RdpPatch;
+		label: string;
+		options: { value: string; label: string }[];
+		/** The session's value as one of `options`' labels. */
+		now: (s: SessionConfig) => string;
+		hint?: string;
+	}
+	const ON_OFF = () => [
+		{ value: 'on', label: t('session.monitoring_on') },
+		{ value: 'off', label: t('session.monitoring_off') }
+	];
+	const optLabel = (options: { value: string; label: string }[], v: string): string => options.find((o) => o.value === v)?.label ?? v;
+	const intervalOptions = () => [{ value: '', label: t('session.rdp_interval_off') }, ...RDP_INTERVALS.map((v) => ({ value: v, label: rdpIntervalLabel(v) }))];
+	/** The RDP settings that make sense on many desktops at once. '' is the
+	 *  default, sent as a clear. */
+	let rdpRows = $derived.by((): RdpRow[] => {
+		const rows: (Omit<RdpRow, 'now'> & { get: (s: SessionConfig) => string })[] = [];
+		const add = (key: keyof RdpPatch, label: string, options: { value: string; label: string }[], get: (s: SessionConfig) => string, hint?: string) =>
+			rows.push({ key, label, options, get, hint });
+		add('client', t('session.rdp_client'), [{ value: 'ironrdp', label: t('session.rdp_client_ironrdp') }, { value: 'freerdp', label: t('session.rdp_client_freerdp') }], (s) => (s.rdp_use_freerdp ? 'freerdp' : 'ironrdp'));
+		add('clipboard', t('session.rdp_clipboard'), [{ value: '', label: t('session.rdp_clipboard_all') }, { value: 'text', label: t('session.rdp_clipboard_text') }, { value: 'off', label: t('session.rdp_clipboard_off') }], (s) => s.rdp_clipboard ?? '');
+		add('forward_lock_keys', t('session.rdp_forward_lock_keys'), ON_OFF(), (s) => (s.rdp_forward_lock_keys === false ? 'off' : 'on'));
+		add('resolution', t('session.rdp_resolution'), [{ value: '', label: t('session.rdp_resolution_fit') }, ...RDP_RESOLUTIONS.map((r) => ({ value: r, label: r.replace('x', ' × ') }))], (s) => s.rdp?.resolution ?? '');
+		add('scale', t('session.rdp_scale'), [{ value: '', label: t('session.rdp_scale_auto') }, ...RDP_SCALES.map((v) => ({ value: v, label: `${v} %` }))], (s) => (s.rdp?.scale ? String(s.rdp.scale) : ''));
+		add('color_depth', t('session.rdp_colors'), [{ value: '', label: t('session.rdp_colors_32') }, { value: '16', label: t('session.rdp_colors_16') }], (s) => (s.rdp?.color_depth === 16 ? '16' : ''));
+		add('keyboard_layout', t('session.rdp_keyboard'), [{ value: '', label: t('session.rdp_keyboard_default') }, ...RDP_KEYBOARDS.map(([id, label]) => ({ value: id, label }))], (s) => (s.rdp?.keyboard_layout ? s.rdp.keyboard_layout.toString(16).toUpperCase().padStart(4, '0') : ''));
+		add('sound', t('session.rdp_sound'), [{ value: '', label: t('session.rdp_sound_here') }, { value: 'off', label: t('session.rdp_sound_off') }], (s) => s.rdp?.sound ?? '');
+		add('audio_quality', t('session.rdp_audio_quality'), [{ value: '', label: t('session.rdp_audio_high') }, { value: 'medium', label: t('session.rdp_audio_medium') }, { value: 'dynamic', label: t('session.rdp_audio_dynamic') }], (s) => (s.rdp?.audio_quality === 'high' ? '' : (s.rdp?.audio_quality ?? '')));
+		add('performance', t('session.rdp_performance'), [{ value: '', label: t('session.rdp_performance_default') }, { value: 'fast', label: t('session.rdp_performance_fast') }, { value: 'best', label: t('session.rdp_performance_best') }], (s) => s.rdp?.performance ?? '');
+		add('keepalive', t('session.rdp_keepalive'), intervalOptions(), (s) => (s.rdp?.keepalive ? String(s.rdp.keepalive) : ''));
+		add('jiggler', t('session.rdp_jiggler'), intervalOptions(), (s) => (s.rdp?.jiggler ? String(s.rdp.jiggler) : ''));
+		add('compression', t('session.rdp_compression'), ON_OFF(), (s) => (s.rdp?.compression === false ? 'off' : 'on'));
+		add('admin', t('session.rdp_admin'), ON_OFF(), (s) => (s.rdp?.admin ? 'on' : 'off'));
+		add('all_drives', t('session.rdp_share_all_drives'), ON_OFF(), (s) => (s.rdp?.all_drives ? 'on' : 'off'), t('session.rdp_share_all_drives_hint'));
+		add('auth', t('session.rdp_auth'), [{ value: '', label: t('session.rdp_auth_ntlm') }, { value: 'kerberos', label: t('session.rdp_auth_kerberos') }], (s) => s.rdp?.auth ?? '');
+		return rows.map((r) => ({ ...r, now: (s: SessionConfig) => optLabel(r.options, r.get(s)) }));
+	});
+	let rdpSessions = $derived(sessions.filter((s) => appliesTo('rdp', s)));
+	const rdpNow = (row: RdpRow) => summarize(rdpSessions, row.now);
+	let gateways = $derived(summarize(rdpSessions, (s) => s.rdp?.gateway ?? ''));
+	let kdcs = $derived(summarize(rdpSessions, (s) => s.rdp?.kdc ?? ''));
+	let filesPorts = $derived(summarize(rdpSessions, (s) => String(s.rdp?.files_port ?? 22)));
+	let kerberosChosen = $derived(rdpSel.auth === 'kerberos' || (rdpSel.auth === KEEP && rdpSessions.some((s) => s.rdp?.auth === 'kerberos')));
+
+	/** A row's choice as the patch carries it. */
+	function rdpValue(key: keyof RdpPatch, v: string): RdpPatch[keyof RdpPatch] {
+		switch (key) {
+			case 'client':
+				return v as 'ironrdp' | 'freerdp';
+			case 'forward_lock_keys':
+			case 'compression':
+			case 'admin':
+			case 'all_drives':
+				return v === 'on';
+			case 'scale':
+			case 'color_depth':
+			case 'keepalive':
+			case 'jiggler':
+				return v === '' ? 'clear' : { set: Number(v) };
+			case 'keyboard_layout':
+				return v === '' ? 'clear' : { set: parseInt(v, 16) };
+			default:
+				return (v === '' ? 'clear' : { set: v }) as RdpPatch[keyof RdpPatch];
+		}
+	}
+
+	const validPort = (v: string | null): boolean => v !== null && /^\d+$/.test(v.trim()) && Number(v) > 0 && Number(v) < 65536;
+	let gatewayValid = $derived(/^(https:\/\/)?[A-Za-z0-9.-]+(:\d{1,5})?\/?$/.test(gatewayHost.trim()));
+	let rdpPortInvalid = $derived(!filesPortClear && !!filesPort?.trim() && !validPort(filesPort));
+	let wolPortInvalid = $derived(!wolPortClear && !!wolPort?.trim() && !validPort(wolPort));
+	let termTypeInvalid = $derived(!termTypeClear && !!termType?.trim() && /\s/.test(termType.trim()));
+
 	function placeholderOf(summary: ReturnType<typeof summarize>, blank: string): string {
 		if (summary.counts.length === 0) return '';
 		return summary.same !== null ? summary.same || blank : t('bulk.mixed');
@@ -333,6 +484,46 @@
 		if (tmuxMouse !== KEEP) tmux.mouse = tmuxMouse === 'on';
 		if (Object.keys(tmux).length) p.tmux = tmux;
 		if (via !== KEEP) p.via_session = via ? { set: via } : 'clear';
+		if (wireguard !== KEEP) p.wireguard = wireguard ? { set: wireguard } : 'clear';
+		if (connectMode !== KEEP) p.connect_mode = connectMode as 'auto' | 'ask' | 'main';
+		if (addressCheck !== KEEP) p.address_check = addressCheck ? { set: addressCheck === 'on' } : 'clear';
+		if (filesMode !== KEEP) p.files = filesMode ? { set: filesMode as 'sftp' | 'scp' } : 'clear';
+		const term: NonNullable<SessionPatch['terminal']> = {};
+		if (termTypeClear) term.term = 'clear';
+		else if (termType?.trim() && !termTypeInvalid) term.term = { set: termType.trim() };
+		if (backspace !== KEEP) term.backspace = backspace === 'ctrlh' ? { set: 'ctrlh' } : 'clear';
+		if (encoding !== KEEP) term.encoding = encoding && encoding !== 'UTF-8' ? { set: encoding } : 'clear';
+		if (Object.keys(term).length) p.terminal = term;
+		const rdp: RdpPatch = {};
+		for (const row of rdpRows) {
+			const v = rdpSel[row.key];
+			if (v !== undefined && v !== KEEP) (rdp as Record<string, unknown>)[row.key] = rdpValue(row.key, v);
+		}
+		if (rdpKdcClear) rdp.kdc = 'clear';
+		else if (rdpKdc?.trim()) rdp.kdc = { set: rdpKdc.trim() };
+		if (gatewayMode === 'clear') rdp.gateway = 'clear';
+		else if (gatewayMode === 'set' && gatewayValid) {
+			rdp.gateway = {
+				set: {
+					host: gatewayHost.trim(),
+					detect: gatewayDetect,
+					rpc: gatewayRpc,
+					user: gatewayOwnLogin ? gatewayUser.trim() || null : null,
+					password: gatewayOwnLogin ? gatewayPass || null : null
+				}
+			};
+		}
+		if (filesPortClear) rdp.files_port = 'clear';
+		else if (validPort(filesPort)) rdp.files_port = { set: Number(filesPort) };
+		if (Object.keys(rdp).length) p.rdp = rdp;
+		const wol: NonNullable<SessionPatch['wol']> = {};
+		if (wolBroadcastClear) wol.broadcast = 'clear';
+		else if (wolBroadcast?.trim()) wol.broadcast = { set: wolBroadcast.trim() };
+		if (wolPortClear) wol.port = 'clear';
+		else if (validPort(wolPort)) wol.port = { set: Number(wolPort) };
+		if (Object.keys(wol).length) p.wol = wol;
+		if (favorite !== KEEP) p.favorite = favorite === 'on';
+		if (osIcon !== KEEP) p.os_icon = osIcon ? { set: osIcon } : 'clear';
 		return p;
 	});
 	let fields = $derived(changedFields(patch));
@@ -344,7 +535,13 @@
 	let portInvalid = $derived(port !== null && port.trim() !== '' && !(parseInt(port, 10) > 0 && parseInt(port, 10) < 65536));
 	let credentialNeedsName = $derived(creatingCredential && (!credentialName.trim() || !credentialUsername));
 	let incomplete = $derived(
-		keyMissing || (jumpMode === 'set' && !hopsValid) || (proxyMode === 'set' && !proxyValid)
+		keyMissing ||
+			(jumpMode === 'set' && !hopsValid) ||
+			(proxyMode === 'set' && !proxyValid) ||
+			(gatewayMode === 'set' && !gatewayValid) ||
+			rdpPortInvalid ||
+			wolPortInvalid ||
+			termTypeInvalid
 	);
 	let canApply = $derived(fields.length > 0 && !portInvalid && !credentialNeedsName && !incomplete);
 
@@ -371,7 +568,16 @@
 			telnet: t('session.protocol_telnet'),
 			monitoring: t('session.monitoring'),
 			tmux: t('tmux.session_label'),
-			via_session: t('session.vnc_via')
+			via_session: t('session.vnc_via'),
+			wireguard: t('wireguard.session_route'),
+			connect_mode: t('session.connect_mode'),
+			address_check: t('session.address_check'),
+			files: t('bulk.opens'),
+			terminal: t('bulk.ssh_terminal'),
+			rdp: t('session.protocol_rdp'),
+			wol: t('session.wol'),
+			favorite: t('session.favorite'),
+			os_icon: t('session.os_icon')
 		})[f];
 
 	const onOff = (on: boolean | undefined): string => (on ? t('session.monitoring_on') : t('session.monitoring_off'));
@@ -428,6 +634,42 @@
 					.join(', ');
 			case 'via_session':
 				return p.via_session === 'clear' ? t('session.vnc_via_none') : (allSessions.find((x) => p.via_session !== 'clear' && x.id === p.via_session?.set)?.name ?? '');
+			case 'wireguard':
+				return wgName(p.wireguard === 'clear' ? null : p.wireguard?.set);
+			case 'connect_mode':
+				return connectModeName(p.connect_mode);
+			case 'address_check':
+				return onOffDefault(p.address_check === 'clear' ? null : p.address_check?.set);
+			case 'files':
+				return filesName(p.files === 'clear' ? null : p.files?.set);
+			case 'terminal': {
+				const tp = p.terminal ?? {};
+				return [
+					tp.term ? `${t('session.term_type')}: ${tp.term === 'clear' ? 'xterm-256color' : tp.term.set}` : '',
+					tp.backspace ? `${t('session.telnet_backspace')}: ${tp.backspace === 'clear' ? 'DEL' : 'Ctrl+H'}` : '',
+					tp.encoding ? `${t('session.encoding')}: ${tp.encoding === 'clear' ? 'UTF-8' : tp.encoding.set}` : ''
+				]
+					.filter(Boolean)
+					.join(', ');
+			}
+			case 'rdp': {
+				const parts = rdpRows.filter((r) => rdpSel[r.key] !== undefined && rdpSel[r.key] !== KEEP).map((r) => `${r.label}: ${optLabel(r.options, rdpSel[r.key])}`);
+				if (p.rdp?.kdc) parts.push(`${t('session.rdp_kdc')}: ${p.rdp.kdc === 'clear' ? t('bulk.cleared') : p.rdp.kdc.set}`);
+				if (p.rdp?.gateway) parts.push(`${t('bulk.gateway')}: ${p.rdp.gateway === 'clear' ? t('bulk.gateway_none') : p.rdp.gateway.set.host}`);
+				if (p.rdp?.files_port) parts.push(`${t('session.rdp_files_port')}: ${p.rdp.files_port === 'clear' ? '22' : p.rdp.files_port.set}`);
+				return parts.join(', ');
+			}
+			case 'wol':
+				return [
+					p.wol?.broadcast ? `${t('net.broadcast')}: ${p.wol.broadcast === 'clear' ? '255.255.255.255' : p.wol.broadcast.set}` : '',
+					p.wol?.port ? `${t('net.udp_port')}: ${p.wol.port === 'clear' ? '9' : p.wol.port.set}` : ''
+				]
+					.filter(Boolean)
+					.join(', ');
+			case 'favorite':
+				return p.favorite ? t('bulk.favorite_on') : t('bulk.favorite_off');
+			case 'os_icon':
+				return p.os_icon === 'clear' ? (osAuto ? t('session.os_auto') : t('session.os_none')) : osTitle(p.os_icon?.set ?? '');
 		}
 	}
 
@@ -684,7 +926,7 @@
 				</div>
 			{/if}
 
-			{#if shows('jump_chain') || shows('via_session')}
+			{#if shows('jump_chain') || shows('via_session') || shows('wireguard')}
 				<h3 class="section">{t('bulk.section_connection')}</h3>
 			{/if}
 
@@ -822,6 +1064,67 @@
 				/>
 			{/if}
 
+			{#if shows('wireguard') && (wgProfiles.length > 0 || sessions.some((s) => s.wireguard_id))}
+				<BulkSelectRow
+					id="bulk-wireguard"
+					label={t('wireguard.session_route')}
+					bind:value={wireguard}
+					keep={KEEP}
+					current={currentOf(wireguards)}
+					tooltip={tooltipOf(wireguards, '')}
+					options={[{ value: '', label: t('wireguard.none') }, ...wgProfiles.map((w) => ({ value: w.id, label: w.name }))]}
+					applies={appliesText('wireguard')}
+				/>
+			{/if}
+
+			{#if shows('connect_mode')}
+				<BulkSelectRow
+					id="bulk-connect-mode"
+					label={t('session.connect_mode')}
+					bind:value={connectMode}
+					keep={KEEP}
+					current={currentOf(connectModes)}
+					tooltip={tooltipOf(connectModes, '')}
+					options={[
+						{ value: 'auto', label: t('session.connect_mode_auto') },
+						{ value: 'ask', label: t('session.connect_mode_ask') },
+						{ value: 'main', label: t('session.connect_mode_main') }
+					]}
+					hint={t('bulk.addresses_only')}
+					applies={appliesText('connect_mode')}
+				/>
+				<BulkSelectRow
+					id="bulk-address-check"
+					label={t('session.address_check')}
+					bind:value={addressCheck}
+					keep={KEEP}
+					current={currentOf(addressChecks)}
+					tooltip={tooltipOf(addressChecks, '')}
+					options={[
+						{ value: '', label: t('history.session_default') },
+						{ value: 'on', label: t('session.address_check_on') },
+						{ value: 'off', label: t('session.address_check_off') }
+					]}
+				/>
+			{/if}
+
+			{#if shows('files')}
+				<BulkSelectRow
+					id="bulk-files"
+					label={t('bulk.opens')}
+					bind:value={filesMode}
+					keep={KEEP}
+					current={currentOf(filesNow)}
+					tooltip={tooltipOf(filesNow, '')}
+					options={[
+						{ value: '', label: t('bulk.opens_terminal') },
+						{ value: 'sftp', label: t('bulk.opens_sftp') },
+						{ value: 'scp', label: t('bulk.opens_scp') }
+					]}
+					applies={appliesText('files')}
+				/>
+			{/if}
+
 			{#if shows('telnet')}
 				<h3 class="section">{t('session.protocol_telnet')}</h3>
 				<BulkSelectRow
@@ -856,6 +1159,119 @@
 					tooltip={tooltipOf(telnetBackspaces, '')}
 					options={[{ value: 'del', label: 'DEL (^?)' }, { value: 'ctrlh', label: 'Ctrl+H (^H)' }]}
 				/>
+			{/if}
+
+			{#if shows('rdp')}
+				<h3 class="section">{t('session.protocol_rdp')}</h3>
+				{#if appliesText('rdp')}<p class="applies section-applies">{appliesText('rdp')}</p>{/if}
+				{#each rdpRows as row (row.key)}
+					<BulkSelectRow
+						id={`bulk-rdp-${row.key}`}
+						label={row.label}
+						bind:value={rdpSel[row.key]}
+						keep={KEEP}
+						current={currentOf(rdpNow(row))}
+						tooltip={tooltipOf(rdpNow(row), '')}
+						options={row.options}
+						hint={rdpSel[row.key] !== KEEP ? row.hint : undefined}
+					/>
+				{/each}
+				{#if kerberosChosen}
+					<div class="row" class:changed={rdpKdcClear || !!rdpKdc?.trim()}>
+						<label class="label" for="bulk-rdp-kdc">{t('session.rdp_kdc')}</label>
+						<div class="field">
+							{#if rdpKdcClear}
+								<p class="cleared">{t('bulk.will_clear')}</p>
+							{:else}
+								<input
+									id="bulk-rdp-kdc"
+									type="text"
+									autocomplete="off"
+									spellcheck="false"
+									value={rdpKdc ?? ''}
+									oninput={(e) => (rdpKdc = e.currentTarget.value)}
+									placeholder={placeholderOf(kdcs, t('bulk.none'))}
+									title={tooltipOf(kdcs, t('bulk.none'))}
+								/>
+							{/if}
+						</div>
+						{#if rdpKdcClear || rdpKdc}
+							<button class="revert" type="button" onclick={() => { rdpKdc = null; rdpKdcClear = false; }} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+						{:else}
+							<button class="clear" type="button" onclick={() => (rdpKdcClear = true)}>{t('bulk.clear')}</button>
+						{/if}
+					</div>
+				{/if}
+				<div class="row" class:changed={gatewayMode !== KEEP}>
+					<label class="label" for="bulk-gateway">{t('bulk.gateway')}</label>
+					<div class="field">
+						<select id="bulk-gateway" bind:value={gatewayMode} title={tooltipOf(gateways, t('bulk.gateway_none'))}>
+							<option value={KEEP}>{t('bulk.keep_value', { value: placeholderOf(gateways, t('bulk.gateway_none')) })}</option>
+							<option value="set">{t('bulk.gateway_set')}</option>
+							<option value="clear">{t('bulk.gateway_none')}</option>
+						</select>
+						{#if gatewayMode === 'set'}
+							<input
+								type="text"
+								class:invalid={!!gatewayHost.trim() && !gatewayValid}
+								bind:value={gatewayHost}
+								placeholder="gateway.example.com"
+								aria-label={t('bulk.gateway')}
+								spellcheck="false"
+								autocomplete="off"
+							/>
+							<label class="check">
+								<input type="checkbox" bind:checked={gatewayDetect} />
+								<span>{t('session.rdp_gateway_detect')}</span>
+							</label>
+							<label class="check">
+								<input type="checkbox" bind:checked={gatewayRpc} />
+								<span>{t('session.rdp_gateway_rpc')}</span>
+							</label>
+							<label class="check">
+								<input type="checkbox" bind:checked={gatewayOwnLogin} />
+								<span>{t('session.rdp_gateway_own_login')}</span>
+							</label>
+							{#if gatewayOwnLogin}
+								<input type="text" bind:value={gatewayUser} placeholder={t('session.rdp_gateway_user')} aria-label={t('session.rdp_gateway_user')} spellcheck="false" autocomplete="off" />
+								<PasswordField>
+									{#snippet children(type)}
+										<input {type} autocomplete="new-password" bind:value={gatewayPass} placeholder={t('session.rdp_gateway_password')} aria-label={t('session.rdp_gateway_password')} />
+									{/snippet}
+								</PasswordField>
+							{:else}
+								<p class="hint">{t('session.rdp_gateway_same_login')}</p>
+							{/if}
+						{/if}
+					</div>
+					{#if gatewayMode !== KEEP}
+						<button class="revert" type="button" onclick={() => (gatewayMode = KEEP)} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{/if}
+				</div>
+				<div class="row" class:changed={filesPortClear || !!filesPort?.trim()}>
+					<label class="label" for="bulk-rdp-files-port">{t('session.rdp_files_port')}</label>
+					<div class="field">
+						{#if filesPortClear}
+							<p class="cleared">22</p>
+						{:else}
+							<input
+								id="bulk-rdp-files-port"
+								type="text"
+								inputmode="numeric"
+								class:invalid={rdpPortInvalid}
+								value={filesPort ?? ''}
+								oninput={(e) => (filesPort = e.currentTarget.value)}
+								placeholder={placeholderOf(filesPorts, '22')}
+								title={tooltipOf(filesPorts, '22')}
+							/>
+						{/if}
+					</div>
+					{#if filesPortClear || filesPort}
+						<button class="revert" type="button" onclick={() => { filesPort = null; filesPortClear = false; }} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{:else}
+						<button class="clear" type="button" onclick={() => (filesPortClear = true)}>{t('bulk.clear')}</button>
+					{/if}
+				</div>
 			{/if}
 
 			{#if shows('monitoring') || shows('tmux')}
@@ -899,7 +1315,7 @@
 				/>
 			{/if}
 
-			{#if shows('terminal_theme') || shows('history') || shows('cursor_style')}
+			{#if shows('terminal_theme') || shows('history') || shows('cursor_style') || shows('terminal')}
 				<h3 class="section">{t('bulk.section_terminal')}</h3>
 			{/if}
 
@@ -982,6 +1398,136 @@
 					</div>
 					{#if blink !== KEEP}
 						<button class="revert" type="button" onclick={() => (blink = KEEP)} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{/if}
+				</div>
+			{/if}
+
+			{#if shows('terminal')}
+				<div class="row" class:changed={termTypeClear || !!termType?.trim()}>
+					<label class="label" for="bulk-term-type">{t('session.term_type')}</label>
+					<div class="field">
+						{#if termTypeClear}
+							<p class="cleared">xterm-256color</p>
+						{:else}
+							<input
+								id="bulk-term-type"
+								type="text"
+								list="bulk-term-types"
+								autocomplete="off"
+								spellcheck="false"
+								class:invalid={termTypeInvalid}
+								value={termType ?? ''}
+								oninput={(e) => (termType = e.currentTarget.value)}
+								placeholder={placeholderOf(termTypes, 'xterm-256color')}
+								title={tooltipOf(termTypes, 'xterm-256color')}
+							/>
+							<datalist id="bulk-term-types">
+								{#each TERMINAL_TYPES as tt (tt)}<option value={tt}></option>{/each}
+							</datalist>
+						{/if}
+						{#if appliesText('terminal')}<p class="applies">{appliesText('terminal')}</p>{/if}
+					</div>
+					{#if termTypeClear || termType}
+						<button class="revert" type="button" onclick={() => { termType = null; termTypeClear = false; }} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{:else}
+						<button class="clear" type="button" onclick={() => (termTypeClear = true)}>{t('bulk.clear')}</button>
+					{/if}
+				</div>
+				<BulkSelectRow
+					id="bulk-backspace"
+					label={t('session.telnet_backspace')}
+					bind:value={backspace}
+					keep={KEEP}
+					current={currentOf(backspaces)}
+					tooltip={tooltipOf(backspaces, '')}
+					options={[{ value: 'del', label: 'DEL (^?)' }, { value: 'ctrlh', label: 'Ctrl+H (^H)' }]}
+				/>
+				<BulkSelectRow
+					id="bulk-encoding"
+					label={t('session.encoding')}
+					bind:value={encoding}
+					keep={KEEP}
+					current={currentOf(encodings)}
+					tooltip={tooltipOf(encodings, '')}
+					options={TERMINAL_ENCODINGS.map((e) => ({ value: e, label: e }))}
+				/>
+			{/if}
+
+			<h3 class="section">{t('session.column_organising')}</h3>
+
+			<BulkSelectRow
+				id="bulk-favorite"
+				label={t('session.favorite')}
+				bind:value={favorite}
+				keep={KEEP}
+				current={currentOf(favorites)}
+				tooltip={tooltipOf(favorites, '')}
+				options={[{ value: 'on', label: t('bulk.favorite_on') }, { value: 'off', label: t('bulk.favorite_off') }]}
+			/>
+
+			{#if shows('os_icon')}
+				<div class="row" class:changed={osIcon !== KEEP}>
+					<span class="label">{t('session.os_icon')}</span>
+					<div class="field">
+						<OsIconSelect options={osIconOptions} bind:value={osIcon} />
+						{#if osIcon === '' && osAuto}<p class="hint">{t('bulk.os_auto_hint')}</p>{/if}
+						{#if appliesText('os_icon')}<p class="applies">{appliesText('os_icon')}</p>{/if}
+					</div>
+					{#if osIcon !== KEEP}
+						<button class="revert" type="button" onclick={() => (osIcon = KEEP)} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{/if}
+				</div>
+			{/if}
+
+			{#if shows('wol')}
+				<h3 class="section">{t('session.wol')}</h3>
+				<p class="applies section-applies">{t('bulk.wol_hint', { count: String(count('wol')), total: String(total) })}</p>
+				<div class="row" class:changed={wolBroadcastClear || !!wolBroadcast?.trim()}>
+					<label class="label" for="bulk-wol-broadcast">{t('net.broadcast')}</label>
+					<div class="field">
+						{#if wolBroadcastClear}
+							<p class="cleared">255.255.255.255</p>
+						{:else}
+							<input
+								id="bulk-wol-broadcast"
+								type="text"
+								autocomplete="off"
+								spellcheck="false"
+								value={wolBroadcast ?? ''}
+								oninput={(e) => (wolBroadcast = e.currentTarget.value)}
+								placeholder={placeholderOf(wolBroadcasts, '255.255.255.255')}
+								title={tooltipOf(wolBroadcasts, '255.255.255.255')}
+							/>
+						{/if}
+					</div>
+					{#if wolBroadcastClear || wolBroadcast}
+						<button class="revert" type="button" onclick={() => { wolBroadcast = null; wolBroadcastClear = false; }} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{:else}
+						<button class="clear" type="button" onclick={() => (wolBroadcastClear = true)}>{t('bulk.clear')}</button>
+					{/if}
+				</div>
+				<div class="row" class:changed={wolPortClear || !!wolPort?.trim()}>
+					<label class="label" for="bulk-wol-port">{t('net.udp_port')}</label>
+					<div class="field">
+						{#if wolPortClear}
+							<p class="cleared">9</p>
+						{:else}
+							<input
+								id="bulk-wol-port"
+								type="text"
+								inputmode="numeric"
+								class:invalid={wolPortInvalid}
+								value={wolPort ?? ''}
+								oninput={(e) => (wolPort = e.currentTarget.value)}
+								placeholder={placeholderOf(wolPorts, '9')}
+								title={tooltipOf(wolPorts, '9')}
+							/>
+						{/if}
+					</div>
+					{#if wolPortClear || wolPort}
+						<button class="revert" type="button" onclick={() => { wolPort = null; wolPortClear = false; }} title={t('bulk.revert')} aria-label={t('bulk.revert')}>↺</button>
+					{:else}
+						<button class="clear" type="button" onclick={() => (wolPortClear = true)}>{t('bulk.clear')}</button>
 					{/if}
 				</div>
 			{/if}
@@ -1246,6 +1792,9 @@
 	}
 	.hint.warn {
 		color: var(--color-warning);
+	}
+	.section-applies {
+		padding-left: 11px;
 	}
 	.cleared {
 		margin: 0;
