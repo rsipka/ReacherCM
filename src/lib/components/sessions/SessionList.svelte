@@ -1410,6 +1410,22 @@
 	 * its own. Its panel logs in, asking for a password or about a
 	 * certificate there. An open one is switched to.
 	 */
+	/**
+	 * Open a saved Proxmox session in a tab of its own. Its panel logs in,
+	 * asking for a password, a code or about a certificate there. An open
+	 * one is switched to.
+	 */
+	function openProxmox(session: SessionConfig): void {
+		setActivePage('terminal');
+		const open = getTabs().find((tab) => tab.type === 'proxmox' && tab.proxmoxConnectParams?.sessionId === session.id);
+		if (open) {
+			activateTab(open.id);
+			return;
+		}
+		const tab = createTab('proxmox', session.host, undefined, session.name, null);
+		tab.proxmoxConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
+	}
+
 	function openBmc(session: SessionConfig): void {
 		setActivePage('terminal');
 		const open = getTabs().find((tab) => tab.type === 'bmc' && tab.bmcConnectParams?.sessionId === session.id);
@@ -1764,6 +1780,10 @@
 		}
 		if (sessionKind(session) === 'bmc') {
 			openBmc(session);
+			return;
+		}
+		if (sessionKind(session) === 'proxmox') {
+			openProxmox(session);
 			return;
 		}
 		if (session.files && isMobile()) {

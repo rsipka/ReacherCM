@@ -28,6 +28,20 @@ pub async fn vnc_connect(
         // SSH login for that.
         let running = state.vnc_manager.lock().await.running(&id);
         let mut params = params;
+        // A Proxmox guest's display: through the session's open connection,
+        // with a password made for this one console.
+        if let Some(target) = params.proxmox.clone().filter(|_| !running) {
+            if session_id.as_deref() != Some(target.session_id.as_str()) {
+                return Err("This console is not the session's".into());
+            }
+            let conn = crate::ipc::session_commands::proxmox::console_conn(&state, &target.session_id)?;
+            let (link, password) = conn.vnc(&target).await.map_err(|e| e.to_string())?;
+            params.password = password;
+            params.password_ref = None;
+            params.username = String::new();
+            state.vnc_manager.lock().await.connect(app_handle, params, crate::vnc::Way::Proxmox(link), on_frame);
+            return Ok(());
+        }
         // A password held by a password manager, fetched now; not for a panel
         // that only re-attaches. The entry is the stored session's, approved by
         // the connecting person for this server and this way in: the SSH
@@ -73,7 +87,7 @@ pub async fn vnc_connect(
             })
         })
         .await?;
-        state.vnc_manager.lock().await.connect(app_handle, params, forward, on_frame);
+        state.vnc_manager.lock().await.connect(app_handle, params, crate::vnc::Way::Direct(forward), on_frame);
         Ok(())
     })
     .await

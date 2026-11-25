@@ -97,6 +97,10 @@ pub struct SpiceConnectParams {
     /// `host_subject`.
     #[serde(default)]
     pub proxy: Option<String>,
+    /// A Proxmox VM's console: the rest is asked of the Proxmox session's
+    /// open connection at each connect (its ticket lasts 30 seconds).
+    #[serde(default)]
+    pub proxmox: Option<crate::proxmox::ConsoleTarget>,
 }
 
 impl SpiceConnectParams {

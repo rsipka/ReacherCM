@@ -252,7 +252,7 @@
 
 		items.push(...broadcastItems(tab));
 		items.push(...windowItems(id));
-		if (tab && !isDesktopTab(tab) && tab.type !== 'ftp' && tab.type !== 'bmc') {
+		if (tab && !isDesktopTab(tab) && tab.type !== 'ftp' && tab.type !== 'bmc' && tab.type !== 'proxmox') {
 			items.push(
 				{ label: '', separator: true },
 				{ label: t('history.picker_menu'), hint: actionLabel('terminal.commandPicker'), action: () => openTabCommandPicker(tab) },
@@ -279,7 +279,7 @@
 
 	/** The host a tab is connected to; none for a local shell or a serial port. */
 	function hostOf(tab: Tab): string | null {
-		return tab.sshConnectParams?.host ?? tab.telnetConnectParams?.host ?? tab.ftpConnectParams?.host ?? tab.bmcConnectParams?.host ?? tab.rdpConnectParams?.host ?? tab.vncConnectParams?.host ?? tab.spiceConnectParams?.host ?? null;
+		return tab.sshConnectParams?.host ?? tab.telnetConnectParams?.host ?? tab.ftpConnectParams?.host ?? tab.bmcConnectParams?.host ?? tab.proxmoxConnectParams?.host ?? tab.rdpConnectParams?.host ?? tab.vncConnectParams?.host ?? tab.spiceConnectParams?.host ?? null;
 	}
 
 	/** A terminal connects again at any time (a hung connection, say); a
@@ -291,6 +291,7 @@
 		if (tab.type === 'serial') return !!tab.serialConnectParams;
 		if (tab.type === 'ftp') return !!tab.ftpConnectParams;
 		if (tab.type === 'bmc') return !!tab.bmcConnectParams;
+		if (tab.type === 'proxmox') return !!tab.proxmoxConnectParams;
 		if (isDesktopTab(tab)) return tab.link === 'down';
 		return false;
 	}
@@ -458,6 +459,8 @@
 
 	const FOLDER_ICON = 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z';
 	/** A rack server with a pulse: a server management session. */
+	/** Stacked boxes: a hypervisor's guests (a Proxmox session). */
+	const PROXMOX_ICON = 'M3 5h18v4H3zM3 11h8v8H3zM13 11h8v8h-8z';
 	const BMC_ICON = 'M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01M11 17h2l1-2 2 4 1-2h1';
 	const GROUP_ICON = 'M4 6h7v5H4zM13 6h7v5h-7zM4 13h16v5H4z';
 	const DOT_ICON = 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z';
@@ -646,6 +649,8 @@
 								<path d={terminalIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 							{:else if isDesktopTab(tab)}
 								<path d={rdpIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+							{:else if tab.type === 'proxmox'}
+								<path d={PROXMOX_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 							{:else if tab.type === 'bmc'}
 								<path d={BMC_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 							{:else if tab.type === 'ftp'}
