@@ -2060,6 +2060,10 @@ pub fn run() {
                 }
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // A web window on an iDRAC logs out first, then closes itself.
+                if web::is_web_label(window.label()) && web::window::close_requested(tauri::Manager::app_handle(window), window.label()) {
+                    api.prevent_close();
+                }
                 // Editor windows: ALWAYS hide instead of close (prevents WebView2 crash on Windows)
                 if window.label().starts_with("editor") {
                     api.prevent_close();
