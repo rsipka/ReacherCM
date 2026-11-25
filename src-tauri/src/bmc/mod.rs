@@ -445,6 +445,10 @@ impl BmcConn {
         let (Some(user), Some(pass)) = (s(&v, "TempUsername"), s(&v, "TempPassword")) else {
             return Err(BmcError::Other("The iDRAC gave no console login".into()));
         };
+        // Dell's own launcher waits 5 seconds before opening the console:
+        // some firmware (seen on 7.00.00.185) answers Not Found to a one-time
+        // login used at once.
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         Ok(model::dell_console_path(self.client.username(), &user, &pass))
     }
 
