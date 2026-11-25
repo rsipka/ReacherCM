@@ -13,6 +13,25 @@ pub async fn telnet_connect(
     session_id: Option<String>,
 ) -> Result<(), String> {
     let mut params = params;
+    // A Proxmox text console: through the session's open connection.
+    if let Some(target) = params.proxmox.clone() {
+        if session_id.as_deref() != Some(target.session_id.as_str()) {
+            return Err("This console is not the session's".into());
+        }
+        let conn = crate::ipc::session_commands::proxmox::console_conn(&state, &target.session_id)?;
+        let link = conn.term(&target).await.map_err(|e| e.to_string())?;
+        params.options.mode = crate::telnet::protocol::TelnetMode::Proxmox;
+        params.username = None;
+        params.password = None;
+        params.password_ref = None;
+        params.wireguard = None;
+        tracing::info!("Proxmox console {}: {} {} {:?}", params.id, target.node, target.kind, target.vmid);
+        state.telnet_manager.lock().await.start(app_handle, params, Box::new(link));
+        return Ok(());
+    }
+    if params.options.mode == crate::telnet::protocol::TelnetMode::Proxmox {
+        return Err("Not a Proxmox console".into());
+    }
     // A password held by a password manager, fetched now. The entry is the
     // stored session's, approved by the connecting person for this device
     // (see `session_commands::require_trusted_refs`); the reference sent

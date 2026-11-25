@@ -4,6 +4,7 @@ import type { TelnetOptions } from './telnet';
 import type { SerialOptions } from './serial';
 import type { SpiceOptions } from './spice';
 import type { RdpOptions } from './rdp';
+import type { ProxmoxOptions } from './proxmox';
 import type { HistoryMode } from './history';
 import type { CursorStyle } from '#lib/terminal/cursor.js';
 import { t } from '#lib/state/i18n.svelte.js';
@@ -144,6 +145,8 @@ export interface SessionConfig {
   ftp?: FtpOptions | null;
   /** Server management (BMC) only: trusted certificates, read only here. */
   bmc?: { certs?: string[] } | null;
+  /** Proxmox only: realm, API token and trusted certificates. */
+  proxmox?: ProxmoxOptions | null;
 }
 
 /** How to wake a session's machine over the network. */
@@ -367,7 +370,7 @@ export interface SshOptions {
 }
 
 /** `winbox`: MikroTik's WinBox 4, started as a program of its own (desktop). */
-export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc';
+export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc' | 'proxmox';
 
 export function sessionKind(session: Pick<SessionConfig, 'kind'>): SessionKind {
   return session.kind ?? 'ssh';
@@ -455,6 +458,7 @@ export async function sessionCreate(params: {
   wol?: WakeOnLan | null;
   files?: FilesProtocol | null;
   ftp?: FtpOptions | null;
+  proxmox?: ProxmoxOptions | null;
 }): Promise<SessionConfig> {
   return invoke<SessionConfig>('session_create', {
     name: params.name,
@@ -504,6 +508,7 @@ export async function sessionCreate(params: {
     wol: params.wol?.mac.trim() ? params.wol : null,
     files: (params.kind ?? 'ssh') === 'ssh' ? (params.files ?? null) : null,
     ftp: params.kind === 'ftp' ? (params.ftp ?? {}) : null,
+    proxmox: params.kind === 'proxmox' ? (params.proxmox ?? {}) : null,
   });
 }
 

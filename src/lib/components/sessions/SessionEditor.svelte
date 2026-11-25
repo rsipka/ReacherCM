@@ -38,6 +38,7 @@
 	import { DEFAULT_TELNET_OPTIONS, type TelnetOptions } from '#lib/ipc/telnet.js';
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
+	import type { ProxmoxOptions } from '#lib/ipc/proxmox.js';
 	import { parseResolution, type RdpOptions } from '#lib/ipc/rdp.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
 	import type { CursorStyle } from '#lib/terminal/cursor.js';
@@ -77,6 +78,25 @@
 	let filesProto = $state<'' | FilesProtocol>('');
 	/** FTP: '' explicit TLS (required), 'implicit' or 'none'. */
 	let ftpTls = $state<'' | 'implicit' | 'none'>('');
+	/* A Proxmox session: the realm a user name without one logs in to, and
+	 * an API token for the pages (the consoles still need the user login). */
+	const PVE_REALMS = ['pam', 'pve', 'pbs'];
+	let pveRealm = $state('pam');
+	let pveRealmOther = $state('');
+	let pveTokenId = $state('');
+	let pveTokenSecret = $state('');
+	function fillProxmox(o: ProxmoxOptions | null): void {
+		const realm = o?.realm || 'pam';
+		pveRealm = PVE_REALMS.includes(realm) ? realm : 'other';
+		pveRealmOther = PVE_REALMS.includes(realm) ? '' : realm;
+		pveTokenId = o?.token_id ?? '';
+		pveTokenSecret = o?.token_secret ?? '';
+	}
+	function proxmoxOptionsToSave(): ProxmoxOptions {
+		const realm = pveRealm === 'other' ? pveRealmOther.trim() : pveRealm;
+		const id = pveTokenId.trim();
+		return { realm: realm || null, token_id: id || null, token_secret: id ? pveTokenSecret.trim() || null : null };
+	}
 	/** The protocol as the editor shows it: SFTP and SCP are SSH underneath. */
 	let proto = $derived<Protocol>(filesProto || kind);
 	/** An SSH session that opens a terminal (not SFTP or SCP). */
@@ -368,7 +388,7 @@
 
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
-	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc');
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox');
 	/** The saved credential the login comes from; null: the fields below. */
 	let usedCredential = $derived(
 		!takesCredential || credentialId === OWN_LOGIN
@@ -484,7 +504,7 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
@@ -495,7 +515,7 @@
 		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] },
 		// Neither a terminal nor a remote desktop: a server's management
 		// controller over Redfish, a device's web page, MikroTik's own app.
-		{ id: 'other', kinds: ['web', 'bmc', 'winbox'] }
+		{ id: 'other', kinds: ['web', 'bmc', 'proxmox', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -530,7 +550,7 @@
 		if (next !== 'ssh' && username === 'root') username = '';
 		if (next === 'ssh' && username === '') username = 'root';
 		if (next === 'winbox' && username === '') username = 'admin';
-		if (next === 'bmc' && username === '') username = 'root';
+		if ((next === 'bmc' || next === 'proxmox') && username === '') username = 'root';
 		// A VNC user name means a Mac's own login: not one carried over.
 		if (next === 'vnc' || next === 'spice' || next === 'serial') username = '';
 		// A port name is not a host name, nor the other way round.
@@ -610,7 +630,7 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox'];
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc'];
 	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
@@ -635,7 +655,7 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && !filesProto);
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
@@ -709,6 +729,7 @@
 
 	function fillForm(editSession: SessionConfig | undefined): void {
 		osCleared = false;
+		fillProxmox(editSession?.proxmox ?? null);
 		osChoice = editSession?.os_manual ? (editSession.detected_os ?? '') : '';
 		if (editSession) {
 			kind = sessionKind(editSession);
@@ -908,7 +929,9 @@
 		const ftp = kind === 'ftp';
 		/** Jump hosts, proxies, login shells and ssh_config are SSH's alone. */
 		const bmc = kind === 'bmc';
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc;
+		const pve = kind === 'proxmox';
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve;
+		const proxmoxToSave = pve ? proxmoxOptionsToSave() : null;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
 		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
 		const via = vnc || spice ? viaSessionId || null : null;
@@ -950,7 +973,7 @@
 		const notesToSave = notes.trim() ? notes : null;
 		// Remote desktops paint their own screen, and WinBox is its own
 		// program: no terminal colours.
-		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || bmc || !!filesProto;
+		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || bmc || pve || !!filesProto;
 		const themeToSave = noTerminal ? null : terminalTheme || null;
 		const cursorToSave = noTerminal ? null : cursorChoice || null;
 		const blinkToSave = noTerminal || !blinkChoice ? null : blinkChoice === 'on';
@@ -1073,6 +1096,7 @@
 					telnet: telnet ? { ...telnetOptions } : null,
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? { ...webToSave(), certs: webCerts } : null,
+					proxmox: proxmoxToSave,
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
@@ -1129,6 +1153,7 @@
 					telnet: telnet ? { ...telnetOptions } : null,
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? webToSave() : null,
+					proxmox: proxmoxToSave,
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
@@ -1277,7 +1302,7 @@
 		<div class="columns" class:wide>
 		<div class="column">
 		{#if wide}<span class="column-title">{t('session.column_connection')}</span>{/if}
-		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
+		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : kind === 'proxmox' ? 'pve1' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
 
 		{#if kind === 'wsl'}
 			<div class="shell-field">
@@ -1953,6 +1978,33 @@
 				</div>
 			{/if}
 			<p class="shell-hint">{t('bmc.editor_hint')}</p>
+		{:else if kind === 'proxmox'}
+			<!-- A Proxmox VE or Backup Server login: a user in a realm, and
+			     optionally an API token the pages use instead. -->
+			<div class="shell-field">
+				<label class="via-label" for="pve-realm">{t('proxmox.realm')}</label>
+				<select id="pve-realm" class="via-select" bind:value={pveRealm} disabled={saving}>
+					<option value="pam">{t('proxmox.realm_pam')}</option>
+					<option value="pve">{t('proxmox.realm_pve')}</option>
+					<option value="pbs">{t('proxmox.realm_pbs')}</option>
+					<option value="other">{t('proxmox.realm_other')}</option>
+				</select>
+				{#if pveRealm === 'other'}
+					<Input label={t('proxmox.realm_name')} bind:value={pveRealmOther} placeholder="ad" disabled={saving} />
+				{/if}
+				<p class="shell-hint">{t('proxmox.realm_hint')}</p>
+			</div>
+			{#if !usedCredential}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+				</div>
+			{/if}
+			<Input label={t('proxmox.token_id')} bind:value={pveTokenId} placeholder="root@pam!reacher" disabled={saving} />
+			{#if pveTokenId.trim()}
+				<Input label={t('proxmox.token_secret')} type="password" bind:value={pveTokenSecret} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" disabled={saving} />
+			{/if}
+			<p class="shell-hint">{t('proxmox.editor_hint')}</p>
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->

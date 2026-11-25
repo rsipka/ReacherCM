@@ -19,6 +19,8 @@ fn params() -> Option<Params> {
         username: std::env::var("REACH_BMC_USER").unwrap_or_else(|_| "root".into()),
         password: std::env::var("REACH_BMC_PASS").unwrap_or_default(),
         trusted: Vec::new(),
+        socks: None,
+        tunnel: None,
     })
 }
 
@@ -85,5 +87,5 @@ async fn live_redfish() {
 }
 
 fn clone(p: &Params) -> Params {
-    Params { host: p.host.clone(), port: p.port, username: p.username.clone(), password: p.password.clone(), trusted: p.trusted.clone() }
+    Params { host: p.host.clone(), port: p.port, username: p.username.clone(), password: p.password.clone(), trusted: p.trusted.clone(), socks: None, tunnel: None }
 }

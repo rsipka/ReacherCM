@@ -3,6 +3,7 @@
 	import type { VaultInfo } from '#lib/state/vault.svelte.js';
 	import DistroIcon from './DistroIcon.svelte';
 	import { getDistroIcon } from '#lib/data/distro-icons.js';
+	import { brandIcons } from '#lib/data/brand-icons.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { sessionAddress } from '#lib/utils/address.js';
 	import { addressLabelled, hasAltAddresses, sessionAddresses } from '#lib/sessions/addresses.js';
@@ -200,6 +201,9 @@
 					{:else if session.kind === 'web'}
 						<!-- A globe: a device's web page. -->
 						<circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z" />
+					{:else if session.kind === 'proxmox'}
+						<!-- Proxmox's own mark. -->
+						<path d={brandIcons.proxmox.path} fill="currentColor" stroke="none" />
 					{:else if session.kind === 'bmc'}
 						<!-- A rack server with a pulse: its management controller. -->
 						<path d="M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01M11 17h2l1-2 2 4 1-2h1" />
@@ -327,6 +331,9 @@
 		{:else if filesBadge}
 			<!-- Opens in the file manager, not a terminal. -->
 			<span class="auth-badge" title={authLabel}>{unavailable ? t('serial.desktop_only_short') : filesBadge}</span>
+		{:else if session.kind === 'proxmox'}
+			<!-- Talks to Proxmox VE's API. -->
+			<span class="auth-badge" title={t('proxmox.badge_hint')}>{session.port === 8007 ? (session.proxmox?.token_id ? t('proxmox.badge_pbs_token') : 'PBS') : session.proxmox?.token_id ? t('proxmox.badge_token') : t('proxmox.badge')}</span>
 		{:else if session.kind === 'bmc'}
 			<!-- Talks Redfish to the server's management controller. -->
 			<span class="auth-badge" title={t('bmc.badge_hint')}>{t('bmc.badge')}</span>
