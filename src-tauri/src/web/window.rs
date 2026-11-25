@@ -353,6 +353,9 @@ fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
     if p.event() != PageLoadEvent::Finished || !matches!(p.url().scheme(), "http" | "https") {
         return;
     }
+    // The path only, for a page that fails to open (a console that answers
+    // Not Found): the query can hold one-time logins and the host stays out.
+    tracing::info!("Web session window {}: loaded {}", w.label(), p.url().path());
     let Some(e) = entry(w.label()) else { return };
     let script = {
         let e = lock(&e);
