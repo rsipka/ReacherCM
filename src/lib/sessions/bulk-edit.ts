@@ -28,7 +28,21 @@ export type BulkField =
 	| 'telnet'
 	| 'monitoring'
 	| 'tmux'
-	| 'via_session';
+	| 'via_session'
+	| 'wireguard'
+	| 'connect_mode'
+	| 'address_check'
+	| 'files'
+	| 'terminal'
+	| 'rdp'
+	| 'wol'
+	| 'favorite'
+	| 'os_icon';
+
+/** The kinds the session editor offers a WireGuard tunnel for. */
+export const WIREGUARD_KINDS: SessionKind[] = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox'];
+/** The kinds the session editor offers an OS icon for. */
+export const OS_ICON_KINDS: SessionKind[] = ['ssh', 'telnet', 'vnc', 'spice', 'winbox'];
 
 /** The value meaning "the session's own login" in `credential_id`. */
 export const OWN_LOGIN = 'own';
@@ -100,6 +114,24 @@ export function appliesTo(
 			return k === 'ssh' || k === 'wsl';
 		case 'via_session':
 			return k === 'vnc' || k === 'spice';
+		case 'wireguard':
+			return WIREGUARD_KINDS.includes(k);
+		case 'connect_mode':
+		case 'address_check':
+			// Picking among addresses: only where there are others.
+			return k === 'ssh' && (s.alt_addresses?.length ?? 0) > 0;
+		case 'files':
+		case 'terminal':
+			return k === 'ssh';
+		case 'rdp':
+			return k === 'rdp';
+		case 'wol':
+			// The MAC is each machine's own: only where one is set.
+			return !!s.wol?.mac?.trim();
+		case 'favorite':
+			return true;
+		case 'os_icon':
+			return OS_ICON_KINDS.includes(k);
 	}
 }
 
@@ -173,6 +205,15 @@ export function changedFields(p: SessionPatch): BulkField[] {
 	if (p.monitoring !== undefined) out.push('monitoring');
 	if (p.tmux !== undefined && Object.keys(p.tmux).length > 0) out.push('tmux');
 	if (p.via_session !== undefined) out.push('via_session');
+	if (p.wireguard !== undefined) out.push('wireguard');
+	if (p.connect_mode !== undefined) out.push('connect_mode');
+	if (p.address_check !== undefined) out.push('address_check');
+	if (p.files !== undefined) out.push('files');
+	if (p.terminal !== undefined && Object.keys(p.terminal).length > 0) out.push('terminal');
+	if (p.rdp !== undefined && Object.keys(p.rdp).length > 0) out.push('rdp');
+	if (p.wol !== undefined && Object.keys(p.wol).length > 0) out.push('wol');
+	if (p.favorite !== undefined) out.push('favorite');
+	if (p.os_icon !== undefined) out.push('os_icon');
 	return out;
 }
 
