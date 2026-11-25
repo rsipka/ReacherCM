@@ -2845,7 +2845,7 @@
 					<button class="context-item" onclick={() => { if (contextMenu?.session) openBmcSsh(contextMenu.session); closeContextMenu(); }} type="button" title={t('session.open_ssh_bmc_hint')}>
 						{t('session.open_ssh')}
 					</button>
-					{#if contextMenu.session.bmc?.vnc?.password && !isMobile()}
+					{#if contextMenu.session.bmc?.vnc?.password}
 						<button class="context-item" onclick={() => { if (contextMenu?.session) openBmcVnc(contextMenu.session); closeContextMenu(); }} type="button" title={t('session.open_vnc_bmc_hint')}>
 							{t('session.open_vnc')}
 						</button>

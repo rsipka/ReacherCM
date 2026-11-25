@@ -353,7 +353,7 @@
 					</span>
 				{/if}
 				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
-				{#if opened?.vendor === 'dell' && !isMobile()}
+				{#if opened?.vendor === 'dell'}
 					<span class="tip-wrap" use:tooltip={t('bmc.vnc_tip')}>
 						<Button variant="secondary" size="sm" onclick={askVnc}>{t('bmc.vnc')}</Button>
 					</span>
