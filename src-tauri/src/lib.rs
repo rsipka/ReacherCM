@@ -2072,8 +2072,29 @@ pub fn run() {
                 // (e.g. hide the window while the frontend tries to destroy it).
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Reach application");
+        .build(tauri::generate_context!())
+        .expect("error while building Reach application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                logout_bmcs(app);
+            }
+        });
+}
+
+/// Log out of every open server management connection as the app quits:
+/// controllers allow only a few sessions, and one left behind holds a slot
+/// until it times out. Best-effort, at most 3 seconds.
+fn logout_bmcs(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let conns = state.bmc_manager.drain();
+    if conns.is_empty() {
+        return;
+    }
+    tauri::async_runtime::block_on(async move {
+        let all = futures_util::future::join_all(conns.iter().map(|c| c.client.logout()));
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(3), all).await;
+    });
 }
 
 /// Messages from a web session's window never reach a command, whatever
