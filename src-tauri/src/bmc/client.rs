@@ -304,16 +304,6 @@ impl Redfish {
         self.send(Method::POST, path, Some(body), None, true).await.map(|(v, _)| v)
     }
 
-    /// Whether the controller's web server has a page at `path` (anything
-    /// but 404 Not Found counts; a failed request does too, so that only a
-    /// clear "not here" changes what opens).
-    pub async fn web_page_exists(&self, path: &str) -> bool {
-        match self.http.get(format!("{}{path}", self.base)).send().await {
-            Ok(r) => r.status() != reqwest::StatusCode::NOT_FOUND,
-            Err(_) => true,
-        }
-    }
-
     /// `https://host:port`, as the connection was opened.
     pub fn base(&self) -> &str {
         &self.base

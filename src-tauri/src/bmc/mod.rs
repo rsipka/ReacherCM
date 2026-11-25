@@ -436,12 +436,6 @@ impl BmcConn {
 
     async fn dell_kvm(&self) -> Result<String, BmcError> {
         let m = self.manager.as_ref().ok_or_else(|| BmcError::Other("No BMC found".into()))?;
-        // Some iDRAC 9 firmware offers GetKVMSession but has no `/console`
-        // page to use it with (it answers 404 Not Found): ask before
-        // creating a one-time login nothing can take.
-        if !self.client.web_page_exists("/console").await {
-            return Err(BmcError::Other("This iDRAC has no /console page".into()));
-        }
         let service = format!("{m}/Oem/Dell/DelliDRACCardService");
         let actions = format!("{service}/Actions/DelliDRACCardService");
         // Dell's own scripts export the certificate first; some firmware
