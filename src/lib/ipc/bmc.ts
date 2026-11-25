@@ -1,3 +1,4 @@
+import type { BmcVnc } from '#lib/ipc/sessions.js';
 import { invoke } from '@tauri-apps/api/core';
 import { ensureSessionWireguard } from '#lib/state/wireguard.svelte.js';
 
@@ -133,6 +134,11 @@ export async function bmcDisconnect(connectionId: string): Promise<void> {
 /** Trust a certificate (by its SHA-256 fingerprint) for a session. */
 export async function bmcTrustCert(sessionId: string, fingerprint: string): Promise<void> {
 	return invoke('bmc_session_cert_trust', { sessionId, fingerprint });
+}
+
+/** Save how a session reaches its controller's VNC server (`null` forgets it). */
+export async function bmcSaveVnc(sessionId: string, vnc: BmcVnc | null): Promise<void> {
+	return invoke('bmc_session_vnc_save', { sessionId, vnc });
 }
 
 export const bmcOverview = (connectionId: string) => invoke<BmcOverview>('bmc_overview', { connectionId });

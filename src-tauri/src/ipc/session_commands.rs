@@ -802,6 +802,7 @@ pub async fn session_create(
     files: Option<crate::state::FilesProtocol>,
     ftp: Option<crate::ftp::FtpOptions>,
     proxmox: Option<crate::proxmox::ProxmoxOptions>,
+    bmc: Option<crate::bmc::BmcOptions>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -904,8 +905,15 @@ pub async fn session_create(
                 f
             })
             .filter(|f| !f.is_empty()),
-        // No certificates from the window: only the prompt trusts one.
-        bmc: None,
+        // Its VNC server as the editor sent it; no certificates from the
+        // window: only the prompt trusts one.
+        bmc: bmc
+            .filter(|_| kind == crate::state::SessionKind::Bmc)
+            .map(|mut b| {
+                b.certs.clear();
+                b
+            })
+            .filter(|b| !b.is_empty()),
         // Its realm and token as the editor sent them; certificates likewise.
         proxmox: proxmox
             .filter(|_| kind == crate::state::SessionKind::Proxmox)
@@ -1067,9 +1075,12 @@ async fn prepare_update(
     if session.kind != crate::state::SessionKind::Ssh {
         session.files = None;
     }
-    // A server management session's too (see `bmc_session_cert_trust`).
+    // A server management session's too (see `bmc_session_cert_trust`); its
+    // VNC server is the editor's.
     session.bmc = if session.kind == crate::state::SessionKind::Bmc {
-        stored.as_ref().and_then(|s| s.bmc.clone()).filter(|b| !b.is_empty())
+        let mut b = session.bmc.take().unwrap_or_default();
+        b.certs = stored.as_ref().and_then(|s| s.bmc.as_ref()).map(|b| b.certs.clone()).unwrap_or_default();
+        Some(b).filter(|b| !b.is_empty())
     } else {
         None
     };

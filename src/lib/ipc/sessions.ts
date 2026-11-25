@@ -143,8 +143,9 @@ export interface SessionConfig {
   files?: FilesProtocol | null;
   /** FTP only: encryption, and the certificates it trusts. */
   ftp?: FtpOptions | null;
-  /** Server management (BMC) only: trusted certificates, read only here. */
-  bmc?: { certs?: string[] } | null;
+  /** Server management (BMC) only: trusted certificates (read only here)
+   *  and its controller's VNC server. */
+  bmc?: BmcOptions | null;
   /** Proxmox only: realm, API token and trusted certificates. */
   proxmox?: ProxmoxOptions | null;
 }
@@ -370,6 +371,22 @@ export interface SshOptions {
 }
 
 /** `winbox`: MikroTik's WinBox 4, started as a program of its own (desktop). */
+/** A server management session's own settings. */
+export interface BmcOptions {
+  certs?: string[];
+  vnc?: BmcVnc | null;
+}
+
+/** How to reach a controller's own VNC server (an iDRAC's). */
+export interface BmcVnc {
+  /** Unset: 5901. */
+  port?: number | null;
+  /** The whole connection in TLS (an iDRAC's SSL encryption). */
+  tls?: boolean;
+  /** Unset: asked for at each connect. */
+  password?: string | null;
+}
+
 export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc' | 'proxmox';
 
 export function sessionKind(session: Pick<SessionConfig, 'kind'>): SessionKind {
@@ -459,6 +476,7 @@ export async function sessionCreate(params: {
   files?: FilesProtocol | null;
   ftp?: FtpOptions | null;
   proxmox?: ProxmoxOptions | null;
+  bmc?: BmcOptions | null;
 }): Promise<SessionConfig> {
   return invoke<SessionConfig>('session_create', {
     name: params.name,
@@ -509,6 +527,7 @@ export async function sessionCreate(params: {
     files: (params.kind ?? 'ssh') === 'ssh' ? (params.files ?? null) : null,
     ftp: params.kind === 'ftp' ? (params.ftp ?? {}) : null,
     proxmox: params.kind === 'proxmox' ? (params.proxmox ?? {}) : null,
+    bmc: params.kind === 'bmc' ? (params.bmc ?? null) : null,
   });
 }
 

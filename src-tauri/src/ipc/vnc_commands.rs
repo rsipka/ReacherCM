@@ -115,6 +115,13 @@ pub async fn vnc_disconnect_all(state: State<'_, AppState>) -> Result<(), String
     Ok(())
 }
 
+/// How a connected VNC session is protected, for its tab's tooltip; `None`
+/// before it is up.
+#[tauri::command]
+pub async fn vnc_security(state: State<'_, AppState>, id: String) -> Result<Option<crate::vnc::Security>, String> {
+    Ok(state.vnc_manager.lock().await.security(&id))
+}
+
 /// The webview painted one frame message; see [`crate::rdp::Flow`].
 #[tauri::command]
 pub async fn vnc_ack(state: State<'_, AppState>, id: String) -> Result<(), String> {

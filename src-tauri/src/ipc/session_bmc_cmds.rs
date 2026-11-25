@@ -102,6 +102,18 @@ pub async fn bmc_session_cert_trust(state: State<'_, AppState>, session_id: Stri
     super::ftp::trust_session_cert(&state, &session_id, &fingerprint, "bmc").await
 }
 
+/// Save (or with `None` forget) how a server management session reaches
+/// its controller's VNC server, from the VNC dialog.
+#[tauri::command]
+#[tracing::instrument(skip(state, vnc))]
+pub async fn bmc_session_vnc_save(state: State<'_, AppState>, session_id: String, vnc: Option<crate::bmc::BmcVnc>) -> Result<(), String> {
+    super::ftp::set_session_option(&state, &session_id, "bmc", "vnc", match vnc {
+        Some(v) => serde_json::to_value(v).map_err(|e| e.to_string())?,
+        None => serde_json::Value::Null,
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn bmc_overview(state: State<'_, AppState>, connection_id: String) -> Result<model::Overview, String> {
     conn(&state, &connection_id)?.overview().await.map_err(err)

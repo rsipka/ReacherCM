@@ -8,7 +8,8 @@
 	import { RDP_INTERVALS, RDP_KEYBOARDS, RDP_RESOLUTIONS, RDP_SCALES, rdpIntervalLabel } from '#lib/sessions/rdp-choices.js';
 	import { osChoices } from '#lib/data/distro-icons.js';
 	import Input from '#lib/components/shared/Input.svelte';
-	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, type BmcVnc, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { BMC_VNC_PORT } from '#lib/sessions/bmc-console.js';
 	import { formatMac, parseMac } from '#lib/net/tools.js';
 	import { defaultTmuxName, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
 	import { isIos, isMobile, isWindows } from '#lib/platform.js';
@@ -78,6 +79,19 @@
 	let filesProto = $state<'' | FilesProtocol>('');
 	/** FTP: '' explicit TLS (required), 'implicit' or 'none'. */
 	let ftpTls = $state<'' | 'implicit' | 'none'>('');
+	/** A server management session's VNC server (an iDRAC's). */
+	let bmcVncPort = $state('');
+	let bmcVncPassword = $state('');
+	let bmcVncTls = $state(false);
+	function bmcVncToSave(): BmcVnc | null {
+		const port = Number.parseInt(bmcVncPort, 10);
+		const v: BmcVnc = {
+			port: port > 0 && port < 65536 && port !== BMC_VNC_PORT ? port : null,
+			tls: bmcVncTls,
+			password: bmcVncPassword || null,
+		};
+		return v.port || v.tls || v.password ? v : null;
+	}
 	/* A Proxmox session: the realm a user name without one logs in to, and
 	 * an API token for the pages (the consoles still need the user login). */
 	const PVE_REALMS = ['pam', 'pve', 'pbs'];
@@ -735,6 +749,9 @@
 			kind = sessionKind(editSession);
 			filesProto = kind === 'ssh' ? (editSession.files ?? '') : '';
 			ftpTls = editSession.ftp?.tls ?? '';
+			bmcVncPort = editSession.bmc?.vnc?.port ? String(editSession.bmc.vnc.port) : '';
+			bmcVncPassword = editSession.bmc?.vnc?.password ?? '';
+			bmcVncTls = editSession.bmc?.vnc?.tls ?? false;
 			domain = editSession.domain ?? '';
 			os = editSession.detected_os === 'linux' || editSession.detected_os === 'gnome' ? editSession.detected_os : 'windows';
 			sharePath = editSession.share_path ?? '';
@@ -828,6 +845,9 @@
 			kind = 'ssh';
 			filesProto = '';
 			ftpTls = '';
+			bmcVncPort = '';
+			bmcVncPassword = '';
+			bmcVncTls = false;
 			domain = '';
 			os = 'windows';
 			sharePath = '';
@@ -1097,6 +1117,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? { ...webToSave(), certs: webCerts } : null,
 					proxmox: proxmoxToSave,
+					bmc: bmc ? { ...editSession.bmc, vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
@@ -1154,6 +1175,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? webToSave() : null,
 					proxmox: proxmoxToSave,
+					bmc: bmc ? { vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
@@ -1978,6 +2000,16 @@
 				</div>
 			{/if}
 			<p class="shell-hint">{t('bmc.editor_hint')}</p>
+			<div class="shell-field">
+				<span class="via-label">{t('bmc.editor_vnc')}</span>
+				<Input label={t('bmc.vnc_port')} bind:value={bmcVncPort} placeholder={String(BMC_VNC_PORT)} disabled={saving} />
+				<Input type="password" label={t('bmc.vnc_password')} bind:value={bmcVncPassword} placeholder={t('session.stored_encrypted')} disabled={saving} />
+				<label class="jump-toggle">
+					<input type="checkbox" bind:checked={bmcVncTls} disabled={saving} />
+					<span class="jump-toggle-text">{t('bmc.vnc_tls')}</span>
+				</label>
+				<p class="shell-hint">{t('bmc.editor_vnc_hint')}</p>
+			</div>
 		{:else if kind === 'proxmox'}
 			<!-- A Proxmox VE or Backup Server login: a user in a realm, and
 			     optionally an API token the pages use instead. -->

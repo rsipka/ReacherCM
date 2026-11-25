@@ -34,11 +34,30 @@ pub struct BmcOptions {
     /// Changed only by answering the prompt; an editor's save keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub certs: Vec<String>,
+    /// The controller's own VNC server (an iDRAC's), as saved from the
+    /// session editor or the VNC dialog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vnc: Option<BmcVnc>,
+}
+
+/// How to reach a server management session's VNC server.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BmcVnc {
+    /// Its port; unset: the iDRAC's default, 5901.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    /// The whole connection in TLS (an iDRAC's *SSL encryption*).
+    #[serde(default)]
+    pub tls: bool,
+    /// The VNC password (up to 8 characters on an iDRAC); unset: asked for
+    /// at each connect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
 }
 
 impl BmcOptions {
     pub fn is_empty(&self) -> bool {
-        self.certs.is_empty()
+        self.certs.is_empty() && self.vnc.is_none()
     }
 }
 

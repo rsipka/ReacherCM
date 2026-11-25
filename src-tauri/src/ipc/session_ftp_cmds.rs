@@ -110,6 +110,41 @@ pub(super) async fn trust_session_cert(state: &AppState, session_id: &str, finge
     if !valid {
         return Err("Not a SHA-256 fingerprint".into());
     }
+    let fp = fingerprint.to_ascii_uppercase();
+    edit_session_options(state, session_id, kind, |opts| {
+        let mut certs: Vec<String> = opts.get("certs").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+        certs.retain(|c| !c.eq_ignore_ascii_case(&fp));
+        certs.push(fp);
+        let extra = certs.len().saturating_sub(16);
+        certs.drain(..extra);
+        opts.insert("certs".into(), serde_json::to_value(&certs).map_err(|e| e.to_string())?);
+        Ok(())
+    })
+    .await
+}
+
+/// Set one field of a session's own options (`kind`'s object), or with
+/// `null` remove it, in place in the stored session.
+pub(super) async fn set_session_option(state: &AppState, session_id: &str, kind: &str, field: &str, value: serde_json::Value) -> Result<(), String> {
+    edit_session_options(state, session_id, kind, |opts| {
+        if value.is_null() {
+            opts.remove(field);
+        } else {
+            opts.insert(field.into(), value);
+        }
+        Ok(())
+    })
+    .await
+}
+
+/// Change a `kind` session's own options object in place (made when it
+/// has none) and store the session again.
+async fn edit_session_options(
+    state: &AppState,
+    session_id: &str,
+    kind: &str,
+    edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>) -> Result<(), String>,
+) -> Result<(), String> {
     let manager = state.vault_manager.lock().await;
     if manager.is_locked() {
         return Err("Vault is locked".to_string());
@@ -128,13 +163,7 @@ pub(super) async fn trust_session_cert(state: &AppState, session_id: &str, finge
         *opts = serde_json::json!({});
     }
     let Some(opts) = opts.as_object_mut() else { return Err(format!("Invalid session data: {session_id}")) };
-    let mut certs: Vec<String> = opts.get("certs").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
-    let fp = fingerprint.to_ascii_uppercase();
-    certs.retain(|c| !c.eq_ignore_ascii_case(&fp));
-    certs.push(fp);
-    let extra = certs.len().saturating_sub(16);
-    certs.drain(..extra);
-    opts.insert("certs".into(), serde_json::to_value(&certs).map_err(|e| e.to_string())?);
+    edit(opts)?;
     let json = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     manager
         .update_secret(&loc.vault_id, &loc.secret_id, SecretBox::new(Box::new(json)))

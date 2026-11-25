@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ironrdp_graphics::pointer::DecodedPointer;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
 use tokio::net::TcpStream;
@@ -133,6 +133,52 @@ struct Open {
     flow: Arc<Flow>,
     /// Replaced when the panel is re-created, as for RDP.
     frames: Arc<std::sync::Mutex<Channel<InvokeResponseBody>>>,
+    /// How the connection is protected, once it is up.
+    security: Arc<std::sync::Mutex<Option<Security>>>,
+}
+
+/// How a VNC connection is protected on the network, for the tab's tooltip.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Security {
+    /// `tls` (the whole connection, as an iDRAC with SSL encryption on),
+    /// `ssh` (through a saved SSH session), `proxmox` (inside the Proxmox
+    /// session's HTTPS connection) or `none`.
+    pub kind: &'static str,
+    /// TLS only: its version, as `TLS 1.3`.
+    pub protocol: Option<String>,
+    /// TLS only: the cipher suite, as `TLS13_AES_256_GCM_SHA384`.
+    pub cipher: Option<String>,
+    /// TLS only: the cipher's key length in bits.
+    pub bits: Option<u16>,
+}
+
+impl Security {
+    fn plain(kind: &'static str) -> Self {
+        Self { kind, protocol: None, cipher: None, bits: None }
+    }
+
+    fn tls(conn: &rustls::ClientConnection) -> Self {
+        let protocol = conn.protocol_version().map(|v| match v {
+            rustls::ProtocolVersion::TLSv1_3 => "TLS 1.3".to_string(),
+            rustls::ProtocolVersion::TLSv1_2 => "TLS 1.2".to_string(),
+            other => format!("{other:?}"),
+        });
+        let cipher = conn.negotiated_cipher_suite().map(|c| format!("{:?}", c.suite()));
+        let bits = cipher.as_deref().and_then(cipher_bits);
+        Self { kind: "tls", protocol, cipher, bits }
+    }
+}
+
+/// A cipher suite's key length, from its name.
+fn cipher_bits(name: &str) -> Option<u16> {
+    if name.contains("AES_256") || name.contains("CHACHA20") {
+        Some(256)
+    } else if name.contains("AES_128") {
+        Some(128)
+    } else {
+        None
+    }
 }
 
 #[derive(Default)]
@@ -149,6 +195,11 @@ impl VncManager {
     /// can re-attach rather than connect again.
     pub fn running(&self, id: &str) -> bool {
         self.open.get(id).is_some_and(|o| !o.task.is_finished())
+    }
+
+    /// How a connected session is protected; `None` before it is up.
+    pub fn security(&self, id: &str) -> Option<Security> {
+        self.open.get(id).and_then(|o| o.security.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 
     /// Open a desktop and start streaming it to `frames`. Returns at once;
@@ -179,8 +230,9 @@ impl VncManager {
         let (input, rx) = mpsc::channel(INPUT_QUEUE);
         let flow = Arc::new(Flow::new());
         let frames = Arc::new(std::sync::Mutex::new(frames));
-        let task = tokio::spawn(session(app, params, way, rx, Arc::clone(&frames), Arc::clone(&flow)));
-        self.open.insert(id, Open { input, task, flow, frames });
+        let security = Arc::new(std::sync::Mutex::new(None));
+        let task = tokio::spawn(session(app, params, way, rx, Arc::clone(&frames), Arc::clone(&flow), Arc::clone(&security)));
+        self.open.insert(id, Open { input, task, flow, frames, security });
     }
 
     pub fn send(&self, id: &str, event: Input) -> Result<(), String> {
@@ -223,6 +275,7 @@ async fn session(
     input: mpsc::Receiver<Input>,
     frames: Arc<std::sync::Mutex<Channel<InvokeResponseBody>>>,
     flow: Arc<Flow>,
+    security: Arc<std::sync::Mutex<Option<Security>>>,
 ) {
     let id = params.id.clone();
     let status = |s: RdpStatus| {
@@ -243,15 +296,20 @@ async fn session(
     // nobody can be on the way: through SSH, or to this machine.
     let private_path = forward.is_some() || is_loopback(&params.host);
     let login = apple::Login { username: &params.username, password: &params.password, private_path };
+    let via_ssh = forward.is_some();
     let opening = async {
         match link {
-            Some(l) => start(l, &params.password).await,
+            Some(l) => Ok((start(l, &params.password).await?, Security::plain("proxmox"))),
             None if params.tls => open_tls(&host, port, &params.host, &params.tls_trusted, &login).await,
-            None => open(&host, port, &login).await,
+            None => Ok((open(&host, port, &login).await?, Security::plain(if via_ssh { "ssh" } else { "none" }))),
         }
     };
     let client = match tokio::time::timeout(CONNECT_TIMEOUT, opening).await {
-        Ok(Ok(client)) => client,
+        Ok(Ok((client, protected))) => {
+            tracing::info!("VNC {id}: security {protected:?}");
+            *security.lock().unwrap_or_else(|e| e.into_inner()) = Some(protected);
+            client
+        }
         Ok(Err(e)) => {
             tracing::warn!("VNC {id}: connection failed: {e}");
             status(RdpStatus::Error { message: e });
@@ -295,7 +353,7 @@ async fn open(host: &str, port: u16, login: &apple::Login<'_>) -> Result<VncClie
 /// `name` is the server's own name for its certificate (`host` may be a
 /// local forward); a certificate the system does not trust must be one the
 /// session trusts.
-async fn open_tls(host: &str, port: u16, name: &str, trusted: &[String], login: &apple::Login<'_>) -> Result<VncClient, String> {
+async fn open_tls(host: &str, port: u16, name: &str, trusted: &[String], login: &apple::Login<'_>) -> Result<(VncClient, Security), String> {
     let tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("Could not reach {host}:{port}: {e}"))?;
     let _ = tcp.set_nodelay(true);
     let tls = crate::ftp::tls::Tls::new(name, trusted)?;
@@ -310,8 +368,9 @@ async fn open_tls(host: &str, port: u16, name: &str, trusted: &[String], login: 
             });
         }
     };
+    let protected = Security::tls(stream.get_ref().1);
     let prelude = apple::negotiate(&mut stream, login).await?;
-    start(apple::Shim::new(stream, prelude), login.password).await
+    Ok((start(apple::Shim::new(stream, prelude), login.password).await?, protected))
 }
 
 /// The RFB handshake and a VNC password login over `stream`.

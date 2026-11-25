@@ -7,6 +7,7 @@
 		tabsBeside, requestCloseBeside, getPendingClose, confirmPendingClose, cancelPendingClose, isDesktopTab
 	} from '#lib/state/tabs.svelte.js';
 	import { canDuplicate, duplicateTab } from '#lib/terminal/duplicate-tab.js';
+	import { vncSecurity, type VncSecurity } from '#lib/ipc/vnc.js';
 	import { sshConnectionAlgorithms, sshTmuxKill, sshTmuxList, sshTmuxWindows, sshTmuxWindow, type NegotiatedAlgorithms, type TmuxListed, type TmuxWindow, type TmuxWindowOp } from '#lib/ipc/ssh.js';
 	import { validTmuxName } from '#lib/terminal/tmux.js';
 	import { newTab, isTmuxViewTab, openTmuxWindowTab, switchTmuxSession, tmuxSessionOf } from '#lib/terminal/tmux-tabs.js';
@@ -163,8 +164,27 @@
 		return out === inn ? out : `${out} / ${inn}`;
 	}
 
-	/** The tab's title, then, on a connected SSH tab, the algorithms in use. */
+	/** How each VNC tab's connection is protected, read when the pointer
+	 *  comes over it (it can connect, drop and reconnect meanwhile). */
+	let vncSecurityByTab = $state<Record<string, VncSecurity | null>>({});
+	function readVncSecurity(id: string): void {
+		vncSecurity(id)
+			.then((s) => (vncSecurityByTab[id] = s))
+			.catch(() => (vncSecurityByTab[id] = null));
+	}
+	function vncSecurityLine(s: VncSecurity): string {
+		if (s.kind === 'tls') {
+			const cipher = [s.protocol, s.cipher, s.bits ? t('tabs.vnc_bits', { bits: s.bits }) : null].filter(Boolean).join(', ');
+			return t('tabs.vnc_tls', { cipher });
+		}
+		return s.kind === 'ssh' ? t('tabs.vnc_ssh') : s.kind === 'proxmox' ? t('tabs.vnc_proxmox') : t('tabs.vnc_plain');
+	}
+
+	/** The tab's title, then, on a connected SSH tab, the algorithms in use;
+	 *  on a VNC tab, its encryption. */
 	function tabTooltip(tab: Tab): string {
+		const v = tab.type === 'vnc' ? vncSecurityByTab[tab.id] : undefined;
+		if (v) return `${tab.title}\n\n${vncSecurityLine(v)}`;
 		const a = tab.type === 'ssh' && tab.connectionId && !tab.link ? algorithms[tab.connectionId] : undefined;
 		if (!a) return tab.title;
 		const mac = a.mac_out || a.mac_in ? bothWays(a.mac_out, a.mac_in) : t('tabs.algo_mac_aead');
@@ -639,6 +659,7 @@
 					role="tab"
 					tabindex="0"
 					aria-selected={tab.id === activeTab?.id}
+					onpointerenter={() => { if (tab.type === 'vnc') readVncSecurity(tab.id); }}
 					title={tabTooltip(tab)}
 				>
 					{#if tab.type === 'ssh' && tab.detectedOs}
