@@ -19,6 +19,8 @@ fn params() -> Option<Params> {
         password: std::env::var("REACH_FTP_PASS").unwrap_or_default(),
         security: Security::parse(std::env::var("REACH_FTP_TLS").ok().as_deref()),
         trusted: Vec::new(),
+        wireguard: None,
+        tunnel: None,
     })
 }
 

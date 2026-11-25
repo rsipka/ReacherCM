@@ -2495,6 +2495,14 @@ mod approval_tests {
         let a = &s.alt_addresses.as_ref().unwrap()[0];
         assert!(a.via_session_id.is_none() && a.via_wireguard.as_deref() == Some("lab"));
         assert!(s.wireguard_id.is_none());
+
+        // A server management session's text console (SSH, another port)
+        // goes through its tunnel too; another session's other port does not.
+        s.wireguard_id = Some("office".into());
+        let host = s.host.clone();
+        assert_eq!(wireguard_route(&s, &host, 2222), None);
+        s.kind = crate::state::SessionKind::Bmc;
+        assert_eq!(wireguard_route(&s, &host, 22), Some("office"));
     }
 
     #[test]
