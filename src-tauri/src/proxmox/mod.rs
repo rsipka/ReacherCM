@@ -13,6 +13,7 @@
 
 pub mod client;
 pub mod model;
+pub mod pbs;
 pub mod ws;
 
 use std::collections::{HashMap, HashSet};
@@ -108,6 +109,8 @@ struct Known {
     nodes: HashSet<String>,
     guests: HashSet<(String, String, u32)>,
     tasks: HashSet<String>,
+    /// A Backup Server's datastores.
+    stores: HashSet<String>,
 }
 
 /// One logged-in Proxmox server.
@@ -172,6 +175,10 @@ impl ProxmoxConn {
 
     /// A node the window named: one this connection listed.
     async fn check_node(&self, node: &str) -> Result<(), ProxmoxError> {
+        if self.client.product == Product::Pbs {
+            // A Backup Server is one node, which its API calls localhost.
+            return if node == pbs::PBS_NODE { Ok(()) } else { Err(ProxmoxError::Other("Not a node name".into())) };
+        }
         if !valid_node(node) {
             return Err(ProxmoxError::Other("Not a node name".into()));
         }
@@ -352,8 +359,11 @@ impl ProxmoxConn {
     }
 
     pub async fn tasks(&self) -> Result<Vec<Task>, ProxmoxError> {
-        self.pve_only()?;
-        let list = tasks(&self.client.get("/api2/json/cluster/tasks").await?, MAX_TASKS);
+        let v = match self.client.product {
+            Product::Pve => self.client.get("/api2/json/cluster/tasks").await?,
+            Product::Pbs => self.client.get_q(&format!("/api2/json/nodes/{}/tasks", pbs::PBS_NODE), &[("limit", MAX_TASKS.to_string())]).await?,
+        };
+        let list = tasks(&v, MAX_TASKS);
         self.remember_tasks(list.iter().map(|t| t.upid.as_str()));
         Ok(list)
     }
@@ -361,7 +371,7 @@ impl ProxmoxConn {
     /// A task's log from line `start` on, and whether it still runs.
     pub async fn task_log(&self, node: &str, upid: &str, start: u64) -> Result<TaskLog, ProxmoxError> {
         self.check_task(node, upid)?;
-        let base = format!("/api2/json/nodes/{node}/tasks/{upid}");
+        let base = format!("/api2/json/nodes/{}/tasks/{upid}", self.task_node(node));
         let (p_log, p_status) = (format!("{base}/log"), format!("{base}/status"));
         let query = [("start", start.to_string()), ("limit", LOG_LINES.to_string())];
         let (log, status) = tokio::join!(self.client.get_q(&p_log, &query), self.client.get(&p_status));
@@ -370,7 +380,13 @@ impl ProxmoxConn {
 
     pub async fn task_stop(&self, node: &str, upid: &str) -> Result<(), ProxmoxError> {
         self.check_task(node, upid)?;
-        self.client.delete(&format!("/api2/json/nodes/{node}/tasks/{upid}")).await.map(|_| ())
+        self.client.delete(&format!("/api2/json/nodes/{}/tasks/{upid}", self.task_node(node))).await.map(|_| ())
+    }
+
+    /// The node a task's API calls name: a Backup Server's is always localhost,
+    /// whatever host name its task ids carry.
+    fn task_node<'a>(&self, node: &'a str) -> &'a str {
+        if self.client.product == Product::Pbs { pbs::PBS_NODE } else { node }
     }
 
     /// The login the consoles use; none: the user must log in for them.
@@ -380,7 +396,14 @@ impl ProxmoxConn {
 
     /// Where a console's API calls go: the guest's, or the node's.
     async fn console_base(&self, t: &ConsoleTarget) -> Result<String, ProxmoxError> {
-        self.pve_only()?;
+        if self.client.product == Product::Pbs {
+            // A Backup Server has no guests: only its own shell.
+            if t.kind != "node" {
+                return Err(ProxmoxError::Other("A Backup Server has only a node shell".into()));
+            }
+            self.check_node(&t.node).await?;
+            return Ok(format!("/api2/json/nodes/{}", pbs::PBS_NODE));
+        }
         match t.kind.as_str() {
             "node" => {
                 self.check_node(&t.node).await?;

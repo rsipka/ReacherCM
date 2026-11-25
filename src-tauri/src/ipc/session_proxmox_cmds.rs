@@ -231,3 +231,62 @@ pub(crate) fn console_conn(state: &AppState, session_id: &str) -> Result<std::sy
         .for_session(session_id)
         .ok_or_else(|| "Open the Proxmox session's tab first; its consoles go through it".to_string())
 }
+
+/* ---- A Backup Server's pages ---- */
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn proxmox_pbs_overview(state: State<'_, AppState>, connection_id: String) -> Result<crate::proxmox::pbs::PbsOverview, String> {
+    conn(&state, &connection_id)?.pbs_overview().await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn proxmox_pbs_namespaces(state: State<'_, AppState>, connection_id: String, store: String) -> Result<Vec<String>, String> {
+    conn(&state, &connection_id)?.pbs_namespaces(&store).await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn proxmox_pbs_groups(state: State<'_, AppState>, connection_id: String, store: String, ns: String) -> Result<Vec<crate::proxmox::pbs::BackupGroup>, String> {
+    conn(&state, &connection_id)?.pbs_groups(&store, &ns).await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn proxmox_pbs_snapshots(state: State<'_, AppState>, connection_id: String, store: String, ns: String, kind: String, id: String) -> Result<Vec<crate::proxmox::pbs::BackupSnapshot>, String> {
+    conn(&state, &connection_id)?.pbs_snapshots(&store, &ns, &kind, &id).await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn proxmox_pbs_gc(state: State<'_, AppState>, connection_id: String, store: String) -> Result<String, String> {
+    conn(&state, &connection_id)?.pbs_gc(&store).await.map_err(err)
+}
+
+/// Verify a datastore (no `kind`), or one backup.
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+#[allow(clippy::too_many_arguments)]
+pub async fn proxmox_pbs_verify(state: State<'_, AppState>, connection_id: String, store: String, ns: String, kind: Option<String>, id: Option<String>, time: Option<u64>) -> Result<String, String> {
+    let backup = match (kind.as_deref(), id.as_deref(), time) {
+        (Some(k), Some(i), Some(t)) => Some((k, i, t)),
+        (None, None, None) => None,
+        _ => return Err("Name the whole backup to verify".into()),
+    };
+    conn(&state, &connection_id)?.pbs_verify(&store, &ns, backup).await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+#[allow(clippy::too_many_arguments)]
+pub async fn proxmox_pbs_protect(state: State<'_, AppState>, connection_id: String, store: String, ns: String, kind: String, id: String, time: u64, protected: bool) -> Result<(), String> {
+    conn(&state, &connection_id)?.pbs_protect(&store, &ns, &kind, &id, time, protected).await.map_err(err)
+}
+
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+#[allow(clippy::too_many_arguments)]
+pub async fn proxmox_pbs_forget(state: State<'_, AppState>, connection_id: String, store: String, ns: String, kind: String, id: String, time: u64) -> Result<(), String> {
+    conn(&state, &connection_id)?.pbs_forget(&store, &ns, &kind, &id, time).await.map_err(err)
+}

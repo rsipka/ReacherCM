@@ -333,7 +333,7 @@
 			<span class="auth-badge" title={authLabel}>{unavailable ? t('serial.desktop_only_short') : filesBadge}</span>
 		{:else if session.kind === 'proxmox'}
 			<!-- Talks to Proxmox VE's API. -->
-			<span class="auth-badge" title={t('proxmox.badge_hint')}>{session.proxmox?.token_id ? t('proxmox.badge_token') : t('proxmox.badge')}</span>
+			<span class="auth-badge" title={t('proxmox.badge_hint')}>{session.port === 8007 ? (session.proxmox?.token_id ? t('proxmox.badge_pbs_token') : 'PBS') : session.proxmox?.token_id ? t('proxmox.badge_token') : t('proxmox.badge')}</span>
 		{:else if session.kind === 'bmc'}
 			<!-- Talks Redfish to the server's management controller. -->
 			<span class="auth-badge" title={t('bmc.badge_hint')}>{t('bmc.badge')}</span>

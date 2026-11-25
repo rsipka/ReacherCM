@@ -17,6 +17,8 @@ const KEY: &[u8] = include_bytes!("testdata/key.pem");
 const FINGERPRINT: &str = "D0:D6:4D:85:26:A4:69:2B:1C:29:BA:7A:D8:C4:0A:E7:82:43:88:F1:DB:CB:00:EE:D3:F9:B6:0C:0B:0C:F3:67";
 const FULL: &str = "PVE:alice@pam:6750A1B2::full";
 const TOKEN: &str = "PVEAPIToken=alice@pam!ci=11111111-2222-3333-4444-555555555555";
+const PBS_TOKEN: &str = "PBSAPIToken=alice@pbs!ci:11111111-2222-3333-4444-555555555555";
+const GC_UPID: &str = "UPID:pbs1:000004D2:0000162E:00000003:6750A1B2:garbage_collection:store1:alice@pbs!ci:";
 
 /// Bytes already read, then the stream.
 struct Prefixed<S> {
@@ -66,7 +68,7 @@ impl Req {
         self.header("cookie").is_some_and(|c| c == format!("PVEAuthCookie={FULL}"))
     }
     fn by_token(&self) -> bool {
-        self.header("authorization") == Some(TOKEN)
+        self.header("authorization") == Some(TOKEN) || self.header("authorization") == Some(PBS_TOKEN)
     }
 }
 
@@ -122,6 +124,41 @@ fn answer(r: &Req) -> (u16, &'static str, Value) {
             }
             json!({"port": 5900, "ticket": "PVEVNC:termticket", "user": "alice@pam", "upid": "UPID:pve1:1:1:1:vncproxy:101:alice@pam:"})
         }
+        // A Backup Server.
+        ("GET", "/nodes/localhost/status") => json!({"cpu": 0.02, "loadavg": [0.5, 0.4, 0.3], "memory": {"used": 5, "total": 8}, "swap": {"used": 0, "total": 0}, "root": {"used": 2, "total": 9, "avail": 7}, "uptime": 600, "kversion": "Linux 6.14.8-2-pve", "cpuinfo": {"model": "QEMU Virtual CPU", "cpus": 4, "sockets": 1}, "info": {"fingerprint": "aa"}}),
+        ("GET", "/admin/datastore") => json!([{"name": "store1", "comment": "main", "path": "/mnt/datastore/store1"}, {"name": "usb", "maintenance-mode": "type=offline,message=unplugged"}]),
+        ("GET", "/status/datastore-usage") => json!([{"store": "store1", "total": 1000, "used": 400, "avail": 600, "estimated-full-date": 1800000000, "gc-status": {"removed-bytes": 10, "pending-bytes": 5}}, {"store": "usb", "error": "datastore is not mounted"}]),
+        ("GET", "/admin/datastore/store1/namespace") => json!([{"ns": ""}, {"ns": "lab"}, {"ns": "lab/old"}]),
+        ("GET", "/admin/datastore/store1/groups") => {
+            assert_eq!(r.query, "ns=lab");
+            json!([{"backup-type": "vm", "backup-id": "100", "last-backup": 1733000000, "backup-count": 2, "owner": "alice@pbs"}, {"backup-type": "ct", "backup-id": "101", "last-backup": 1733000100, "backup-count": 1}, {"backup-type": "vm", "backup-id": "../x", "backup-count": 1}])
+        }
+        ("GET", "/admin/datastore/store1/snapshots") => {
+            assert!(r.query.contains("backup-type=vm") && r.query.contains("backup-id=100") && r.query.contains("ns=lab"), "{}", r.query);
+            json!([
+                {"backup-type": "vm", "backup-id": "100", "backup-time": 1732000000, "size": 2048, "protected": true, "verification": {"state": "ok", "upid": "x"}, "files": [{"filename": "index.json.blob", "crypt-mode": "none"}]},
+                {"backup-type": "vm", "backup-id": "100", "backup-time": 1733000000, "size": 4096, "protected": false, "files": [{"filename": "drive-scsi0.img.fidx", "crypt-mode": "encrypt"}]}
+            ])
+        }
+        ("POST", "/admin/datastore/store1/gc") => json!(GC_UPID),
+        ("POST", "/admin/datastore/store1/verify") => {
+            assert_eq!(r.body, json!({"backup-type": "vm", "backup-id": "100", "backup-time": 1733000000u64, "ns": "lab"}));
+            json!("UPID:pbs1:000004D3:0000162F:00000004:6750A1B3:verify_snapshot:store1:alice@pbs!ci:")
+        }
+        ("PUT", "/admin/datastore/store1/protected") => {
+            assert_eq!(r.body, json!({"backup-type": "vm", "backup-id": "100", "backup-time": 1733000000u64, "protected": true, "ns": "lab"}));
+            Value::Null
+        }
+        ("DELETE", "/admin/datastore/store1/snapshots") => {
+            assert!(r.query.contains("backup-time=1732000000") && r.query.contains("ns=lab"), "{}", r.query);
+            Value::Null
+        }
+        ("GET", "/nodes/localhost/tasks") => json!([
+            {"upid": GC_UPID, "node": "pbs1", "worker_type": "garbage_collection", "worker_id": "store1", "user": "alice@pbs!ci", "starttime": 1733000000},
+            {"upid": "UPID:pbs1:00000001:00000001:00000001:6750A000:backup:store1%3Avm%2F100:alice@pbs:", "node": "pbs1", "worker_type": "backup", "worker_id": "store1:vm/100", "starttime": 1732990000, "endtime": 1732990100, "status": "OK"}
+        ]),
+        ("GET", p) if p.starts_with("/nodes/localhost/tasks/") && p.ends_with("/log") => json!([{"n": 1, "t": "starting garbage collection on store store1"}]),
+        ("GET", p) if p.starts_with("/nodes/localhost/tasks/") && p.ends_with("/status") => json!({"status": "stopped", "exitstatus": "OK"}),
         _ => return (501, "Method not implemented", json!({"data": null})),
     };
     (200, "OK", json!({ "data": data }))
@@ -326,4 +363,61 @@ async fn a_wrong_token_is_a_refused_login() {
     let c = client(port, vec![FINGERPRINT.into()]);
     let header = Product::Pve.token_header("alice@pam!ci", "wrong");
     assert!(matches!(ProxmoxConn::open(c, "s1".into(), Auth::Token { header }, "x".into()).await, Err(ProxmoxError::Login(_))));
+}
+
+#[tokio::test]
+async fn a_backup_server_shows_its_datastores_and_backups() {
+    let port = mock().await;
+    let c = Client::new(&Params { host: "127.0.0.1".into(), port, product: Product::Pbs, trusted: vec![FINGERPRINT.into()] }).unwrap();
+    let header = Product::Pbs.token_header("alice@pbs!ci", "11111111-2222-3333-4444-555555555555");
+    let conn = ProxmoxConn::open(c, "s2".into(), Auth::Token { header }, "alice@pbs!ci".into()).await.unwrap();
+    assert_eq!(conn.opened().await.product, Product::Pbs);
+
+    // The Proxmox VE pages are not a Backup Server's.
+    assert!(conn.resources().await.is_err());
+
+    let o = conn.pbs_overview().await.unwrap();
+    assert_eq!((o.node.root_used, o.node.root_total, o.node.cpus), (Some(2), Some(9), Some(4)));
+    assert_eq!(o.node.load, vec![0.5, 0.4, 0.3]);
+    assert_eq!(o.datastores.len(), 2);
+    assert_eq!((o.datastores[0].store.as_str(), o.datastores[0].used, o.datastores[0].full_at), ("store1", Some(400), Some(1800000000)));
+    assert_eq!(o.datastores[0].gc_pending, Some(5));
+    assert_eq!(o.datastores[1].maintenance.as_deref(), Some("offline"));
+    assert_eq!(o.datastores[1].error.as_deref(), Some("datastore is not mounted"));
+
+    assert_eq!(conn.pbs_namespaces("store1").await.unwrap(), vec!["", "lab", "lab/old"]);
+    let g = conn.pbs_groups("store1", "lab").await.unwrap();
+    assert_eq!(g.len(), 2, "the group with a bad id is left out");
+    assert_eq!((g[0].kind.as_str(), g[0].id.as_str(), g[0].count), ("vm", "100", 2));
+    let snaps = conn.pbs_snapshots("store1", "lab", "vm", "100").await.unwrap();
+    assert_eq!(snaps[0].time, 1733000000, "newest first");
+    assert!(snaps[0].encrypted && !snaps[0].protected && snaps[0].verified.is_none());
+    assert!(snaps[1].protected && !snaps[1].encrypted);
+    assert_eq!(snaps[1].verified.as_deref(), Some("ok"));
+
+    // Datastores it did not list, and names that are not names, are refused.
+    assert!(conn.pbs_groups("other", "").await.is_err());
+    assert!(conn.pbs_groups("store1", "../x").await.is_err());
+    assert!(conn.pbs_snapshots("store1", "", "disk", "100").await.is_err());
+
+    assert_eq!(conn.pbs_gc("store1").await.unwrap(), GC_UPID);
+    assert!(conn.pbs_verify("store1", "lab", Some(("vm", "100", 1733000000))).await.unwrap().contains("verify_snapshot"));
+    conn.pbs_protect("store1", "lab", "vm", "100", 1733000000, true).await.unwrap();
+    conn.pbs_forget("store1", "lab", "vm", "100", 1732000000).await.unwrap();
+
+    // Tasks: PBS's field names, read through localhost.
+    let tasks = conn.tasks().await.unwrap();
+    assert_eq!((tasks[0].kind.as_str(), tasks[0].id.as_deref(), tasks[0].node.as_str()), ("garbage_collection", Some("store1"), "pbs1"));
+    assert!(tasks[0].running);
+    let log = conn.task_log("pbs1", GC_UPID, 0).await.unwrap();
+    assert_eq!(log.lines, vec!["starting garbage collection on store store1"]);
+    assert_eq!(log.exitstatus.as_deref(), Some("OK"));
+
+    // Only the node's shell, and only as localhost.
+    let guest = ConsoleTarget { session_id: "s2".into(), node: "localhost".into(), kind: "lxc".into(), vmid: Some(101), serial: None };
+    assert!(conn.term(&guest).await.is_err());
+    let other = ConsoleTarget { session_id: "s2".into(), node: "pbs1".into(), kind: "node".into(), vmid: None, serial: None };
+    assert!(conn.term(&other).await.is_err());
+    let shell = ConsoleTarget { node: "localhost".into(), ..other };
+    assert!(matches!(conn.term(&shell).await, Err(ProxmoxError::ConsoleLoginNeeded)));
 }

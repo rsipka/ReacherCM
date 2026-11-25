@@ -418,8 +418,9 @@ pub fn task(v: &Value) -> Option<Task> {
     let status = s(v, "status");
     let running = end.is_none() && status.as_deref().is_none_or(|s| s == "running");
     Some(Task {
-        kind: s(v, "type").unwrap_or_default(),
-        id: s(v, "id"),
+        // A Backup Server names them worker_type and worker_id.
+        kind: s(v, "type").or_else(|| s(v, "worker_type")).unwrap_or_default(),
+        id: s(v, "id").or_else(|| s(v, "worker_id")),
         user: s(v, "user"),
         start: u(v, "starttime"),
         end,

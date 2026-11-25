@@ -20,7 +20,7 @@ export interface ConsoleHost {
 
 /** A console's tab title: the guest's name and id, or the node's. */
 export function consoleTitle(target: ProxmoxConsole, name: string | null | undefined): string {
-	if (target.kind === 'node') return `${target.node} shell`;
+	if (target.kind === 'node') return `${name || target.node} shell`;
 	const base = name ? `${name} (${target.vmid})` : String(target.vmid);
 	return target.serial ? `${base} ${target.serial}` : base;
 }

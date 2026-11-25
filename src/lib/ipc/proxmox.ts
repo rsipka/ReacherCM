@@ -219,3 +219,83 @@ export function proxmoxTaskLog(connectionId: string, node: string, upid: string,
 export function proxmoxTaskStop(connectionId: string, node: string, upid: string): Promise<void> {
 	return invoke('proxmox_task_stop', { connectionId, node, upid });
 }
+
+/* ---- A Proxmox Backup Server ---- */
+
+export interface PbsDatastore {
+	store: string;
+	comment: string | null;
+	/** Maintenance mode (`read-only`, `offline`...). */
+	maintenance: string | null;
+	total: number | null;
+	used: number | null;
+	avail: number | null;
+	/** When PBS expects it to be full (Unix time). */
+	fullAt: number | null;
+	gcRemoved: number | null;
+	gcPending: number | null;
+	error: string | null;
+}
+
+export interface PbsOverview {
+	node: ProxmoxNode;
+	datastores: PbsDatastore[];
+}
+
+export interface PbsGroup {
+	kind: 'vm' | 'ct' | 'host';
+	id: string;
+	last: number | null;
+	count: number;
+	owner: string | null;
+	comment: string | null;
+}
+
+export interface PbsSnapshot {
+	kind: 'vm' | 'ct' | 'host';
+	id: string;
+	time: number;
+	size: number | null;
+	protected: boolean;
+	/** `ok` or `failed`; null: never verified. */
+	verified: string | null;
+	encrypted: boolean;
+	comment: string | null;
+	owner: string | null;
+}
+
+/** The node a Backup Server's API calls itself. */
+export const PBS_NODE = 'localhost';
+
+export function pbsOverview(connectionId: string): Promise<PbsOverview> {
+	return invoke('proxmox_pbs_overview', { connectionId });
+}
+
+export function pbsNamespaces(connectionId: string, store: string): Promise<string[]> {
+	return invoke('proxmox_pbs_namespaces', { connectionId, store });
+}
+
+export function pbsGroups(connectionId: string, store: string, ns: string): Promise<PbsGroup[]> {
+	return invoke('proxmox_pbs_groups', { connectionId, store, ns });
+}
+
+export function pbsSnapshots(connectionId: string, store: string, ns: string, kind: string, id: string): Promise<PbsSnapshot[]> {
+	return invoke('proxmox_pbs_snapshots', { connectionId, store, ns, kind, id });
+}
+
+export function pbsGc(connectionId: string, store: string): Promise<string> {
+	return invoke('proxmox_pbs_gc', { connectionId, store });
+}
+
+/** Verify a whole datastore, or one backup. */
+export function pbsVerify(connectionId: string, store: string, ns: string, backup?: { kind: string; id: string; time: number }): Promise<string> {
+	return invoke('proxmox_pbs_verify', { connectionId, store, ns, kind: backup?.kind ?? null, id: backup?.id ?? null, time: backup?.time ?? null });
+}
+
+export function pbsProtect(connectionId: string, store: string, ns: string, kind: string, id: string, time: number, protect: boolean): Promise<void> {
+	return invoke('proxmox_pbs_protect', { connectionId, store, ns, kind, id, time, protected: protect });
+}
+
+export function pbsForget(connectionId: string, store: string, ns: string, kind: string, id: string, time: number): Promise<void> {
+	return invoke('proxmox_pbs_forget', { connectionId, store, ns, kind, id, time });
+}

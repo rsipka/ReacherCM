@@ -30,7 +30,8 @@
 		type ProxmoxOpened,
 		type ProxmoxOverview,
 		type ProxmoxResource,
-		type ProxmoxConsole
+		type ProxmoxConsole,
+		PBS_NODE
 	} from '#lib/ipc/proxmox.js';
 	import Button from '#lib/components/shared/Button.svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
@@ -38,6 +39,7 @@
 	import { openProxmoxConsole, consoleTitle, type ConsoleKind } from '#lib/sessions/proxmox-console.js';
 	import ProxmoxGuest from './ProxmoxGuest.svelte';
 	import ProxmoxTasks from './ProxmoxTasks.svelte';
+	import ProxmoxBackup from './ProxmoxBackup.svelte';
 	import { bytes, share, cpu, uptime, stateClass, stateLabel, proxmoxError } from './proxmox-format.js';
 
 	interface Props {
@@ -55,8 +57,9 @@
 		| { kind: 'error'; message: string }
 		| { kind: 'up' };
 
-	type Page = 'overview' | 'guests' | 'storage' | 'tasks';
-	const PAGES: Page[] = ['overview', 'guests', 'storage', 'tasks'];
+	type Page = 'overview' | 'guests' | 'storage' | 'datastores' | 'tasks';
+	const PVE_PAGES: Page[] = ['overview', 'guests', 'storage', 'tasks'];
+	const PBS_PAGES: Page[] = ['overview', 'datastores', 'tasks'];
 	/** The pages read again this often while they are shown. */
 	const REFRESH_MS = 10_000;
 
@@ -84,6 +87,7 @@
 	let serverName = $derived(tab.sessionName ?? tab.title);
 	let connectionId = $derived(tab.proxmoxConnectionId);
 	let pbs = $derived(opened?.product === 'pbs');
+	let pages = $derived(pbs ? PBS_PAGES : PVE_PAGES);
 
 	let nodes = $derived((resources ?? []).filter((r) => r.kind === 'node'));
 	let storages = $derived((resources ?? []).filter((r) => r.kind === 'storage'));
@@ -164,9 +168,10 @@
 	/** Read a page; `force` reads it again even when it was read before. */
 	async function load(which: Page, force = false): Promise<void> {
 		const id = tab.proxmoxConnectionId;
-		if (!id || pbs) return;
+		if (!id) return;
 		pageError = null;
-		if (which === 'tasks') {
+		// A Backup Server's pages read themselves; a bump reads them again.
+		if (pbs || which === 'tasks') {
 			if (force) refreshCount++;
 			return;
 		}
@@ -294,16 +299,18 @@
 
 	/* ---- Node actions ---- */
 
-	let nodeConfirm = $state<{ node: string; command: 'reboot' | 'shutdown'; typed: string } | null>(null);
+	/** A node to restart or shut down; `label` is the name typed to confirm
+	 *  (a Backup Server's own host name, while its API calls it localhost). */
+	let nodeConfirm = $state<{ node: string; label: string; command: 'reboot' | 'shutdown'; typed: string } | null>(null);
 
 	async function runNodeAction(): Promise<void> {
 		const c = nodeConfirm;
 		const id = tab.proxmoxConnectionId;
-		if (!c || !id || c.typed.trim() !== c.node) return;
+		if (!c || !id || c.typed.trim() !== c.label) return;
 		nodeConfirm = null;
 		try {
 			await proxmoxNodeAction(id, c.node, c.command);
-			addToast(t(c.command === 'reboot' ? 'proxmox.node_rebooting' : 'proxmox.node_shutting_down', { node: c.node }), 'success');
+			addToast(t(c.command === 'reboot' ? 'proxmox.node_rebooting' : 'proxmox.node_shutting_down', { node: c.label }), 'success');
 		} catch (err) {
 			addToast(proxmoxError(err), 'error');
 		}
@@ -345,14 +352,8 @@
 				<Button variant="secondary" size="sm" disabled={loading} onclick={() => void load(page, true)}>{t('proxmox.refresh')}</Button>
 			</div>
 		</header>
-		{#if pbs}
-			<div class="body">
-				<p class="note">{t('proxmox.pbs_later')}</p>
-				<div><Button variant="secondary" size="sm" onclick={openWeb}>{t('proxmox.open_web')}</Button></div>
-			</div>
-		{:else}
 			<div class="pages" role="tablist">
-				{#each PAGES as p (p)}
+				{#each pages as p (p)}
 					<button type="button" role="tab" class="page-tab" class:active={page === p} aria-selected={page === p} onclick={() => show(p)}>{t(`proxmox.page_${p}`)}</button>
 				{/each}
 			</div>
@@ -383,8 +384,8 @@
 								<span class="spacer"></span>
 								{#if n.online}
 									<Button variant="secondary" size="sm" onclick={() => void openConsole('term', { node: n.name, kind: 'node' }, null)}>{t('proxmox.shell')}</Button>
-									<Button variant="ghost" size="sm" onclick={() => (nodeConfirm = { node: n.name, command: 'reboot', typed: '' })}>{t('proxmox.reboot')}</Button>
-									<Button variant="ghost" size="sm" onclick={() => (nodeConfirm = { node: n.name, command: 'shutdown', typed: '' })}>{t('proxmox.shutdown')}</Button>
+									<Button variant="ghost" size="sm" onclick={() => (nodeConfirm = { node: n.name, label: n.name, command: 'reboot', typed: '' })}>{t('proxmox.reboot')}</Button>
+									<Button variant="ghost" size="sm" onclick={() => (nodeConfirm = { node: n.name, label: n.name, command: 'shutdown', typed: '' })}>{t('proxmox.shutdown')}</Button>
 								{/if}
 							</div>
 							{#if n.online}
@@ -483,9 +484,18 @@
 					{/if}
 				{:else if page === 'tasks'}
 					<ProxmoxTasks {connectionId} refresh={refreshCount} {active} />
+				{:else if pbs && (page === 'overview' || page === 'datastores')}
+					<ProxmoxBackup
+						{connectionId}
+						page={page}
+						refresh={refreshCount}
+						{active}
+						onbrowse={() => show('datastores')}
+						onshell={(name) => void openConsole('term', { node: PBS_NODE, kind: 'node' }, name)}
+						onnodeaction={(command, name) => (nodeConfirm = { node: PBS_NODE, label: name, command, typed: '' })}
+					/>
 				{/if}
 			</div>
-		{/if}
 	</div>
 {:else}
 	<div class="connect">
@@ -591,14 +601,14 @@
 <Modal open={nodeConfirm !== null} onclose={() => (nodeConfirm = null)} title={nodeConfirm?.command === 'reboot' ? t('proxmox.node_reboot_title') : t('proxmox.node_shutdown_title')} maxWidth="440px">
 	{#if nodeConfirm}
 		<form class="dialog-form" onsubmit={(e) => { e.preventDefault(); void runNodeAction(); }}>
-			<p class="note">{nodeConfirm.command === 'reboot' ? t('proxmox.node_reboot_intro', { node: nodeConfirm.node }) : t('proxmox.node_shutdown_intro', { node: nodeConfirm.node })}</p>
+			<p class="note">{nodeConfirm.command === 'reboot' ? t('proxmox.node_reboot_intro', { node: nodeConfirm.label }) : t('proxmox.node_shutdown_intro', { node: nodeConfirm.label })}</p>
 			<label class="field">
-				<span>{t('proxmox.type_node_name', { node: nodeConfirm.node })}</span>
+				<span>{t('proxmox.type_node_name', { node: nodeConfirm.label })}</span>
 				<input type="text" bind:value={nodeConfirm.typed} autocomplete="off" spellcheck="false" />
 			</label>
 			<div class="actions">
 				<Button variant="ghost" size="sm" type="button" onclick={() => (nodeConfirm = null)}>{t('common.cancel')}</Button>
-				<Button variant="danger" size="sm" type="submit" disabled={nodeConfirm.typed.trim() !== nodeConfirm.node}>{nodeConfirm.command === 'reboot' ? t('proxmox.reboot') : t('proxmox.shutdown')}</Button>
+				<Button variant="danger" size="sm" type="submit" disabled={nodeConfirm.typed.trim() !== nodeConfirm.label}>{nodeConfirm.command === 'reboot' ? t('proxmox.reboot') : t('proxmox.shutdown')}</Button>
 			</div>
 		</form>
 	{/if}
