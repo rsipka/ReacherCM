@@ -16,7 +16,8 @@
 //! runs.
 
 use super::*;
-use crate::state::{CustomField, JumpHostConfig, ProxyConfig, SessionKind};
+use crate::ssh::terminal::Backspace;
+use crate::state::{CustomField, FilesProtocol, JumpHostConfig, ProxyConfig, SessionKind};
 use crate::telnet::protocol::{TelnetBackspace, TelnetMode, TelnetNewline};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -91,6 +92,131 @@ pub struct SessionPatch {
     pub tmux: Option<TmuxPatch>,
     /// VNC: the saved SSH session to reach the server through, or none.
     pub via_session: Option<Change<String>>,
+    /// A WireGuard profile whose tunnel carries the connection, or none.
+    pub wireguard: Option<Change<String>>,
+    /// Sessions with other addresses: how one is picked, `auto`, `ask` or
+    /// `main`. Sessions with only the main address have nothing to pick.
+    pub connect_mode: Option<String>,
+    /// Sessions with other addresses: check which answer first; `Clear`:
+    /// as Settings says.
+    pub address_check: Option<Change<bool>>,
+    /// SSH: open in the file manager over SFTP or SCP; `Clear`: a terminal.
+    pub files: Option<Change<FilesProtocol>>,
+    /// SSH: the parts of its terminal settings to change.
+    pub terminal: Option<TerminalPatch>,
+    /// RDP: the parts of its settings to change.
+    pub rdp: Option<RdpPatch>,
+    /// Sessions with a Wake-on-LAN MAC: where the packet goes. The MAC is
+    /// each machine's own and stays.
+    pub wol: Option<WolPatch>,
+    /// Pinned to Favorites or not.
+    pub favorite: Option<bool>,
+    /// The icon in the list, by OS id (`unknown`: no icon), picked by hand
+    /// so connecting keeps it; `Clear`: found on connect again (SSH), or
+    /// none.
+    pub os_icon: Option<Change<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct TerminalPatch {
+    /// `TERM`; `Clear`: xterm-256color.
+    pub term: Option<Change<String>>,
+    /// `Clear`: DEL.
+    pub backspace: Option<Change<Backspace>>,
+    /// An encoding label; `Clear`: UTF-8.
+    pub encoding: Option<Change<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct WolPatch {
+    /// `Clear`: 255.255.255.255.
+    pub broadcast: Option<Change<String>>,
+    /// `Clear`: 9.
+    pub port: Option<Change<u16>>,
+}
+
+/// An RD Gateway as set on many sessions at once.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RdpGateway {
+    pub host: String,
+    pub detect: bool,
+    pub rpc: bool,
+    /// A login of its own; none: the session's.
+    pub user: Option<String>,
+    pub password: Option<String>,
+}
+
+/// The RDP settings to change. `Clear` puts one back to its default (see
+/// `rdp::options::RdpOptions`). The program, RemoteApp and the folders
+/// shared as drives are each session's own and are not here.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct RdpPatch {
+    /// `ironrdp` (built in) or `freerdp`.
+    pub client: Option<String>,
+    /// `text` or `off`; `Clear`: text, pictures and files.
+    pub clipboard: Option<Change<String>>,
+    pub forward_lock_keys: Option<bool>,
+    pub resolution: Option<Change<String>>,
+    pub scale: Option<Change<u32>>,
+    pub color_depth: Option<Change<u32>>,
+    pub keyboard_layout: Option<Change<u32>>,
+    pub sound: Option<Change<String>>,
+    pub audio_quality: Option<Change<String>>,
+    pub performance: Option<Change<String>>,
+    pub compression: Option<bool>,
+    pub keepalive: Option<Change<u32>>,
+    pub jiggler: Option<Change<u32>>,
+    pub admin: Option<bool>,
+    pub all_drives: Option<bool>,
+    /// `kerberos`; `Clear`: NTLM.
+    pub auth: Option<Change<String>>,
+    pub kdc: Option<Change<String>>,
+    pub gateway: Option<Change<RdpGateway>>,
+    pub files_port: Option<Change<u16>>,
+}
+
+impl RdpPatch {
+    fn is_empty(&self) -> bool {
+        self.client.is_none()
+            && self.clipboard.is_none()
+            && self.forward_lock_keys.is_none()
+            && self.resolution.is_none()
+            && self.scale.is_none()
+            && self.color_depth.is_none()
+            && self.keyboard_layout.is_none()
+            && self.sound.is_none()
+            && self.audio_quality.is_none()
+            && self.performance.is_none()
+            && self.compression.is_none()
+            && self.keepalive.is_none()
+            && self.jiggler.is_none()
+            && self.admin.is_none()
+            && self.all_drives.is_none()
+            && self.auth.is_none()
+            && self.kdc.is_none()
+            && self.gateway.is_none()
+            && self.files_port.is_none()
+    }
+}
+
+/// `Set` puts the value in the slot, `Clear` empties it.
+fn put<T: Clone>(slot: &mut Option<T>, change: &Option<Change<T>>) {
+    match change {
+        Some(Change::Set(v)) => *slot = Some(v.clone()),
+        Some(Change::Clear) => *slot = None,
+        None => {}
+    }
+}
+
+/// A switch that is off unless set: off is stored as unset.
+fn put_flag(slot: &mut Option<bool>, on: Option<bool>) {
+    if let Some(on) = on {
+        *slot = on.then_some(true);
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -143,6 +269,41 @@ impl SessionPatch {
         if self.port == Some(0) {
             return Err("Port 0 is not a port".into());
         }
+        if let Some(m) = &self.connect_mode {
+            if !matches!(m.as_str(), "auto" | "ask" | "main") {
+                return Err(format!("Unknown connect mode: {m}"));
+            }
+        }
+        if let Some(Change::Set(t)) = self.terminal.as_ref().and_then(|t| t.term.as_ref()) {
+            if t.trim().is_empty() || t.trim().contains(char::is_whitespace) {
+                return Err(format!("Not a terminal type: {t}"));
+            }
+        }
+        if let Some(r) = &self.rdp {
+            if let Some(c) = &r.client {
+                if !matches!(c.as_str(), "ironrdp" | "freerdp") {
+                    return Err(format!("Unknown RDP client: {c}"));
+                }
+            }
+            if let Some(Change::Set(g)) = &r.gateway {
+                if crate::rdp::options::parse_gateway(&g.host).is_none() {
+                    return Err(format!("Not a gateway address: {}", g.host));
+                }
+            }
+            if let Some(Change::Set(k)) = &r.kdc {
+                if crate::rdp::options::kdc_url(k).is_none() {
+                    return Err(format!("Not a KDC address: {k}"));
+                }
+            }
+            if let Some(Change::Set(res)) = &r.resolution {
+                if crate::rdp::options::parse_resolution(res).is_none() {
+                    return Err(format!("Not a desktop size: {res}"));
+                }
+            }
+        }
+        if matches!(self.wol.as_ref().and_then(|w| w.port.as_ref()), Some(Change::Set(0))) {
+            return Err("Port 0 is not a port".into());
+        }
         Ok(())
     }
 }
@@ -156,6 +317,69 @@ fn has_login(kind: SessionKind) -> bool {
 /// The kinds the session editor offers a saved credential for.
 fn takes_credential(kind: SessionKind) -> bool {
     matches!(kind, SessionKind::Ssh | SessionKind::Rdp | SessionKind::Telnet | SessionKind::Winbox | SessionKind::Web | SessionKind::Bmc | SessionKind::Proxmox)
+}
+
+/// The kinds the session editor offers a WireGuard tunnel for.
+fn takes_wireguard(kind: SessionKind) -> bool {
+    matches!(kind, SessionKind::Ssh | SessionKind::Telnet | SessionKind::Rdp | SessionKind::Vnc | SessionKind::Spice | SessionKind::Web | SessionKind::Winbox)
+}
+
+/// The kinds the session editor offers an OS icon for.
+fn takes_os_icon(kind: SessionKind) -> bool {
+    matches!(kind, SessionKind::Ssh | SessionKind::Telnet | SessionKind::Vnc | SessionKind::Spice | SessionKind::Winbox)
+}
+
+/// The RDP part of the patch, on an RDP session. What is left at its
+/// default is dropped when the session is stored (`RdpOptions::tidy`).
+fn apply_rdp(s: &mut SessionConfig, r: &RdpPatch) {
+    if let Some(c) = &r.client {
+        s.rdp_use_freerdp = c == "freerdp";
+    }
+    put(&mut s.rdp_clipboard, &r.clipboard);
+    if let Some(on) = r.forward_lock_keys {
+        s.rdp_forward_lock_keys = Some(on);
+    }
+    let o = s.rdp.get_or_insert_with(Default::default);
+    put(&mut o.resolution, &r.resolution);
+    put(&mut o.scale, &r.scale);
+    put(&mut o.color_depth, &r.color_depth);
+    put(&mut o.keyboard_layout, &r.keyboard_layout);
+    put(&mut o.sound, &r.sound);
+    put(&mut o.audio_quality, &r.audio_quality);
+    put(&mut o.performance, &r.performance);
+    if let Some(on) = r.compression {
+        // On is the default, stored as unset.
+        o.compression = (!on).then_some(false);
+    }
+    put(&mut o.keepalive, &r.keepalive);
+    put(&mut o.jiggler, &r.jiggler);
+    put_flag(&mut o.admin, r.admin);
+    put_flag(&mut o.all_drives, r.all_drives);
+    put(&mut o.auth, &r.auth);
+    if matches!(r.auth, Some(Change::Clear)) {
+        o.kdc = None;
+    }
+    put(&mut o.kdc, &r.kdc);
+    match &r.gateway {
+        Some(Change::Set(g)) => {
+            o.gateway = Some(g.host.trim().to_string());
+            o.gateway_detect = g.detect.then_some(true);
+            o.gateway_rpc = g.rpc.then_some(true);
+            o.gateway_user = g.user.clone().filter(|u| !u.trim().is_empty());
+            o.gateway_password = if o.gateway_user.is_some() { g.password.clone().filter(|p| !p.is_empty()) } else { None };
+        }
+        Some(Change::Clear) => {
+            o.gateway = None;
+            o.gateway_detect = None;
+            o.gateway_rpc = None;
+            o.gateway_user = None;
+            o.gateway_password = None;
+        }
+        None => {}
+    }
+    put(&mut o.files_port, &r.files_port);
+    // Stored as `session_update` stores it: defaults dropped.
+    s.rdp = s.rdp.take().and_then(crate::rdp::options::RdpOptions::tidy);
 }
 
 fn has_terminal(kind: SessionKind) -> bool {
@@ -400,6 +624,91 @@ fn apply_patch(s: &mut SessionConfig, patch: &SessionPatch, uses_credential: imp
             };
         } else {
             skipped.push("via_session");
+        }
+    }
+
+    if let Some(w) = &patch.wireguard {
+        if takes_wireguard(s.kind) {
+            s.wireguard_id = match w {
+                Change::Set(id) if !id.trim().is_empty() => Some(id.trim().to_string()),
+                _ => None,
+            };
+        } else {
+            skipped.push("wireguard");
+        }
+    }
+    // Picking among addresses means something only where there are some.
+    let addresses = ssh && s.alt_addresses.as_ref().is_some_and(|a| !a.is_empty());
+    if let Some(m) = &patch.connect_mode {
+        if addresses {
+            s.connect_mode = (m != "auto").then(|| m.clone());
+        } else {
+            skipped.push("connect_mode");
+        }
+    }
+    if let Some(c) = &patch.address_check {
+        if addresses {
+            put(&mut s.address_check, &Some(c.clone()));
+        } else {
+            skipped.push("address_check");
+        }
+    }
+    if let Some(f) = &patch.files {
+        if ssh {
+            put(&mut s.files, &Some(f.clone()));
+        } else {
+            skipped.push("files");
+        }
+    }
+    if let Some(t) = &patch.terminal {
+        if ssh {
+            let o = s.terminal.get_or_insert_with(Default::default);
+            put(&mut o.term, &t.term);
+            put(&mut o.backspace, &t.backspace);
+            put(&mut o.encoding, &t.encoding);
+        } else {
+            skipped.push("terminal");
+        }
+    }
+    if let Some(r) = patch.rdp.as_ref().filter(|r| !r.is_empty()) {
+        if s.kind == SessionKind::Rdp {
+            apply_rdp(s, r);
+        } else {
+            skipped.push("rdp");
+        }
+    }
+    if let Some(w) = &patch.wol {
+        match s.wol.as_mut() {
+            Some(wol) if !wol.mac.trim().is_empty() => {
+                put(&mut wol.broadcast, &w.broadcast);
+                put(&mut wol.port, &w.port);
+            }
+            _ => skipped.push("wol"),
+        }
+    }
+    if let Some(f) = patch.favorite {
+        s.favorite = f;
+    }
+    if let Some(o) = &patch.os_icon {
+        if takes_os_icon(s.kind) {
+            match o {
+                Change::Set(id) if !id.trim().is_empty() => {
+                    s.detected_os = Some(id.trim().to_string());
+                    s.os_manual = true;
+                }
+                _ => {
+                    // A picked icon goes; one found on connect (SSH) stays
+                    // until the next connect finds it again.
+                    if s.os_manual {
+                        s.detected_os = (s.kind == SessionKind::Winbox).then(|| "mikrotik".to_string());
+                    } else if s.kind != SessionKind::Ssh {
+                        s.detected_os = None;
+                    }
+                    s.os_manual = false;
+                }
+            }
+        } else {
+            skipped.push("os_icon");
         }
     }
 
@@ -812,6 +1121,122 @@ mod tests {
         assert_eq!(vnc.via_session_id.as_deref(), Some("gw"));
         let mut ssh = session(serde_json::json!({}));
         assert_eq!(apply_patch(&mut ssh, &p, NO_CREDENTIAL), vec!["via_session"]);
+    }
+
+    #[test]
+    fn a_wireguard_tunnel_goes_to_the_kinds_that_take_one() {
+        let p = patch(serde_json::json!({ "wireguard": { "set": "wg1" } }));
+        let mut s = session(serde_json::json!({}));
+        let mut rdp = session(serde_json::json!({ "kind": "rdp" }));
+        let mut wsl = session(serde_json::json!({ "kind": "wsl" }));
+        assert!(apply_patch(&mut s, &p, NO_CREDENTIAL).is_empty());
+        assert!(apply_patch(&mut rdp, &p, NO_CREDENTIAL).is_empty());
+        assert_eq!(apply_patch(&mut wsl, &p, NO_CREDENTIAL), vec!["wireguard"]);
+        assert_eq!((s.wireguard_id.as_deref(), rdp.wireguard_id.as_deref()), (Some("wg1"), Some("wg1")));
+        apply_patch(&mut s, &patch(serde_json::json!({ "wireguard": "clear" })), NO_CREDENTIAL);
+        assert!(s.wireguard_id.is_none());
+    }
+
+    #[test]
+    fn the_connect_mode_needs_other_addresses() {
+        let p = patch(serde_json::json!({ "connect_mode": "ask", "address_check": { "set": false } }));
+        assert!(p.check().is_ok());
+        let mut multi = session(serde_json::json!({ "alt_addresses": [{ "host": "10.0.0.2" }] }));
+        assert!(apply_patch(&mut multi, &p, NO_CREDENTIAL).is_empty());
+        assert_eq!((multi.connect_mode.as_deref(), multi.address_check), (Some("ask"), Some(false)));
+        let mut single = session(serde_json::json!({}));
+        assert_eq!(apply_patch(&mut single, &p, NO_CREDENTIAL), vec!["connect_mode", "address_check"]);
+        assert!(single.connect_mode.is_none());
+        apply_patch(&mut multi, &patch(serde_json::json!({ "connect_mode": "auto", "address_check": "clear" })), NO_CREDENTIAL);
+        assert!(multi.connect_mode.is_none() && multi.address_check.is_none());
+        assert!(patch(serde_json::json!({ "connect_mode": "random" })).check().is_err());
+    }
+
+    #[test]
+    fn ssh_terminal_settings_and_files_change_part_by_part() {
+        let mut s = session(serde_json::json!({ "terminal": { "term": "vt100", "encoding": "ISO-8859-2" } }));
+        let p = patch(serde_json::json!({ "terminal": { "backspace": { "set": "ctrlh" }, "encoding": "clear" }, "files": { "set": "scp" } }));
+        assert!(apply_patch(&mut s, &p, NO_CREDENTIAL).is_empty());
+        let t = s.terminal.clone().unwrap();
+        assert_eq!((t.term.as_deref(), t.backspace, t.encoding), (Some("vt100"), Some(Backspace::CtrlH), None));
+        assert_eq!(s.files, Some(FilesProtocol::Scp));
+        // Back to every default: nothing is stored.
+        apply_patch(&mut s, &patch(serde_json::json!({ "terminal": { "term": "clear", "backspace": "clear" }, "files": "clear" })), NO_CREDENTIAL);
+        assert!(s.terminal.is_none() && s.files.is_none());
+        let mut telnet = session(serde_json::json!({ "kind": "telnet" }));
+        assert_eq!(apply_patch(&mut telnet, &p, NO_CREDENTIAL), vec!["files", "terminal"]);
+        assert!(patch(serde_json::json!({ "terminal": { "term": { "set": "vt 100" } } })).check().is_err());
+    }
+
+    #[test]
+    fn rdp_settings_change_one_by_one() {
+        let mut rdp = session(serde_json::json!({
+            "kind": "rdp", "rdp_clipboard": "off",
+            "rdp": { "program": "notepad.exe", "scale": 150, "keepalive": 60 },
+        }));
+        let p = patch(serde_json::json!({ "rdp": {
+            "client": "freerdp", "clipboard": "clear", "forward_lock_keys": false,
+            "resolution": { "set": "1920x1080" }, "scale": "clear", "keyboard_layout": { "set": 1029 },
+            "performance": { "set": "fast" }, "compression": false, "admin": true, "all_drives": true,
+            "auth": { "set": "kerberos" }, "kdc": { "set": "dc.example.com" },
+            "gateway": { "set": { "host": "gw.example.com", "detect": true, "user": "EXAMPLE\\gw", "password": "pw" } },
+            "files_port": { "set": 2222 },
+        } }));
+        assert!(p.check().is_ok());
+        assert!(apply_patch(&mut rdp, &p, NO_CREDENTIAL).is_empty());
+        assert!(rdp.rdp_use_freerdp && rdp.rdp_clipboard.is_none());
+        assert_eq!(rdp.rdp_forward_lock_keys, Some(false));
+        let o = rdp.rdp.clone().unwrap();
+        assert_eq!(o.program.as_deref(), Some("notepad.exe"), "the program is the session's own");
+        assert_eq!((o.resolution.as_deref(), o.scale, o.keyboard_layout, o.keepalive), (Some("1920x1080"), None, Some(1029), Some(60)));
+        assert_eq!((o.performance.as_deref(), o.compression, o.admin, o.all_drives), (Some("fast"), Some(false), Some(true), Some(true)));
+        assert_eq!((o.auth.as_deref(), o.kdc.as_deref()), (Some("kerberos"), Some("dc.example.com")));
+        assert_eq!((o.gateway.as_deref(), o.gateway_detect, o.gateway_rpc), (Some("gw.example.com"), Some(true), None));
+        assert_eq!((o.gateway_user.as_deref(), o.gateway_password.as_deref(), o.files_port), (Some("EXAMPLE\\gw"), Some("pw"), Some(2222)));
+        let back = patch(serde_json::json!({ "rdp": { "gateway": "clear", "auth": "clear", "compression": true, "admin": false } }));
+        apply_patch(&mut rdp, &back, NO_CREDENTIAL);
+        let o = rdp.rdp.clone().unwrap();
+        assert!(o.gateway.is_none() && o.gateway_user.is_none() && o.gateway_password.is_none());
+        assert!(o.auth.is_none() && o.kdc.is_none() && o.compression.is_none() && o.admin.is_none());
+        let mut ssh = session(serde_json::json!({}));
+        assert_eq!(apply_patch(&mut ssh, &p, NO_CREDENTIAL), vec!["rdp"]);
+        assert!(ssh.rdp.is_none());
+        assert!(patch(serde_json::json!({ "rdp": { "gateway": { "set": { "host": "not a host" } } } })).check().is_err());
+        assert!(patch(serde_json::json!({ "rdp": { "client": "mstsc" } })).check().is_err());
+        assert!(patch(serde_json::json!({ "rdp": { "resolution": { "set": "big" } } })).check().is_err());
+    }
+
+    #[test]
+    fn wake_on_lan_keeps_each_mac() {
+        let p = patch(serde_json::json!({ "wol": { "broadcast": { "set": " 10.0.0.255 " }, "port": { "set": 7 } } }));
+        let mut s = session(serde_json::json!({ "wol": { "mac": "00:11:22:33:44:55" } }));
+        assert!(apply_patch(&mut s, &p, NO_CREDENTIAL).is_empty());
+        let w = s.wol.clone().unwrap();
+        assert_eq!((w.mac.as_str(), w.broadcast.as_deref(), w.port), ("00:11:22:33:44:55", Some("10.0.0.255"), Some(7)));
+        let mut none = session(serde_json::json!({}));
+        assert_eq!(apply_patch(&mut none, &p, NO_CREDENTIAL), vec!["wol"]);
+        assert!(none.wol.is_none());
+        assert!(patch(serde_json::json!({ "wol": { "port": { "set": 0 } } })).check().is_err());
+    }
+
+    #[test]
+    fn favorites_and_os_icons() {
+        let p = patch(serde_json::json!({ "favorite": true, "os_icon": { "set": "mikrotik" } }));
+        let mut s = session(serde_json::json!({ "detected_os": "ubuntu" }));
+        assert!(apply_patch(&mut s, &p, NO_CREDENTIAL).is_empty());
+        assert!(s.favorite && s.os_manual);
+        assert_eq!(s.detected_os.as_deref(), Some("mikrotik"));
+        // Automatic again: the picked icon goes, the next connect finds one.
+        apply_patch(&mut s, &patch(serde_json::json!({ "os_icon": "clear", "favorite": false })), NO_CREDENTIAL);
+        assert!(!s.favorite && !s.os_manual && s.detected_os.is_none());
+        // One found on connect stays.
+        let mut found = session(serde_json::json!({ "detected_os": "debian" }));
+        apply_patch(&mut found, &patch(serde_json::json!({ "os_icon": "clear" })), NO_CREDENTIAL);
+        assert_eq!(found.detected_os.as_deref(), Some("debian"));
+        let mut rdp = session(serde_json::json!({ "kind": "rdp", "detected_os": "windows" }));
+        assert_eq!(apply_patch(&mut rdp, &p, NO_CREDENTIAL), vec!["os_icon"]);
+        assert!(rdp.favorite);
+        assert_eq!(rdp.detected_os.as_deref(), Some("windows"));
     }
 
     #[test]
