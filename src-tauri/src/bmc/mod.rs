@@ -415,41 +415,25 @@ pub struct ConsoleLaunch {
 }
 
 impl BmcConn {
-    /// Where the controller's remote console opens. An iDRAC 9 hands out a
-    /// one-time login for its HTML5 console; the others open their web
-    /// interface, signed in, with the console a click away.
+    /// Where the controller's remote console opens. An iDRAC 9 has a
+    /// `/console` address that, once signed in, opens its HTML5 console in a
+    /// pop-up; the sign-in page is filled in for the person. Older iDRACs
+    /// (no `/restgui`) and the others open their web interface, signed in,
+    /// with the console a click away.
+    ///
+    /// Dell's one-time console login (`GetKVMSession`, then
+    /// `/console?username&tempUsername&tempPassword`) is not used: firmware
+    /// 7.00.00.185 answers Not Found to it, while plain `/console` works on
+    /// every iDRAC 9 build tried.
     pub async fn console(&self) -> Result<ConsoleLaunch, BmcError> {
         match self.vendor {
-            "dell" => match self.dell_kvm().await {
-                Ok(path) => Ok(ConsoleLaunch { path, login: Some("off") }),
-                // No console without the licence: said as it is.
-                Err(e @ BmcError::Licence(_)) => Err(e),
-                Err(e) => {
-                    tracing::info!("iDRAC one-time console login not offered ({e}); opening its web interface");
-                    Ok(ConsoleLaunch { path: "/".into(), login: Some("idrac") })
-                }
-            },
+            "dell" if self.client.web_page_exists("/restgui/start.html").await => {
+                Ok(ConsoleLaunch { path: "/console".into(), login: Some("idrac") })
+            }
+            "dell" => Ok(ConsoleLaunch { path: "/".into(), login: Some("idrac") }),
             "hpe" => Ok(ConsoleLaunch { path: "/".into(), login: Some("ilo") }),
             _ => Ok(ConsoleLaunch { path: "/".into(), login: None }),
         }
-    }
-
-    async fn dell_kvm(&self) -> Result<String, BmcError> {
-        let m = self.manager.as_ref().ok_or_else(|| BmcError::Other("No BMC found".into()))?;
-        let service = format!("{m}/Oem/Dell/DelliDRACCardService");
-        let actions = format!("{service}/Actions/DelliDRACCardService");
-        // Dell's own scripts export the certificate first; some firmware
-        // wants it done before a console session is given.
-        let _ = self.client.post_for(&format!("{actions}.ExportSSLCertificate"), &json!({ "SSLCertType": "Server" })).await;
-        let v = self.client.post_for(&format!("{actions}.GetKVMSession"), &json!({ "SessionTypeName": "idrac_cert_file.txt" })).await?;
-        let (Some(user), Some(pass)) = (s(&v, "TempUsername"), s(&v, "TempPassword")) else {
-            return Err(BmcError::Other("The iDRAC gave no console login".into()));
-        };
-        // Dell's own launcher waits 5 seconds before opening the console:
-        // some firmware (seen on 7.00.00.185) answers Not Found to a one-time
-        // login used at once.
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        Ok(model::dell_console_path(self.client.username(), &user, &pass))
     }
 
     /// What to type for the serial console after an SSH login to it.
