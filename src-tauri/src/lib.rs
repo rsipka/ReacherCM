@@ -2065,6 +2065,8 @@ pub fn run() {
             }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // A web window on an iDRAC logs out first, then closes itself.
+                // Web windows are desktop only.
+                #[cfg(desktop)]
                 if web::is_web_label(window.label()) && web::window::close_requested(tauri::Manager::app_handle(window), window.label()) {
                     api.prevent_close();
                 }
