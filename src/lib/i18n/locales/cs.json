@@ -4324,6 +4324,8 @@
   "organization.key_rotated": "Klíč trezoru byl vyměněn.",
   "bmc.remote_console": "Vzdálená konzole",
   "bmc.remote_console_tip": "iDRAC 9 otevře svou HTML5 konzoli rovnou. Starší iDRAC (7, 8) a jiné řadiče otevřou přihlášené webové rozhraní: konzoli spusťte tam (na iDRAC Dashboard › Virtual Console › Launch).",
+  "bmc.ssh": "SSH",
+  "bmc.ssh_tip": "SSH do vlastního příkazového řádku řadiče (racadm na iDRAC, SMASH CLP na iLO) jako stejný uživatel.",
   "bmc.text_console": "Textová konzole",
   "bmc.text_console_intro": "Otevře SSH kartu k řadiči a napíše jeho příkaz sériové konzole, takže uvidíte textovou konzoli serveru (BIOS, start, sériové přihlášení do Linuxu). Přihlásí se stejně jako tato relace.",
   "bmc.console_port": "Port SSH",

@@ -4324,6 +4324,8 @@
   "organization.key_rotated": "Ключът на хранилището е сменен.",
   "bmc.remote_console": "Отдалечена конзола",
   "bmc.remote_console_tip": "iDRAC 9 отваря HTML5 конзолата си директно. По-старите iDRAC (7, 8) и другите контролери отварят уеб интерфейса си с вход: стартирайте конзолата оттам (на iDRAC: Dashboard › Virtual Console › Launch).",
+  "bmc.ssh": "SSH",
+  "bmc.ssh_tip": "SSH към командния ред на контролера (racadm на iDRAC, SMASH CLP на iLO) със същия потребител.",
   "bmc.text_console": "Текстова конзола",
   "bmc.text_console_intro": "Отваря SSH раздел към контролера и въвежда командата му за серийна конзола, за да виждате текстовата конзола на сървъра (BIOS, зареждане, сериен вход в Linux). Влиза по същия начин като тази сесия.",
   "bmc.console_port": "SSH порт",

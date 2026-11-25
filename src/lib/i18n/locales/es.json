@@ -4324,6 +4324,8 @@
   "organization.key_rotated": "Clave de la bóveda cambiada.",
   "bmc.remote_console": "Consola remota",
   "bmc.remote_console_tip": "Un iDRAC 9 abre su consola HTML5 directamente. Los iDRAC antiguos (7, 8) y otros controladores abren su interfaz web con la sesión iniciada: inicie la consola allí (en un iDRAC, Dashboard › Virtual Console › Launch).",
+  "bmc.ssh": "SSH",
+  "bmc.ssh_tip": "SSH a la línea de comandos del controlador (racadm en un iDRAC, SMASH CLP en un iLO), con el mismo usuario.",
   "bmc.text_console": "Consola de texto",
   "bmc.text_console_intro": "Abre una pestaña SSH al controlador y escribe su comando de consola serie, para ver la consola de texto del servidor (BIOS, arranque, inicio de sesión serie de Linux). Inicia sesión como esta sesión.",
   "bmc.console_port": "Puerto SSH",

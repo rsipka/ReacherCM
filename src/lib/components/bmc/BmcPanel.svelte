@@ -221,6 +221,15 @@
 		requestSessionAction({ kind: 'bmc-console', sessionId: p.sessionId, port, command });
 	}
 
+	/** A plain SSH shell to the controller (racadm, SMASH CLP), as the same
+	 *  user, on the text console's port: no command typed. */
+	function openSsh(): void {
+		const p = params;
+		if (!p) return;
+		const port = rememberedConsole(p.sessionId)?.port ?? (opened?.vendor === 'openbmc' ? 2200 : BMC_SSH_PORT);
+		requestSessionAction({ kind: 'bmc-console', sessionId: p.sessionId, port, command: '' });
+	}
+
 	onMount(() => {
 		if (tab.bmcConnectionId) {
 			stage = { kind: 'up' };
@@ -324,6 +333,9 @@
 					</span>
 				{/if}
 				<Button variant="secondary" size="sm" onclick={askTextConsole}>{t('bmc.text_console')}</Button>
+				<span class="tip-wrap" use:tooltip={t('bmc.ssh_tip')}>
+					<Button variant="secondary" size="sm" onclick={openSsh}>{t('bmc.ssh')}</Button>
+				</span>
 				<Button variant="ghost" size="sm" onclick={openWeb}>{t('bmc.open_web')}</Button>
 				<Button variant="secondary" size="sm" disabled={loading !== null} onclick={() => void load(page, true)}>{t('bmc.refresh')}</Button>
 			</div>
