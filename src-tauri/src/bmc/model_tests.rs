@@ -193,6 +193,7 @@ fn action_targets_stay_on_the_service() {
 
 #[test]
 fn console_paths_and_commands() {
+    assert_eq!(dell_console_path("root", "tmp1", "a&b=c"), "/console?username=root&tempUsername=tmp1&tempPassword=a%26b%3Dc");
     assert_eq!(text_console_command("dell"), "console com2");
     assert_eq!(text_console_command("hpe"), "vsp");
     assert_eq!(text_console_command("openbmc"), "");

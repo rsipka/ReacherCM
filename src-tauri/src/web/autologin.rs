@@ -179,11 +179,23 @@ pub fn script(origin: &str, username: &str, password: &str, spec: &LoginSpec, su
     if (f && f.requestSubmit) {{ f.requestSubmit(); return; }}
     pressEnter(pw);
   }}
+  // An iDRAC 9's console sign-in page (`/restgui/start.html?console`) takes
+  // a few seconds to draw its form: say that the app is on it.
+  var veil = null;
+  if (!sent && /\/restgui\/start\.html$/.test(location.pathname) && /console/.test(location.search)) {{
+    veil = document.createElement('div');
+    veil.textContent = 'Reacher CM: signing in to open the console\u2026';
+    veil.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;' +
+      'background:rgba(20,22,28,.82);color:#fff;font:600 16px system-ui,sans-serif;pointer-events:none');
+    (document.body || document.documentElement).appendChild(veil);
+    setTimeout(function () {{ if (veil) veil.remove(); }}, 25000);
+  }}
   var started = Date.now();
   (function wait() {{
     var pw = first(SPEC.p.concat(['input[type="password"]']));
     if (!pw) {{
       if (Date.now() - started < 20000) {{ setTimeout(wait, 250); return; }}
+      if (veil) veil.remove();
       try {{ if (store) store.removeItem(KEY); }} catch (e) {{}}
       return;
     }}

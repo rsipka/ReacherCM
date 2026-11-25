@@ -349,6 +349,17 @@ fn popup(app: &AppHandle, opener: &str, url: url::Url, features: NewWindowFeatur
 
 /// A page finished loading: the login script, if it is the session's own
 /// origin and there is a login to type.
+/// Leaves a one-time console login page that says Not Found for the
+/// iDRAC's plain console address (`replace`, so the login is not kept in
+/// the window's history either).
+const CONSOLE_FALLBACK: &str = r#"(function () {
+  var t = ((document.title || '') + ' ' + (document.body ? document.body.innerText.slice(0, 300) : '')).toLowerCase();
+  if (t.indexOf('not found') < 0) return;
+  document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+    'background:#14161c;color:#fff;font:600 16px system-ui,sans-serif">Reacher CM: signing in to open the console\u2026</div>';
+  location.replace('/console');
+})();"#;
+
 fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
     if p.event() != PageLoadEvent::Finished || !matches!(p.url().scheme(), "http" | "https") {
         return;
@@ -356,6 +367,14 @@ fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
     // The path only, for a page that fails to open (a console that answers
     // Not Found): the query can hold one-time logins and the host stays out.
     tracing::info!("Web session window {}: loaded {}", w.label(), p.url().path());
+    // An iDRAC 9's one-time console login (see `bmc::BmcConn::console`) that
+    // the firmware refused (7.00.00.185 answers Not Found): plain `/console`
+    // instead, which asks for the sign-in this window fills in.
+    if p.url().path() == "/console" && p.url().query_pairs().any(|(k, _)| k == "tempUsername") {
+        if let Err(err) = w.eval(CONSOLE_FALLBACK) {
+            tracing::warn!("Web session console fallback: {err}");
+        }
+    }
     let Some(e) = entry(w.label()) else { return };
     let script = {
         let e = lock(&e);
