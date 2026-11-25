@@ -801,6 +801,7 @@ pub async fn session_create(
     wol: Option<crate::state::WakeOnLan>,
     files: Option<crate::state::FilesProtocol>,
     ftp: Option<crate::ftp::FtpOptions>,
+    proxmox: Option<crate::proxmox::ProxmoxOptions>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -905,6 +906,14 @@ pub async fn session_create(
             .filter(|f| !f.is_empty()),
         // No certificates from the window: only the prompt trusts one.
         bmc: None,
+        // Its realm and token as the editor sent them; certificates likewise.
+        proxmox: proxmox
+            .filter(|_| kind == crate::state::SessionKind::Proxmox)
+            .map(|mut p| {
+                p.certs.clear();
+                p
+            })
+            .filter(|p| !p.is_empty()),
     };
     session.tidy_documentation();
 
@@ -1064,6 +1073,15 @@ async fn prepare_update(
     } else {
         None
     };
+    // A Proxmox session's realm and token are the editor's, its
+    // certificates the stored ones (see `proxmox_session_cert_trust`).
+    session.proxmox = if session.kind == crate::state::SessionKind::Proxmox {
+        let mut p = session.proxmox.take().unwrap_or_default();
+        p.certs = stored.as_ref().and_then(|s| s.proxmox.as_ref()).map(|p| p.certs.clone()).unwrap_or_default();
+        Some(p).filter(|p| !p.is_empty())
+    } else {
+        None
+    };
 
     // A login sent is the session's own, unless it is one a credential
     // filled in (the editor shows that one): then the stored own login stays.
@@ -1106,6 +1124,10 @@ pub use ftp::*;
 #[path = "session_bmc_cmds.rs"]
 mod bmc;
 pub use bmc::*;
+
+#[path = "session_proxmox_cmds.rs"]
+pub(crate) mod proxmox;
+pub use proxmox::*;
 pub use hostkeys::*;
 
 #[path = "session_password_history_cmds.rs"]
@@ -2473,6 +2495,14 @@ mod approval_tests {
         let a = &s.alt_addresses.as_ref().unwrap()[0];
         assert!(a.via_session_id.is_none() && a.via_wireguard.as_deref() == Some("lab"));
         assert!(s.wireguard_id.is_none());
+
+        // A server management session's text console (SSH, another port)
+        // goes through its tunnel too; another session's other port does not.
+        s.wireguard_id = Some("office".into());
+        let host = s.host.clone();
+        assert_eq!(wireguard_route(&s, &host, 2222), None);
+        s.kind = crate::state::SessionKind::Bmc;
+        assert_eq!(wireguard_route(&s, &host, 22), Some("office"));
     }
 
     #[test]

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { SecretRef } from './pwmanager';
 import { ensureWireguard } from '#lib/state/wireguard.svelte.js';
+import type { ProxmoxConsole } from './proxmox';
 
 /** How a Telnet session talks to the device (see src-tauri/src/telnet/protocol.rs). */
 export interface TelnetOptions {
@@ -29,6 +30,9 @@ export interface TelnetConnectParams {
 	sessionId?: string | null;
 	/** A WireGuard profile whose tunnel carries the connection. */
 	wireguard?: string | null;
+	/** A Proxmox text console instead of a Telnet device (container,
+	 *  serial port, node shell), through the Proxmox session's tab. */
+	proxmox?: ProxmoxConsole | null;
 }
 
 /** Connect; output then arrives as `telnet-data-{id}` until `telnet-exit-{id}`. */
@@ -46,6 +50,7 @@ export async function telnetConnect(id: string, params: TelnetConnectParams, col
 			password: params.password || null,
 			passwordRef: params.passwordRef ?? null,
 			wireguard: params.wireguard ?? null,
+			proxmox: params.proxmox ?? null,
 		},
 		sessionId: params.sessionId ?? null,
 	});

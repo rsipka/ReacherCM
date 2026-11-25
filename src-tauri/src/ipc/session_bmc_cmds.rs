@@ -10,6 +10,7 @@ const PASSWORD_NEEDED: &str = "BMC_PASSWORD_NEEDED";
 const UNTRUSTED_CERT: &str = "BMC_UNTRUSTED_CERT:";
 const LOGIN_REFUSED: &str = "BMC_LOGIN_REFUSED:";
 const LICENCE: &str = "BMC_LICENCE:";
+const WG_OFF: &str = "The WireGuard tunnel for this session is off. Open the session again to turn it on.";
 
 fn err(e: BmcError) -> String {
     match e {
@@ -64,7 +65,16 @@ pub async fn bmc_connect(
         username: stored.username.clone(),
         password,
         trusted: stored.bmc.as_ref().map(|b| b.certs.clone()).unwrap_or_default(),
+        socks: None,
+        tunnel: None,
     };
+    // Through the session's WireGuard tunnel (the webview turned it on), by
+    // a local SOCKS5 proxy into it; kept on while the session is open.
+    let mut params = params;
+    if let Some((port, wg)) = crate::ipc::wireguard_commands::session_socks(&state, Some(&session_id), &stored.host, stored.port).await? {
+        params.tunnel = Some(crate::wireguard::manager::hold(&wg).await.ok_or(WG_OFF)?);
+        params.socks = Some(port);
+    }
     let conn = BmcConn::open(params).await.map_err(err)?;
     tracing::info!("Server management session {} connected ({})", stored.name, conn.vendor);
     let opened = conn.opened();
@@ -196,7 +206,13 @@ pub async fn bmc_remote_console(
     }
     let web = console_window_session(&stored, c.client.base(), c.console().await.map_err(err)?)?;
     let password = (web.web.as_ref().and_then(|w| w.login.as_deref()) != Some("off")).then(|| c.client.password().to_string());
-    crate::web::window::open(&app, &web, password, None)
+    // The console window goes through the session's WireGuard tunnel too.
+    let socks = match crate::ipc::wireguard_commands::session_socks(&state, Some(&session_id), &stored.host, stored.port).await? {
+        Some(_) if cfg!(target_os = "macos") => return Err("The remote console through a WireGuard tunnel is not available on macOS yet.".into()),
+        Some((port, wg)) => Some((port, crate::wireguard::manager::hold(&wg).await.ok_or(WG_OFF)?)),
+        None => None,
+    };
+    crate::web::window::open(&app, &web, password, socks)
 }
 
 /// The session as the web session its console window opens: the

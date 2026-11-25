@@ -356,7 +356,9 @@ pub(crate) async fn open_saved_headless(
 /// The WireGuard profile a saved session reaches `host:port` through: an
 /// other address's own, else the session's for its main address.
 pub(crate) fn wireguard_route<'a>(s: &'a crate::state::SessionConfig, host: &str, port: u16) -> Option<&'a str> {
-    if s.host == host && s.port == port {
+    // A server management session's text console is SSH to the same
+    // controller on another port.
+    if s.host == host && (s.port == port || s.kind == crate::state::SessionKind::Bmc) {
         return s.wireguard_id.as_deref();
     }
     s.alt_address(host, port).and_then(|a| a.via_wireguard.as_deref())

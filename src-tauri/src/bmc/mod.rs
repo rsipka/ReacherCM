@@ -52,6 +52,8 @@ pub struct BmcConn {
     chassis: Option<String>,
     /// Paths found by this connection that the window may name back.
     known: std::sync::Mutex<HashSet<String>>,
+    /// Keeps the session's WireGuard tunnel on while it is open.
+    _tunnel: Option<crate::wireguard::manager::Hold>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,7 +71,8 @@ fn first(v: &Value, key: &str) -> Option<String> {
 
 impl BmcConn {
     /// Log in and find the server, its BMC and its chassis.
-    pub async fn open(params: Params) -> Result<Self, BmcError> {
+    pub async fn open(mut params: Params) -> Result<Self, BmcError> {
+        let tunnel = params.tunnel.take();
         let client = Redfish::new(&params)?;
         let root = client.login().await?;
         let systems = link(&root, "Systems").unwrap_or_else(|| "/redfish/v1/Systems".into());
@@ -102,6 +105,7 @@ impl BmcConn {
             manager,
             chassis,
             known: Default::default(),
+            _tunnel: tunnel,
         })
     }
 
