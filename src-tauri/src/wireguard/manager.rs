@@ -71,7 +71,7 @@ impl Drop for Hold {
 /// A [`Hold`] on the tunnel of profile `id`, if it is up.
 pub async fn hold(id: &str) -> Option<Hold> {
     let all = running().lock().await;
-    let r = all.get(id)?;
+    let r = all.get(id).filter(|r| r.tunnel.is_running())?;
     r.holds.fetch_add(1, Ordering::Relaxed);
     Some(Hold(r.holds.clone()))
 }

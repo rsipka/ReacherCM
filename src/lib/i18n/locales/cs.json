@@ -4573,5 +4573,6 @@
   "sync_account.mobile_vault_link_help": "Na důvěryhodném zařízení se zapnutou synchronizací osobního trezoru otevřete Synchronizace a zálohy a zobrazte kód pro propojení trezoru. Na tomto zařízení jej naskenujte nebo vložte.",
   "sync_account.vault_link_confirm": "Toto zařízení otevře propojený osobní trezor. Předchozí místní trezor zůstane v zařízení a můžete ho obnovit v části Synchronizace a zálohy.",
   "sync_account.local_vault_restore": "Obnovit předchozí místní trezor",
-  "sync_account.local_vault_restore_confirm": "Znovu otevřít předchozí místní trezor? Propojený trezor zůstane na disku i na synchronizačním serveru. Možná budete potřebovat předchozí heslo."
+  "sync_account.local_vault_restore_confirm": "Znovu otevřít předchozí místní trezor? Propojený trezor zůstane na disku i na synchronizačním serveru. Možná budete potřebovat předchozí heslo.",
+  "wireguard.connect_direct": "Připojit bez tunelu"
 }

@@ -64,12 +64,12 @@ pub async fn ftp_connect(
     // Through the session's WireGuard tunnel (the webview turned it on),
     // kept on while the session is open.
     let mut params = params;
+    // Off: the person chose to connect without it.
     if let Some(wg) = stored.wireguard_id.clone().filter(|w| !w.is_empty()) {
-        let hold = crate::wireguard::manager::hold(&wg)
-            .await
-            .ok_or("The WireGuard tunnel for this session is off. Open the session again to turn it on.")?;
-        params.tunnel = Some(std::sync::Arc::new(hold));
-        params.wireguard = Some(wg);
+        if let Some(hold) = crate::wireguard::manager::hold(&wg).await {
+            params.tunnel = Some(std::sync::Arc::new(hold));
+            params.wireguard = Some(wg);
+        }
     }
     let conn = crate::ftp::FtpConn::open(params).await.map_err(|e| match e {
         crate::ftp::FtpError::Tls { untrusted: Some(fp), .. } => format!("{UNTRUSTED_CERT}{fp}"),

@@ -4573,5 +4573,6 @@
   "sync_account.mobile_vault_link_help": "Su un dispositivo fidato con la sincronizzazione della cassaforte personale attiva, apri Sincronizzazione e backup e mostra il codice di associazione. Scansionalo o incollalo su questo dispositivo.",
   "sync_account.vault_link_confirm": "Questo dispositivo aprirà la cassaforte personale associata. La cassaforte locale precedente rimarrà sul dispositivo e potrà essere ripristinata in Sincronizzazione e backup.",
   "sync_account.local_vault_restore": "Ripristina la cassaforte locale precedente",
-  "sync_account.local_vault_restore_confirm": "Riaprire la cassaforte locale precedente? La cassaforte associata rimane sul dispositivo e sul server. Potrebbe servire la password precedente."
+  "sync_account.local_vault_restore_confirm": "Riaprire la cassaforte locale precedente? La cassaforte associata rimane sul dispositivo e sul server. Potrebbe servire la password precedente.",
+  "wireguard.connect_direct": "Connetti senza tunnel"
 }

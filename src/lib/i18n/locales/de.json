@@ -4573,5 +4573,6 @@
   "sync_account.mobile_vault_link_help": "Öffnen Sie auf einem vertrauenswürdigen Gerät mit aktiviertem persönlichem Tresor-Sync „Sync & Sicherung“ und zeigen Sie den Verknüpfungscode an. Scannen Sie ihn oder fügen Sie ihn auf diesem Gerät ein.",
   "sync_account.vault_link_confirm": "Dieses Gerät öffnet den verknüpften persönlichen Tresor. Der bisherige lokale Tresor bleibt auf diesem Gerät und kann unter „Sync & Sicherung“ wiederhergestellt werden.",
   "sync_account.local_vault_restore": "Vorherigen lokalen Tresor wiederherstellen",
-  "sync_account.local_vault_restore_confirm": "Den vorherigen lokalen Tresor erneut öffnen? Der verknüpfte Tresor bleibt auf dem Gerät und dem Sync-Server. Möglicherweise benötigen Sie das bisherige Passwort."
+  "sync_account.local_vault_restore_confirm": "Den vorherigen lokalen Tresor erneut öffnen? Der verknüpfte Tresor bleibt auf dem Gerät und dem Sync-Server. Möglicherweise benötigen Sie das bisherige Passwort.",
+  "wireguard.connect_direct": "Ohne Tunnel verbinden"
 }
