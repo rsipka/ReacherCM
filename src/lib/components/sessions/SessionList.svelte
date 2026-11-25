@@ -1702,10 +1702,6 @@
 	 *  terminal (Open file manager in its menu). */
 	let filesOnConnect: string | undefined;
 
-	/** Session menu > Open file manager: the full-pane file manager of an
-	 *  SSH session. A connected tab of it switches over; otherwise it is
-	 *  connected first. An RDP session's is the same machine over SFTP, in
-	 *  a tab of its own (see #lib/sessions/rdp-files). */
 	/** A server management session's controller over SSH, as the same user,
 	 *  on the port its text console last used: a plain shell (racadm, CLP). */
 	function openBmcSsh(session: SessionConfig): void {
@@ -1715,6 +1711,10 @@
 		void handleConnect(bmcConsoleSession(session, port));
 	}
 
+	/** Session menu > Open file manager: the full-pane file manager of an
+	 *  SSH session. A connected tab of it switches over; otherwise it is
+	 *  connected first. An RDP session's is the same machine over SFTP, in
+	 *  a tab of its own (see #lib/sessions/rdp-files). */
 	function openFileManager(session: SessionConfig): void {
 		const open = getTabs().find((tab) => tab.type === 'ssh' && tab.sessionId === session.id && tab.connectionId && !tab.link);
 		if (open) {

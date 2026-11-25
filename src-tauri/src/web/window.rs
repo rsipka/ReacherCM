@@ -347,8 +347,6 @@ fn popup(app: &AppHandle, opener: &str, url: url::Url, features: NewWindowFeatur
     }
 }
 
-/// A page finished loading: the login script, if it is the session's own
-/// origin and there is a login to type.
 /// An iDRAC 9's web pages (`/restgui/...`) keep their session's XSRF token
 /// in a header; this keeps a copy in the window's session storage, so that
 /// closing the window can log out (see [`close_requested`]).
@@ -418,6 +416,8 @@ const CONSOLE_FALLBACK: &str = r#"(function () {
   location.replace('/console');
 })();"#;
 
+/// A page finished loading: the login script, if it is the session's own
+/// origin and there is a login to type.
 fn page_loaded(w: WebviewWindow, p: PageLoadPayload<'_>) {
     if p.event() != PageLoadEvent::Finished || !matches!(p.url().scheme(), "http" | "https") {
         return;
