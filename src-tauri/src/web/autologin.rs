@@ -219,10 +219,25 @@ pub fn script(origin: &str, username: &str, password: &str, spec: &LoginSpec, su
       setTimeout(function () {{ if (veil) veil.remove(); }}, 3000);
     }}, 400);
   }}
+  // Some pages keep the password field read-only until it is clicked (to
+  // stop browsers filling it): click such a field once, then look again.
+  var poked = [];
+  function pokeReadOnly() {{
+    var l = document.querySelectorAll('input[type="password"]');
+    for (var i = 0; i < l.length; i++) {{
+      var el = l[i];
+      if (!el.readOnly || el.disabled || poked.indexOf(el) >= 0) continue;
+      var r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      poked.push(el);
+      try {{ el.focus(); el.click(); }} catch (e) {{}}
+    }}
+  }}
   function look() {{
     if (filling) return true;
     var pw = first(SPEC.p.concat(['input[type="password"]']));
     if (pw) {{ fill(pw); return true; }}
+    pokeReadOnly();
     return false;
   }}
   try {{
