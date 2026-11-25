@@ -91,6 +91,7 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'terminal', label: 'settings.term_middle_click', desc: 'settings.term_middle_click_desc', words: 'mouse paste', advanced: true, desktopOnly: true },
 	{ page: 'terminal', label: 'settings.term_word_separators', desc: 'settings.term_word_separators_desc', words: 'double click select word', advanced: true, desktopOnly: true },
 	{ page: 'sessions', label: 'settings.double_click_open', desc: 'settings.double_click_open_desc' },
+	{ page: 'sessions', label: 'settings.show_unsupported_sessions', desc: 'settings.show_unsupported_sessions_desc' },
 	{ page: 'sessions', label: 'settings.close_tab_on_exit', desc: 'settings.close_tab_on_exit_desc' },
 	{ page: 'sessions', label: 'settings.server_monitoring', desc: 'settings.server_monitoring_desc', words: 'cpu memory disk stats' },
 	{ page: 'sessions', label: 'settings.check_addresses', desc: 'settings.check_addresses_desc', words: 'address silent probe reachability ip' },

@@ -75,7 +75,8 @@
 	// Passwords are now stored encrypted in vault, not in memory cache
 	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView } from '#lib/state/tabs.svelte.js';
 	import { getSettings, sessionLogConfig } from '#lib/state/settings.svelte.js';
-	import { isMobile } from '#lib/platform.js';
+	import { isMobile, isWindows } from '#lib/platform.js';
+	import { unsupportedReason } from '#lib/sessions/support.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { promptForMasterPassword } from '#lib/state/password-prompt.svelte.js';
 	import ConnectSteps from './ConnectSteps.svelte';
@@ -369,9 +370,18 @@
 		return out;
 	}
 
+	/** Why this device cannot open a session (a WinBox one on a phone), or null. */
+	function unsupported(session: SessionConfig): string | null {
+		return unsupportedReason(session, { mobile: isMobile(), windows: isWindows() });
+	}
+
 	// Filter sessions by selected vault, the toolbar's filter, then by search query
 	let filteredSessions = $derived.by(() => {
+		const showUnsupported = getSettings().showUnsupportedSessions;
 		let result = sessions.filter(s => {
+			// Sessions this device cannot open show greyed out, unless
+			// Settings > Sessions hides them.
+			if (!showUnsupported && unsupported(s)) return false;
 			if (selectedVaultId === ALL_VAULTS) return true;
 			if (selectedVaultId === null) return !s.vault_id;
 			return s.vault_id === selectedVaultId;
@@ -734,7 +744,8 @@
 
 	function openSessions(list: SessionConfig[]): void {
 		openAllConfirm = null;
-		for (const session of list) void handleConnect(session);
+		// Ones this device cannot open (WinBox on a phone) are left out.
+		for (const session of list) if (!unsupported(session)) void handleConnect(session);
 	}
 
 	/** The folder a session made with "New session here" starts in. */
@@ -1737,6 +1748,12 @@
 
 	async function handleConnect(session: SessionConfig, address?: ResolvedAddress): Promise<void> {
 		if (filesOnConnect !== session.id) filesOnConnect = undefined;
+		// Not on this device (WinBox on a phone): say why rather than fail.
+		const why = unsupported(session);
+		if (why) {
+			addToast(t(why), 'info');
+			return;
+		}
 		// A session set to Ask: the address first.
 		if (!address && sessionKind(session) === 'ssh' && connectMode(session) === 'ask') {
 			pickAddressFor = session;

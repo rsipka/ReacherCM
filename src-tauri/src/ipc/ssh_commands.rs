@@ -846,35 +846,38 @@ pub async fn ssh_detect_os(
     // stderr, and a shell that prints a banner must not pass for an answer.
     // MikroTik RouterOS runs exec commands in its own CLI, which answers
     // `cat` with "bad command name", so look at the text before the code.
+    // A BMC's CLI (Dell iDRAC's racadm, HPE iLO's SMASH CLP) answers
+    // everything with exit code 0, so its text is checked too, and the
+    // os-release answer must look like one.
     let release = exec_on_connection_with_exit_code_timeout(&handle, "cat /etc/os-release", OS_PROBE_TIMEOUT).await;
     if let Ok((out, err, _)) = &release {
-        if is_routeros_reply(out) || is_routeros_reply(err) {
-            return Ok("mikrotik".to_string());
+        if let Some(os) = os_from_cli_reply(out).or_else(|| os_from_cli_reply(err)) {
+            return Ok(os.to_string());
         }
     }
     let unix = match release {
-        Ok((out, _, 0)) => Some(os_from_os_release(&out)),
+        Ok((out, _, 0)) if looks_like_os_release(&out) => Some(os_from_os_release(&out)),
         _ => match exec_on_connection_with_exit_code_timeout(&handle, "uname -s", OS_PROBE_TIMEOUT).await {
-            Ok((out, err, _)) if is_routeros_reply(&out) || is_routeros_reply(&err) => return Ok("mikrotik".to_string()),
-            Ok((out, _, 0)) => os_from_uname(&out),
-            _ => None,
+            Ok((out, err, code)) => {
+                if let Some(os) = os_from_cli_reply(&out).or_else(|| os_from_cli_reply(&err)) {
+                    return Ok(os.to_string());
+                }
+                if code == 0 { os_from_uname(&out) } else { None }
+            }
+            Err(_) => None,
         },
     };
     if let Some(os) = unix {
         // UniFi consoles run Debian and UniFi access points and switches a
         // BusyBox Linux; both carry Ubiquiti's board files.
-        if os != "windows" && os != "darwin" {
-            if let Ok((_, _, 0)) = exec_on_connection_with_exit_code_timeout(&handle, UNIFI_PROBE, OS_PROBE_TIMEOUT).await {
-                return Ok("unifi".to_string());
-            }
+        if os != "windows" && os != "darwin" && probe_says_yes(&handle, UNIFI_PROBE).await {
+            return Ok("unifi".to_string());
         }
         // Raspberry Pi OS (64-bit, and 32-bit since Bookworm) says ID=debian;
         // only the old 32-bit Raspbian says ID=raspbian. Ubuntu or another
         // distro on a Pi keeps its own name.
-        if os == "debian" || os == "linux" {
-            if let Ok((_, _, 0)) = exec_on_connection_with_exit_code_timeout(&handle, RASPBERRY_PI_PROBE, OS_PROBE_TIMEOUT).await {
-                return Ok("raspbian".to_string());
-            }
+        if (os == "debian" || os == "linux") && probe_says_yes(&handle, RASPBERRY_PI_PROBE).await {
+            return Ok("raspbian".to_string());
         }
         return Ok(os);
     }
@@ -889,7 +892,30 @@ pub async fn ssh_detect_os(
             return Ok("mikrotik".to_string());
         }
     }
+    // An iDRAC whose error text named nothing still answers racadm.
+    if let Ok((out, _, _)) = exec_on_connection_with_exit_code_timeout(&handle, "racadm getsysinfo", OS_PROBE_TIMEOUT).await {
+        if is_idrac_text(&out) {
+            return Ok("idrac".to_string());
+        }
+    }
     Ok("unknown".to_string())
+}
+
+/// Whether a shell ran `probe` and it succeeded: the probe must print
+/// [`PROBE_YES`] on a line of its own. An exit code alone is not enough, as
+/// a BMC's CLI answers every command with 0 and may echo the command back.
+async fn probe_says_yes(handle: &crate::ssh::client::SharedHandle, probe: &str) -> bool {
+    let command = format!("( {} ) && echo {}", probe, PROBE_YES);
+    match exec_on_connection_with_exit_code_timeout(handle, &command, OS_PROBE_TIMEOUT).await {
+        Ok((out, _, 0)) => said_yes(&out),
+        _ => false,
+    }
+}
+
+const PROBE_YES: &str = "reacher-cm-probe-yes";
+
+fn said_yes(out: &str) -> bool {
+    out.lines().any(|line| line.trim() == PROBE_YES)
 }
 
 /// Succeeds only on a Ubiquiti device: UniFi OS consoles ship
@@ -900,6 +926,44 @@ const UNIFI_PROBE: &str = "test -e /etc/board.info || test -e /usr/bin/ubnt-devi
 /// Succeeds only on a Raspberry Pi running Raspberry Pi OS, which ships
 /// `/etc/rpi-issue`; the board's device-tree model names it too.
 const RASPBERRY_PI_PROBE: &str = "test -e /etc/rpi-issue || grep -qa 'Raspberry Pi' /proc/device-tree/model 2>/dev/null";
+
+/// A device CLI that answered a shell command in its own words: MikroTik
+/// RouterOS, Dell iDRAC's racadm, HPE iLO's SMASH CLP, or another BMC's
+/// CLP ("bmc", shown as server management).
+fn os_from_cli_reply(text: &str) -> Option<&'static str> {
+    if is_routeros_reply(text) {
+        Some("mikrotik")
+    } else if is_idrac_text(text) {
+        Some("idrac")
+    } else if is_smash_clp_reply(text) {
+        Some(if text.to_lowercase().contains("ilo") { "ilo" } else { "bmc" })
+    } else {
+        None
+    }
+}
+
+/// Dell iDRAC's racadm, as in `ERROR: Invalid subcommand specified.` with a
+/// pointer to `racadm help`, or `getsysinfo`'s `RAC Information:`.
+fn is_idrac_text(text: &str) -> bool {
+    let text = text.to_lowercase();
+    text.contains("racadm") || text.contains("idrac") || text.contains("invalid subcommand") || text.contains("rac information")
+}
+
+/// A DMTF SMASH CLP (HPE iLO, older iDRACs, Supermicro, Lenovo IMM), which
+/// answers with `status=2`, `status_tag=COMMAND PROCESSING FAILED` and
+/// `error_tag=COMMAND NOT RECOGNIZED`.
+fn is_smash_clp_reply(text: &str) -> bool {
+    let text = text.to_lowercase();
+    text.contains("status_tag=") || text.contains("command not recognized") || text.contains("command processing failed")
+}
+
+/// An os-release file is `KEY=value` lines; a CLI's error text is not.
+fn looks_like_os_release(text: &str) -> bool {
+    text.lines().any(|line| {
+        let line = line.trim();
+        ["ID=", "NAME=", "PRETTY_NAME=", "VERSION_ID="].iter().any(|k| line.starts_with(k))
+    })
+}
 
 /// The RouterOS CLI's answer to a command it does not have, such as
 /// `bad command name cat (line 1 column 1)`.
@@ -939,7 +1003,8 @@ fn os_from_os_release(text: &str) -> String {
 /// `MINGW64_NT-10.0-19045`, `MSYS_NT-…` or `CYGWIN_NT-…`.
 fn os_from_uname(text: &str) -> Option<String> {
     let os = text.lines().next()?.trim().to_lowercase();
-    if os.is_empty() {
+    // A kernel name is one word; an error sentence from a device CLI is not.
+    if os.is_empty() || os.contains(char::is_whitespace) || os.contains(':') {
         return None;
     }
     if os.contains("_nt") {
@@ -983,6 +1048,38 @@ mod detect_os_tests {
         let resource = "                   uptime: 3d2h\n                  version: 7.16 (stable)\n              board-name: hAP ax2\n                 platform: MikroTik\n";
         assert!(is_routeros_resource(resource));
         assert!(!is_routeros_resource("sh: /system: not found\n"));
+    }
+
+    #[test]
+    fn bmc_cli_answers_are_not_linux() {
+        // racadm answers `cat /etc/os-release` with exit code 0.
+        let racadm = "ERROR: Invalid subcommand specified.\nFor valid subcommands, run racadm help.\n";
+        assert!(!looks_like_os_release(racadm));
+        assert_eq!(os_from_cli_reply(racadm), Some("idrac"));
+        assert!(is_idrac_text("RAC Information:\nRAC Date/Time = ...\nFirmware Version = 7.00.00.00\n"));
+        assert_eq!(os_from_uname(racadm), None);
+        let ilo = "status=2\nstatus_tag=COMMAND PROCESSING FAILED\nerror_tag=COMMAND NOT RECOGNIZED\n</>hpiLO-> ";
+        assert_eq!(os_from_cli_reply(ilo), Some("ilo"));
+        let clp = "status=2\nstatus_tag=COMMAND PROCESSING FAILED\nerror_tag=COMMAND NOT RECOGNIZED\n";
+        assert_eq!(os_from_cli_reply(clp), Some("bmc"));
+        assert_eq!(os_from_cli_reply("cat: /etc/os-release: No such file or directory"), None);
+        assert_eq!(os_from_cli_reply("bad command name cat (line 1 column 1)"), Some("mikrotik"));
+    }
+
+    #[test]
+    fn os_release_must_look_like_one() {
+        assert!(looks_like_os_release("NAME=\"Ubuntu\"\nID=ubuntu\n"));
+        assert!(looks_like_os_release("  ID=alpine\n"));
+        assert!(!looks_like_os_release(""));
+        assert!(!looks_like_os_release("Welcome to the device CLI\n"));
+    }
+
+    #[test]
+    fn a_probe_needs_its_own_line() {
+        assert!(said_yes("reacher-cm-probe-yes\n"));
+        // A CLI that echoes the command back has not run it.
+        assert!(!said_yes("ERROR: unknown command ( test -e /etc/board.info ) && echo reacher-cm-probe-yes\n"));
+        assert!(!said_yes(""));
     }
 }
 

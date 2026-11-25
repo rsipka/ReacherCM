@@ -2240,7 +2240,7 @@
 		{#if wide}<span class="column-title">{opensTerminal ? t('session.column_terminal') : t('session.column_organising')}</span>{/if}
 		<Input label={t('session.tags')} bind:value={tagsStr} placeholder={kind === 'rdp' ? 'office, windows' : 'production, web, linux'} disabled={saving} />
 
-		{#if kind === 'ssh' || kind === 'telnet' || kind === 'vnc' || kind === 'spice' || kind === 'winbox'}
+		{#if kind === 'ssh' || kind === 'telnet' || kind === 'vnc' || kind === 'spice' || kind === 'winbox' || kind === 'bmc' || kind === 'web'}
 			<div class="folder-section">
 				<span class="folder-label">{t('session.os_icon')}</span>
 				<div class="os-row">

@@ -40,6 +40,7 @@ const CHANGED = {
 	terminalBar: 'hover',
 	mobileBarKeys: ['esc', 'tab'],
 	doubleClickToOpen: true,
+	showUnsupportedSessions: false,
 	closeTabOnExit: true,
 	reopenFloatWindows: true,
 	serverMonitoring: false,
