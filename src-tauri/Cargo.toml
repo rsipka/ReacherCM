@@ -135,7 +135,7 @@ which = "8"
 # build both ring and aws-lc-rs into rustls, so none is chosen by default and
 # run() in lib.rs installs ring for the whole process. See src/http.rs for
 # Android's root certificates.
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "socks", "stream"] }
 # The process-wide crypto provider reqwest asks for; installed in run().
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 

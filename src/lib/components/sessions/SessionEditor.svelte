@@ -644,7 +644,7 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox'];
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc'];
 	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
