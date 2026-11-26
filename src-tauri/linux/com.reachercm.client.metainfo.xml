@@ -5,7 +5,7 @@
 <component type="desktop-application">
   <id>com.reachercm.client</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>MIT</project_license>
   <name>Reacher CM</name>
   <summary>SSH client and remote server manager</summary>
   <developer id="com.github.alexandrosnt">

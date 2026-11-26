@@ -158,6 +158,4 @@ Thank you to everyone who has sent code to Reach, which Reacher CM is built on. 
 
 ## License
 
-Reacher CM is free software under the [GNU General Public License, version 3 or later](LICENSE) (GPL-3.0-or-later). You may use, change and share it; if you distribute it or a changed version, you must pass on the source under the same licence.
-
-It is based on [Reach](https://github.com/alexandrosnt/Reach), which is MIT licensed. The code taken from Reach and from the ReachQ fork keeps its MIT copyright and permission notice in [LICENSE-MIT](LICENSE-MIT). The sync server, [ReacherCM-Sync](https://github.com/rsipka/ReacherCM-Sync), is under the AGPL-3.0.
+[MIT](LICENSE)

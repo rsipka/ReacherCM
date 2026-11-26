@@ -54,7 +54,7 @@
   "bundle": {
     "active": true,
     "publisher": "Reacher CM",
-    "license": "GPL-3.0-or-later",
+    "license": "MIT",
     "copyright": "Copyright (c) 2026 Alexander Nt. and Reacher CM contributors",
     "targets": "all",
     "createUpdaterArtifacts": "v1Compatible",

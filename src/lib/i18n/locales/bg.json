@@ -1022,7 +1022,7 @@
   "settings.changelog": "Списък с промени",
   "settings.changelog_desc": "Какво се промени във всяка версия.",
   "settings.license": "Лиценз",
-  "settings.license_desc": "Reacher CM е свободен софтуер под лиценза GNU GPL, версия 3 или по-нова.",
+  "settings.license_desc": "Reacher CM е свободен софтуер под лиценза MIT.",
   "settings.open_link": "Отвори",
   "report.title": "Докладване на проблем",
   "report.desc": "Отваря issue в GitHub с дневника на Reach за прикачване, изчистен от вашите хостове, акаунти и папки.",

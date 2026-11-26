@@ -1022,7 +1022,7 @@
   "settings.changelog": "Αρχείο αλλαγών",
   "settings.changelog_desc": "Τι άλλαξε σε κάθε έκδοση.",
   "settings.license": "Άδεια χρήσης",
-  "settings.license_desc": "Το Reacher CM είναι ελεύθερο λογισμικό με άδεια GNU GPL, έκδοση 3 ή νεότερη.",
+  "settings.license_desc": "Το Reacher CM είναι ελεύθερο λογισμικό με άδεια MIT.",
   "settings.open_link": "Άνοιγμα",
   "report.title": "Αναφορά προβλήματος",
   "report.desc": "Ανοίγει ένα θέμα στο GitHub με το αρχείο καταγραφής του Reach για επισύναψη, χωρίς τους διακομιστές, τους λογαριασμούς και τους φακέλους σας.",
