@@ -1022,7 +1022,7 @@
   "settings.changelog": "Journal des modifications",
   "settings.changelog_desc": "Ce qui a changé dans chaque version.",
   "settings.license": "Licence",
-  "settings.license_desc": "Reacher CM est un logiciel libre sous licence GNU GPL, version 3 ou ultérieure.",
+  "settings.license_desc": "Reacher CM est un logiciel libre sous licence MIT.",
   "settings.open_link": "Ouvrir",
   "report.title": "Signaler un problème",
   "report.desc": "Ouvre un ticket GitHub avec le journal de Reach à joindre, débarrassé de vos hôtes, comptes et dossiers.",

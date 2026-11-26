@@ -5,7 +5,7 @@ description = "Cross-platform SSH & Remote Management Tool"
 authors = ["Reach Contributors", "Reacher CM contributors"]
 repository = "https://github.com/rsipka/ReacherCM"
 edition = "2021"
-license = "GPL-3.0-or-later"
+license = "MIT"
 
 [lib]
 name = "reacher_cm_lib"
