@@ -40,7 +40,7 @@
 	/** Run rz or the folder's sz on a side channel (tmux tabs). */
 	function viaChannel(kind: 'receive' | 'send-folder'): void {
 		if (!connectionId || !tmux) return;
-		sshZmodemExec(connectionId, kind, tmux.name, tmux.view ?? null).catch((e) => {
+		sshZmodemExec(connectionId, kind, tmux.tool === 'zellij' ? null : tmux.name, tmux.view ?? null).catch((e) => {
 			clearPending();
 			addToast(t('zmodem.failed', { error: String(e) }), 'error', 8000);
 		});

@@ -6,7 +6,7 @@
 	 */
 	import type { Tab } from '#lib/state/tabs.svelte.js';
 	import { sshTmuxList, sshTmuxWindows, sshTmuxWindow, type TmuxListed, type TmuxWindow } from '#lib/ipc/ssh.js';
-	import { isTmuxViewTab, openTmuxWindowTab, switchTmuxSession } from '#lib/terminal/tmux-tabs.js';
+	import { isTmuxViewTab, listedMeta, openTmuxWindowTab, switchTmuxSession, toolLabel } from '#lib/terminal/tmux-tabs.js';
 	import { validTmuxName } from '#lib/terminal/tmux.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
@@ -58,7 +58,7 @@
 		const start = tab.sshConnectParams?.tmux;
 		if (!id || !start) return;
 		const [list, wins] = await Promise.all([
-			sshTmuxList(id).catch((err) => {
+			sshTmuxList(id, start.tool).catch((err) => {
 				addToast(String(err), 'error');
 				return [] as TmuxListed[];
 			}),
@@ -126,7 +126,7 @@
 	aria-haspopup="menu"
 	aria-expanded={open}
 >
-	<span class="label">tmux</span>
+	<span class="label">{toolLabel(tab.sshConnectParams?.tmux?.tool)}</span>
 	<span class="session">{name}</span>
 	{#if windowName}<span class="window">· {windowName}</span>{/if}
 	<svg class="chev" width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
@@ -159,7 +159,7 @@
 				<button type="button" class="row" class:current={s.name === name} role="menuitemradio" aria-checked={s.name === name} disabled={!validTmuxName(s.name)} onclick={() => pick(s.name)}>
 					<span class="mark" aria-hidden="true">{s.name === name ? '✓' : ''}</span>
 					<span class="row-name">{s.name}</span>
-					<span class="row-meta">{t('tmux.windows', { count: String(s.windows) })}{#if s.attached > 0}{' · '}{t('tmux.attached', { count: String(s.attached) })}{/if}</span>
+					<span class="row-meta">{listedMeta(s)}</span>
 				</button>
 			{/each}
 		{/if}

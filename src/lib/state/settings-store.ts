@@ -21,6 +21,7 @@ import {
 } from '#lib/terminal/cursor.js';
 import { readOverrides, type KeyOverrides } from '#lib/state/keybindings.js';
 import type { WinboxPasswordMode } from '#lib/ipc/winbox.js';
+import { DEFAULT_TOAST_POSITION, systemNotifyMode, toastPosition, type SystemNotifyMode, type ToastPosition } from '#lib/state/notify-rules.js';
 import { DEFAULT_HIGHLIGHT, DEFAULT_HIGHLIGHT_KINDS, highlightKinds, type HighlightKind } from '#lib/terminal/highlight.js';
 
 /** The localStorage key. Kept from Reach, so an update finds what was saved. */
@@ -103,6 +104,16 @@ export interface Settings {
 	 *  (the chime, the bell, a remote desktop's sound) until turned off,
 	 *  whatever Play sounds and the bell's settings say. */
 	muted: boolean;
+	/** Where notifications (toasts) appear: a corner, or the middle of the
+	 *  top or bottom edge. See #lib/state/notify-rules. */
+	toastPosition: ToastPosition;
+	/** Keep the last day's notifications behind the bell in the top bar
+	 *  (#lib/state/notification-history). Off: no bell, nothing kept. */
+	notificationHistory: boolean;
+	/** Notifications as system notifications too: never, while the app is in
+	 *  the background, or always (instead of in the app). Off by default: it
+	 *  asks permission. */
+	systemNotifications: SystemNotifyMode;
 	fontFamily: string;
 	defaultShell: string;
 	openLastSession: boolean;
@@ -295,6 +306,9 @@ export const defaults: Settings = {
 	terminalBellFlash: isMobile(),
 	terminalBellNotify: false,
 	muted: false,
+	toastPosition: DEFAULT_TOAST_POSITION,
+	notificationHistory: true,
+	systemNotifications: 'off',
 	fontFamily: 'monospace',
 	defaultShell: '/bin/bash',
 	openLastSession: false,
@@ -407,6 +421,9 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	settings.terminalBellFlash = parsed.terminalBellFlash ?? defaults.terminalBellFlash;
 	settings.terminalBellNotify = parsed.terminalBellNotify ?? defaults.terminalBellNotify;
 	settings.muted = parsed.muted === true;
+	settings.toastPosition = toastPosition(parsed.toastPosition);
+	settings.notificationHistory = parsed.notificationHistory !== false;
+	settings.systemNotifications = systemNotifyMode(parsed.systemNotifications);
 	settings.fontFamily = parsed.fontFamily ?? defaults.fontFamily;
 	settings.defaultShell = parsed.defaultShell ?? defaults.defaultShell;
 	settings.openLastSession = parsed.openLastSession ?? defaults.openLastSession;
