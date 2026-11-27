@@ -19,6 +19,14 @@
 //! view sets the terminal's title to `@ID NAME` of its window, which is how
 //! the tab learns which window it shows.
 //!
+//! Byobu (on its tmux backend) is tmux with its own config and status
+//! line, on the same tmux server: the start script runs `byobu-tmux`
+//! where it starts or attaches, and everything else (views, windows, the
+//! list, ending a session) is plain tmux. Zellij has no grouped sessions
+//! and no way to steer one client from outside, so a Zellij tab attaches
+//! (`zellij attach -c`) and nothing more; several tabs on one Zellij
+//! session each pick their own Zellij tab there.
+//!
 //! Only names made of letters, digits, `-` and `_` are accepted, and a
 //! login shell is passed on only when it is made of plain words, so
 //! nothing from a session can break out of the script.
@@ -27,6 +35,23 @@ use serde::{Deserialize, Serialize};
 
 /// The longest name accepted. tmux has no limit, but a status line does.
 const MAX_NAME: usize = 64;
+
+/// The multiplexer a session runs in on the server.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Tool {
+    #[default]
+    Tmux,
+    /// tmux through `byobu-tmux`: Byobu's config and status line.
+    Byobu,
+    Zellij,
+}
+
+impl Tool {
+    pub fn is_tmux(&self) -> bool {
+        *self == Tool::Tmux
+    }
+}
 
 /// What a connect asks of tmux.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -60,6 +85,9 @@ pub struct TmuxStart {
     /// by `name` is, so an upgrade does not leave the old one behind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub legacy: Option<String>,
+    /// tmux, Byobu or Zellij. Zellij takes only `name` and `ask`.
+    #[serde(default, skip_serializing_if = "Tool::is_tmux")]
+    pub tool: Tool,
 }
 
 /// A view's tag: lowercase letters and digits, at most 16.
@@ -94,6 +122,9 @@ pub struct TmuxSetting {
     /// tmux's mouse mode for this session (see `TmuxStart::mouse`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub mouse: bool,
+    /// `tmux` (unset), `byobu` or `zellij`; text, as `mode` is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
 }
 
 /// A name tmux takes as it is, which the script can hold unquoted.
@@ -126,8 +157,11 @@ pub struct Listed {
     pub windows: u32,
     /// Clients attached now.
     pub attached: u32,
-    /// Last activity, Unix seconds.
+    /// Last activity, Unix seconds; 0: not known (Zellij).
     pub activity: u64,
+    /// A Zellij session that has ended and is restored when attached to.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exited: bool,
 }
 
 /// Lists the server's tmux sessions, one per line, fields split by `:`,
@@ -157,11 +191,44 @@ pub fn parse_list(out: &str) -> Vec<Listed> {
                 // the group's count is what is attached to it.
                 attached: f[2].parse::<u32>().unwrap_or(0).max(f.get(5).and_then(|g| g.parse().ok()).unwrap_or(0)),
                 activity: f[3].parse().unwrap_or(0),
+                exited: false,
             })
         })
         .collect();
     list.sort_by_key(|l| std::cmp::Reverse(l.activity));
     list
+}
+
+/// Lists the server's Zellij sessions, as `zellij list-sessions -n` writes
+/// them: `NAME [Created 3m 2s ago] (EXITED - attach to resurrect)`.
+pub const ZELLIJ_LIST_COMMAND: &str = "zellij list-sessions -n 2>/dev/null";
+
+/// The sessions in `ZELLIJ_LIST_COMMAND`'s output, running ones first.
+/// Zellij says nothing of windows, clients or activity.
+pub fn parse_zellij_list(out: &str) -> Vec<Listed> {
+    let mut list: Vec<Listed> = out
+        .lines()
+        .filter_map(|line| {
+            let name = line.split_whitespace().next()?;
+            // "No active zellij sessions found." and the like.
+            if line.starts_with("No ") {
+                return None;
+            }
+            Some(Listed { name: name.to_string(), windows: 0, attached: 0, activity: 0, exited: line.contains("EXITED") })
+        })
+        .collect();
+    list.sort_by_key(|l| l.exited);
+    list
+}
+
+/// The list command for `tool`.
+pub fn list_command(tool: Tool) -> &'static str {
+    if tool == Tool::Zellij { ZELLIJ_LIST_COMMAND } else { LIST_COMMAND }
+}
+
+/// The sessions in `list_command(tool)`'s output.
+pub fn parse_list_of(tool: Tool, out: &str) -> Vec<Listed> {
+    if tool == Tool::Zellij { parse_zellij_list(out) } else { parse_list(out) }
 }
 
 /// What the picker answered.
@@ -228,7 +295,7 @@ impl Ask {
         use super::client::SshError;
         if !self.start.ask {
             // Not asking, only a name to settle: the old one, if only it is there.
-            let name = match self.start.legacy.as_deref().filter(|l| valid_name(l)) {
+            let name = match self.start.legacy.as_deref().filter(|l| valid_name(l) && self.start.tool != Tool::Zellij) {
                 Some(old) => {
                     let out = run_on(handle, &legacy_command(&self.start.name, old)).await.unwrap_or_default();
                     pick_legacy(&out, &self.start.name, old).to_string()
@@ -240,11 +307,11 @@ impl Ask {
             chosen().lock().unwrap().insert(self.id.clone(), Some(name));
             return Ok(Some(cmd));
         }
-        let listed = parse_list(&list_on(handle).await.unwrap_or_default());
+        let listed = parse_list_of(self.start.tool, &run_on(handle, list_command(self.start.tool)).await.unwrap_or_default());
         let fields = listed
             .iter()
             .map(|l| super::prompt::Field {
-                text: format!("{}\t{}\t{}\t{}", l.name, l.windows, l.attached, l.activity),
+                text: format!("{}\t{}\t{}\t{}\t{}", l.name, l.windows, l.attached, l.activity, u8::from(l.exited)),
                 echo: true,
             })
             .collect();
@@ -284,11 +351,6 @@ fn pick_legacy<'a>(out: &str, name: &'a str, old: &'a str) -> &'a str {
     if out.trim() == "old" { old } else { name }
 }
 
-/// Runs `LIST_COMMAND` on a fresh channel of `handle`.
-async fn list_on(handle: &russh::client::Handle<super::client::SshClientHandler>) -> Option<String> {
-    run_on(handle, LIST_COMMAND).await
-}
-
 /// Runs `command` on a fresh channel of `handle`, giving what it printed.
 async fn run_on(handle: &russh::client::Handle<super::client::SshClientHandler>, command: &str) -> Option<String> {
     let mut channel = handle.channel_open_session().await.ok()?;
@@ -306,6 +368,10 @@ async fn run_on(handle: &russh::client::Handle<super::client::SshClientHandler>,
 
 /// The message printed when the server has no tmux.
 const NO_TMUX: &str = "tmux was not found on this server, so a normal shell was opened.";
+/// Printed when Byobu is asked for and only tmux is there.
+const NO_BYOBU: &str = "Byobu was not found on this server, so plain tmux was started.";
+/// The message printed when the server has no Zellij.
+const NO_ZELLIJ: &str = "Zellij was not found on this server, so a normal shell was opened.";
 
 /// The command the channel runs for `start`, given the session's login
 /// shell. Run by the account's login shell as `$SHELL -c`, so it is one
@@ -328,10 +394,23 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
             "The tmux session name '{n}' can only use letters, digits, '-' and '_' (at most {MAX_NAME})"
         ));
     }
+    if start.tool == Tool::Zellij {
+        return Ok(zellij_script(n, shell));
+    }
     let window = plain_shell(shell);
     let window_arg = window.as_deref().map(|w| format!(" {w}")).unwrap_or_default();
     let fallback = window.as_deref().map(|w| format!("exec {w}")).unwrap_or_else(|| "exec \"${SHELL:-/bin/sh}\" -l".to_string());
     let mouse = if start.mouse { " \\; set-option mouse on" } else { "" };
+    // What starts or attaches: tmux, or `byobu-tmux` (tmux with Byobu's
+    // config; on the same tmux server, so the rest is plain tmux).
+    let (pick, run) = if start.tool == Tool::Byobu {
+        (
+            format!("T=tmux; if command -v byobu-tmux >/dev/null 2>&1; then T=byobu-tmux; else printf \"\\033[33m%s\\033[0m\\r\\n\" \"{NO_BYOBU}\"; fi; "),
+            "$T",
+        )
+    } else {
+        (String::new(), "tmux")
+    };
     if let Some(tag) = start.view.as_deref() {
         let view = view_name(n, tag)?;
         // What the view shows first: a new window (running the login
@@ -354,13 +433,13 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
         let script = format!(
             concat!(
                 "if command -v tmux >/dev/null 2>&1; then ",
-                "F=; tmux -TRGB -V >/dev/null 2>&1 && F=-TRGB; ",
+                "F=; tmux -TRGB -V >/dev/null 2>&1 && F=-TRGB; {pick}",
                 // Still there: the connection dropped before the server
                 // noticed. Take it over.
-                "if tmux has-session -t ={view} 2>/dev/null; then exec tmux $F attach-session -t ={view}{select_again}; fi; ",
-                "tmux has-session -t ={n} 2>/dev/null || tmux new-session -d -s {n}{window} || exit 1; ",
+                "if tmux has-session -t ={view} 2>/dev/null; then exec {run} $F attach-session -t ={view}{select_again}; fi; ",
+                "tmux has-session -t ={n} 2>/dev/null || {run} new-session -d -s {n}{window} || exit 1; ",
                 "{latest}",
-                "exec tmux $F new-session -t ={n} -s {view} \\; set-option destroy-unattached on",
+                "exec {run} $F new-session -t ={n} -s {view} \\; set-option destroy-unattached on",
                 " \\; set-option set-titles on \\; set-option set-titles-string \"#{{window_id}} #W\"",
                 "{mouse}{status}{select}; ",
                 "fi; ",
@@ -368,6 +447,8 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
                 "{fallback}"
             ),
             n = n,
+            pick = pick,
+            run = run,
             view = view,
             window = window_arg,
             latest = latest,
@@ -393,17 +474,19 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
         concat!(
             "if command -v tmux >/dev/null 2>&1; then ",
             // Truecolor, on tmux 3.2 and later; older ones do not know -T.
-            "F=; tmux -TRGB -V >/dev/null 2>&1 && F=-TRGB; ",
+            "F=; tmux -TRGB -V >/dev/null 2>&1 && F=-TRGB; {pick}",
             "N={n}; {legacy}",
             "if [ -n \"$(tmux list-clients -t =$N 2>/dev/null)\" ]; then ",
-            "exec tmux $F new-session -t =$N \\; set-option destroy-unattached on{mouse}; ",
+            "exec {run} $F new-session -t =$N \\; set-option destroy-unattached on{mouse}; ",
             "fi; ",
-            "exec tmux $F new-session -A -s $N{window}{mouse}; ",
+            "exec {run} $F new-session -A -s $N{window}{mouse}; ",
             "fi; ",
             "printf \"\\033[33m%s\\033[0m\\r\\n\" \"{msg}\"; ",
             "{fallback}"
         ),
         n = n,
+        pick = pick,
+        run = run,
         legacy = legacy,
         window = window_arg,
         msg = NO_TMUX,
@@ -411,6 +494,20 @@ pub fn start_script(start: &TmuxStart, shell: Option<&str>) -> Result<String, St
         mouse = mouse,
     );
     Ok(script)
+}
+
+/// Zellij: attach to session `n`, or create it (an exited one is
+/// restored). The login shell, when it is one plain program, is the
+/// session's default shell; a new session only, as Zellij keeps the first.
+fn zellij_script(n: &str, shell: Option<&str>) -> String {
+    let prog = shell
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.contains(char::is_whitespace) && s.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_./+".contains(&b)));
+    let options = prog.map(|p| format!(" options --default-shell {p}")).unwrap_or_default();
+    let fallback = plain_shell(shell).map(|w| format!("exec {w}")).unwrap_or_else(|| "exec \"${SHELL:-/bin/sh}\" -l".to_string());
+    format!(
+        "if command -v zellij >/dev/null 2>&1; then exec zellij attach -c {n}{options}; fi; printf \"\\033[33m%s\\033[0m\\r\\n\" \"{NO_ZELLIJ}\"; {fallback}"
+    )
 }
 
 /// One window of a tab's tmux session.
@@ -503,9 +600,13 @@ pub fn window_command(view: &str, op: &WindowOp, shell: Option<&str>) -> Result<
 
 /// Ends the tmux session `name` and every session grouped with it (the
 /// ones other tabs joined as), which keep its windows alive otherwise.
-pub fn kill_command(name: &str) -> Result<String, String> {
+pub fn kill_command(name: &str, tool: Tool) -> Result<String, String> {
     if !valid_name(name) {
         return Err(format!("'{name}' is not a tmux session name this app uses"));
+    }
+    if tool == Tool::Zellij {
+        // Killed, then deleted so it is not kept to be restored.
+        return Ok(format!("sh -c 'zellij kill-session {name} 2>/dev/null; zellij delete-session {name} 2>/dev/null; exit 0'"));
     }
     Ok(format!(
         "sh -c 'for s in $(tmux list-sessions -F \"#{{session_group}}:#{{session_name}}\" 2>/dev/null | sed -n \"s/^{name}://p\"); do tmux kill-session -t \"=$s\"; done; tmux kill-session -t ={name} 2>/dev/null; exit 0'"
@@ -578,7 +679,7 @@ mod tests {
         let out = "old:1:0:100:\nw:3:1:300:w\nw-1:3:1:400:w\nnew:2:0:200:\nbroken\n";
         let names: Vec<String> = parse_list(out).into_iter().map(|l| l.name).collect();
         assert_eq!(names, ["w", "new", "old"]);
-        assert_eq!(parse_list(out)[0], Listed { name: "w".into(), windows: 3, attached: 1, activity: 300 });
+        assert_eq!(parse_list(out)[0], Listed { name: "w".into(), windows: 3, attached: 1, activity: 300, exited: false });
     }
 
     #[test]
@@ -616,7 +717,7 @@ mod tests {
     #[test]
     fn a_bad_name_is_refused() {
         assert!(start_command(&start("x'; rm -rf ~"), None).is_err());
-        assert!(kill_command("a b").is_err());
+        assert!(kill_command("a b", Tool::Tmux).is_err());
     }
 
     #[test]
@@ -723,6 +824,70 @@ mod tests {
         assert_eq!(legacy_command("reachercm-tmux", "reachercm-w"), "sh -c 'tmux has-session -t =reachercm-tmux 2>/dev/null || { tmux has-session -t =reachercm-w 2>/dev/null && echo old; }'");
         assert_eq!(pick_legacy("old\n", "new", "old"), "old");
         assert_eq!(pick_legacy("", "new", "old"), "new");
+    }
+
+    #[test]
+    fn byobu_starts_and_attaches_through_byobu_tmux() {
+        let s = TmuxStart { tool: Tool::Byobu, ..start("w") };
+        let c = start_command(&s, None).unwrap();
+        assert_eq!(c.matches('\'').count(), 2, "{c}");
+        assert!(c.contains("then T=byobu-tmux; else printf"), "{c}");
+        assert!(c.contains("exec $T $F new-session -A -s $N;"), "{c}");
+        assert!(c.contains("exec $T $F new-session -t =$N"), "{c}");
+        // Listing and the rest stay plain tmux: the same server.
+        assert!(c.contains("tmux list-clients -t =$N"), "{c}");
+        let v = start_script(&TmuxStart { tool: Tool::Byobu, ..view(None) }, None).unwrap();
+        assert!(v.contains("|| $T new-session -d -s w || exit 1;"), "{v}");
+        assert!(v.contains("exec $T $F new-session -t =w -s w-ab12"), "{v}");
+        // Plain tmux is as it was.
+        assert!(!start_command(&start("w"), None).unwrap().contains("byobu"));
+    }
+
+    #[test]
+    fn zellij_attaches_or_creates_and_nothing_more() {
+        let z = TmuxStart { tool: Tool::Zellij, mouse: true, view: Some("ab12".into()), hide_status: true, ..start("w") };
+        let c = start_command(&z, Some("fish")).unwrap();
+        assert_eq!(c.matches('\'').count(), 2, "{c}");
+        assert!(c.contains("exec zellij attach -c w options --default-shell fish;"), "{c}");
+        assert!(c.contains(NO_ZELLIJ), "{c}");
+        assert!(c.ends_with("exec fish -l'"), "{c}");
+        assert!(!c.contains("tmux"), "{c}");
+        // A shell with arguments is not a default shell for Zellij.
+        let c = start_command(&TmuxStart { tool: Tool::Zellij, ..start("w") }, Some("zsh -i")).unwrap();
+        assert!(c.contains("exec zellij attach -c w;"), "{c}");
+        assert!(start_command(&TmuxStart { tool: Tool::Zellij, ..start("a;b") }, None).is_err());
+    }
+
+    #[test]
+    fn zellij_sessions_are_listed_running_first() {
+        let out = "old [Created 2days ago] (EXITED - attach to resurrect)\nwork [Created 3m 2s ago] (current)\n\nreachercm-zellij [Created 1h ago]\n";
+        let l = parse_zellij_list(out);
+        let names: Vec<&str> = l.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["work", "reachercm-zellij", "old"]);
+        assert!(l[2].exited && !l[0].exited);
+        assert!(parse_zellij_list("No active zellij sessions found.\n").is_empty());
+        assert_eq!(list_command(Tool::Byobu), LIST_COMMAND);
+        assert_eq!(list_command(Tool::Zellij), ZELLIJ_LIST_COMMAND);
+    }
+
+    #[test]
+    fn a_zellij_session_is_killed_and_deleted() {
+        assert_eq!(
+            kill_command("w", Tool::Zellij).unwrap(),
+            "sh -c 'zellij kill-session w 2>/dev/null; zellij delete-session w 2>/dev/null; exit 0'"
+        );
+        assert!(kill_command("w", Tool::Byobu).unwrap().contains("tmux kill-session"));
+    }
+
+    #[test]
+    fn the_tool_is_tmux_unless_said() {
+        let s: TmuxStart = serde_json::from_str(r#"{"name":"w"}"#).unwrap();
+        assert_eq!(s.tool, Tool::Tmux);
+        let s: TmuxStart = serde_json::from_str(r#"{"name":"w","tool":"zellij"}"#).unwrap();
+        assert_eq!(s.tool, Tool::Zellij);
+        assert!(!serde_json::to_string(&start("w")).unwrap().contains("tool"));
+        let saved: TmuxSetting = serde_json::from_str(r#"{"mode":"attach","tool":"something-newer"}"#).unwrap();
+        assert_eq!(saved.tool.as_deref(), Some("something-newer"));
     }
 
     #[cfg(all(unix, not(target_os = "android")))]

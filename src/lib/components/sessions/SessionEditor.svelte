@@ -11,7 +11,7 @@
 	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, type BmcVnc, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
 	import { BMC_VNC_PORT } from '#lib/sessions/bmc-console.js';
 	import { formatMac, parseMac } from '#lib/net/tools.js';
-	import { DEFAULT_TMUX_NAME, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
+	import { defaultSessionName, folderTmux, tmuxTool, validTmuxName, type TmuxTool } from '#lib/terminal/tmux.js';
 	import { isIos, isMobile, isWindows } from '#lib/platform.js';
 
 	/** From this window width the editor is wide, with two columns. */
@@ -632,6 +632,8 @@
 	let tmuxChoice = $state<'' | 'attach' | 'ask' | 'off'>('');
 	let tmuxMouse = $state(false);
 	let tmuxName = $state('');
+	/** The program: tmux, Byobu or Zellij. */
+	let tmuxProgram = $state<TmuxTool>('tmux');
 	let tmuxFolderOn = $derived(folderTmux(folderIdStr || null, folders) === true);
 	let tmuxOn = $derived(tmuxChoice === 'attach' || tmuxChoice === 'ask' || (tmuxChoice === '' && tmuxFolderOn));
 	/** tmux runs on an SSH server, or inside a WSL distribution. */
@@ -802,6 +804,7 @@
 			historyChoice = editSession.history ?? '';
 			tmuxChoice = editSession.tmux?.mode === 'attach' || editSession.tmux?.mode === 'ask' || editSession.tmux?.mode === 'off' ? editSession.tmux.mode : '';
 			tmuxMouse = !!editSession.tmux?.mouse;
+			tmuxProgram = tmuxTool(editSession.tmux?.tool);
 			x11Desktop = editSession.x11_desktop?.desktop ?? '';
 			x11Command = editSession.x11_desktop?.command ?? '';
 			termType = editSession.terminal?.term ?? '';
@@ -896,6 +899,7 @@
 			historyChoice = '';
 			tmuxChoice = '';
 			tmuxMouse = false;
+			tmuxProgram = 'tmux';
 			x11Desktop = '';
 			x11Command = '';
 			termType = '';
@@ -1025,12 +1029,13 @@
 			return;
 		}
 		const tmuxToSave: TmuxSetting | null =
-			tmuxKind && (tmuxChoice || tmuxNameToSave || tmuxMouse)
+			tmuxKind && (tmuxChoice || tmuxNameToSave || tmuxMouse || tmuxProgram !== 'tmux')
 				? {
 						// WSL has no picker: asking there means attach.
 						mode: tmuxChoice === 'ask' && kind !== 'ssh' ? 'attach' : tmuxChoice || 'inherit',
 						name: tmuxNameToSave || null,
-						...(tmuxMouse ? { mouse: true } : {})
+						...(tmuxMouse ? { mouse: true } : {}),
+						...(tmuxProgram !== 'tmux' ? { tool: tmuxProgram } : {})
 					}
 				: null;
 		const fieldsToSave: CustomField[] = customFields
@@ -2419,11 +2424,21 @@
 				</select>
 			</div>
 			{#if tmuxOn}
+				<div class="folder-section">
+					<span class="folder-label">{t('tmux.program_label')}</span>
+					<select class="folder-select" bind:value={tmuxProgram} disabled={saving}>
+						<option value="tmux">tmux</option>
+						<option value="byobu">Byobu</option>
+						<option value="zellij">Zellij</option>
+					</select>
+				</div>
+				{#if tmuxProgram !== 'tmux'}<p class="shell-hint">{tmuxProgram === 'byobu' ? t('tmux.byobu_hint') : t('tmux.zellij_hint')}</p>{/if}
 				<div class="shell-field">
 					<label class="via-label" for="session-tmux-name">{t('tmux.name_label')}</label>
-					<input id="session-tmux-name" class="field-input" bind:value={tmuxName} placeholder={DEFAULT_TMUX_NAME} spellcheck="false" autocomplete="off" disabled={saving} />
+					<input id="session-tmux-name" class="field-input" bind:value={tmuxName} placeholder={defaultSessionName(tmuxProgram)} spellcheck="false" autocomplete="off" disabled={saving} />
 					<p class="shell-hint">{tmuxChoice === 'ask' ? t('tmux.ask_hint') : t('tmux.session_hint')}</p>
 				</div>
+				{#if tmuxProgram !== 'zellij'}
 				<div class="shell-field">
 					<label class="jump-toggle">
 						<input type="checkbox" bind:checked={tmuxMouse} disabled={saving} />
@@ -2431,6 +2446,7 @@
 					</label>
 					<p class="shell-hint">{t('tmux.mouse_hint')}</p>
 				</div>
+				{/if}
 			{/if}
 		{/if}
 

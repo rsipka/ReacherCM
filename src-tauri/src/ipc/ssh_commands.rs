@@ -1114,13 +1114,15 @@ pub fn ssh_tmux_chosen(connection_id: String) -> Option<serde_json::Value> {
 pub async fn ssh_tmux_list(
     state: tauri::State<'_, AppState>,
     connection_id: String,
+    tool: Option<crate::ssh::tmux::Tool>,
 ) -> Result<Vec<crate::ssh::tmux::Listed>, String> {
+    let tool = tool.unwrap_or_default();
     let handle = {
         let manager = state.ssh_manager.lock().await;
         manager.get_handle(&connection_id).map_err(|e| e.to_string())?
     };
-    let out = crate::ssh::client::exec_on_connection(&handle, crate::ssh::tmux::LIST_COMMAND).await.map_err(|e| e.to_string())?;
-    Ok(crate::ssh::tmux::parse_list(&out))
+    let out = crate::ssh::client::exec_on_connection(&handle, crate::ssh::tmux::list_command(tool)).await.map_err(|e| e.to_string())?;
+    Ok(crate::ssh::tmux::parse_list_of(tool, &out))
 }
 
 /// The windows of a tab's tmux session, as its view (`{name}-{view}`) sees them.
@@ -1173,8 +1175,9 @@ pub async fn ssh_tmux_kill(
     state: tauri::State<'_, AppState>,
     connection_id: String,
     name: String,
+    tool: Option<crate::ssh::tmux::Tool>,
 ) -> Result<(), String> {
-    let command = crate::ssh::tmux::kill_command(&name)?;
+    let command = crate::ssh::tmux::kill_command(&name, tool.unwrap_or_default())?;
     let handle = {
         let manager = state.ssh_manager.lock().await;
         manager.get_handle(&connection_id).map_err(|e| e.to_string())?

@@ -8,6 +8,7 @@
 import {
 	validTmuxName,
 	DEFAULT_TMUX_NAME, legacyTmuxName,
+	defaultSessionName, tmuxTool,
 	folderTmux,
 	tmuxFor,
 	autoReconnectDelay,
@@ -67,6 +68,17 @@ check('WSL runs tmux, never asks', (() => { const w = tmuxFor(s({ kind: 'wsl', t
 check('mouse is passed on', tmuxFor(s({ tmux: { mode: 'attach', mouse: true } }), folders)?.mouse === true);
 check('no mouse unless asked', tmuxFor(s({ tmux: { mode: 'attach' } }), folders)?.mouse === undefined);
 check('an old save without a kind is SSH', tmuxFor({ name: 'Web', folder_id: null, tmux: { mode: 'attach' } }, folders) !== null);
+
+section('byobu and zellij');
+const byobu = tmuxFor(s({ tmux: { mode: 'attach', tool: 'byobu', mouse: true } }), folders);
+check('byobu: its own default name, mouse kept', byobu?.name === 'reachercm-byobu' && byobu?.tool === 'byobu' && byobu?.mouse === true, JSON.stringify(byobu));
+check('byobu: no old tmux name to go back to', byobu?.legacy === undefined);
+const zellij = tmuxFor(s({ tmux: { mode: 'ask', tool: 'zellij', mouse: true } }), folders);
+check('zellij: its own default name, asks, no mouse', zellij?.name === 'reachercm-zellij' && zellij?.tool === 'zellij' && zellij?.ask === true && !zellij?.mouse, JSON.stringify(zellij));
+check('zellij: an own name is kept', tmuxFor(s({ tmux: { mode: 'attach', tool: 'zellij', name: 'main' } }), folders)?.name === 'main');
+check('an unknown program is tmux', tmuxFor(s({ tmux: { mode: 'attach', tool: 'screen' } }), folders)?.tool === undefined);
+check('tmuxTool reads only what it knows', tmuxTool('zellij') === 'zellij' && tmuxTool(null) === 'tmux' && tmuxTool('x') === 'tmux');
+check('default names per program', defaultSessionName('tmux') === DEFAULT_TMUX_NAME && defaultSessionName('zellij') === 'reachercm-zellij');
 
 section('reconnect');
 check('2, 5, 10, 30 seconds, then every minute',

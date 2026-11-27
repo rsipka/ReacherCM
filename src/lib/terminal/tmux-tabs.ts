@@ -5,7 +5,7 @@
  * window can open in a tab of its own, and connecting can open them all.
  */
 
-import { sshConnect, sshTmuxWindows, type TmuxStart, type TmuxWindow } from '#lib/ipc/ssh.js';
+import { sshConnect, sshTmuxWindows, type TmuxListed, type TmuxStart, type TmuxTool, type TmuxWindow } from '#lib/ipc/ssh.js';
 import { activateTab, createTab, getActiveTab, placeAfter, type Tab } from '#lib/state/tabs.svelte.js';
 import { getSettings } from '#lib/state/settings.svelte.js';
 import { isMobile } from '#lib/platform.js';
@@ -92,7 +92,24 @@ export function takeTmuxTitle(tab: Tab, title: string): boolean {
 /** An SSH tab's tmux start with a view of its own (see TmuxStart.view), and
  *  the status line as Settings says. */
 export function tmuxView(start: TmuxStart | null): TmuxStart | null {
+	// Zellij has no grouped sessions: a tab attaches to the session itself.
+	if (start?.tool === 'zellij') return start;
 	return start ? { ...start, view: newViewTag(), hideStatus: getSettings().tmuxHideStatus || undefined } : null;
+}
+
+/** The program's name as shown: tmux, Byobu or Zellij. */
+export function toolLabel(tool: TmuxTool | undefined): string {
+	return tool === 'byobu' ? 'Byobu' : tool === 'zellij' ? 'Zellij' : 'tmux';
+}
+
+/** What a listed session says beside its name: its windows and clients
+ *  (tmux), or that it ended and comes back when picked (Zellij). */
+export function listedMeta(s: TmuxListed): string {
+	const parts: string[] = [];
+	if (s.windows > 0) parts.push(t('tmux.windows', { count: String(s.windows) }));
+	if (s.attached > 0) parts.push(t('tmux.attached', { count: String(s.attached) }));
+	if (s.exited) parts.push(t('tmux.exited'));
+	return parts.join(' · ');
 }
 
 /** The tmux session an SSH tab runs in, if it does. */
