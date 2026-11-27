@@ -41,6 +41,9 @@
   <!-- The newest first. A test (metainfo_lists_this_version in lib.rs)
        fails if the version in Cargo.toml is missing here. -->
   <releases>
+    <release version="26.11.1-dev.11" date="2026-11-28" type="development">
+      <url type="details">https://github.com/rsipka/ReacherCM/releases/tag/v26.11.1-dev.11</url>
+    </release>
     <release version="26.11.1-dev.10" date="2026-11-25" type="development">
       <url type="details">https://github.com/rsipka/ReacherCM/releases/tag/v26.11.1-dev.10</url>
     </release>
