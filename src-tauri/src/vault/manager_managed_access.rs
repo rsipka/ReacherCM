@@ -29,18 +29,39 @@ impl AccountScope {
     }
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub(super) struct VaultPolicyState {
     suspended: Vec<AccountScope>,
     allow_removal: Vec<AccountScope>,
+    #[serde(default)]
+    deny_removal: Vec<AccountScope>,
+    // Legacy files only stored an allowlist, so their default stays off.
+    #[serde(default)]
+    removal_enabled_by_default: bool,
+}
+
+impl Default for VaultPolicyState {
+    fn default() -> Self {
+        Self {
+            suspended: Vec::new(),
+            allow_removal: Vec::new(),
+            deny_removal: Vec::new(),
+            removal_enabled_by_default: true,
+        }
+    }
 }
 
 impl VaultPolicyState {
     pub(super) fn load(app_dir: &std::path::Path) -> Self {
-        std::fs::read(app_dir.join(FILE))
-            .ok()
-            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
+        let disabled = || Self {
+            removal_enabled_by_default: false,
+            ..Self::default()
+        };
+        match std::fs::read(app_dir.join(FILE)) {
+            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| disabled()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(_) => disabled(),
+        }
     }
 
     async fn save(&self, app_dir: &std::path::Path) -> Result<(), VaultError> {
@@ -67,7 +88,10 @@ impl VaultManager {
     }
 
     pub(crate) fn managed_removal_enabled(&self, account: &AccountView) -> bool {
-        self.vault_policy.allow_removal.contains(&account.into())
+        let scope = AccountScope::from(account);
+        !self.vault_policy.deny_removal.contains(&scope)
+            && (self.vault_policy.removal_enabled_by_default
+                || self.vault_policy.allow_removal.contains(&scope))
     }
 
     pub(crate) async fn set_managed_removal(
@@ -78,8 +102,11 @@ impl VaultManager {
         let mut next = self.vault_policy.clone();
         let scope = AccountScope::from(account);
         next.allow_removal.retain(|item| item != &scope);
+        next.deny_removal.retain(|item| item != &scope);
         if enabled {
             next.allow_removal.push(scope);
+        } else {
+            next.deny_removal.push(scope);
         }
         next.save(&self.app_dir).await?;
         self.vault_policy = next;
@@ -279,8 +306,32 @@ mod tests {
         json!([{"organization_id": org, "vault_id": id, "grant_id": grant}])
     }
 
+    #[test]
+    fn legacy_and_unreadable_policies_preserve_the_previous_removal_behavior() {
+        let app = tempfile::tempdir().unwrap();
+        let account = account("https://sync.example.com/");
+        let other = self::account("https://other.example.com/");
+        let file = app.path().join(FILE);
+        let legacy = json!({
+            "suspended": [AccountScope::from(&other)],
+            "allow_removal": [AccountScope::from(&account)],
+        });
+        std::fs::write(&file, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        let manager = VaultManager::new(app.path().into());
+        assert!(manager.managed_removal_enabled(&account));
+        assert!(!manager.managed_removal_enabled(&other));
+        assert!(manager
+            .vault_policy
+            .suspended
+            .contains(&AccountScope::from(&other)));
+
+        std::fs::write(file, b"{").unwrap();
+        let manager = VaultManager::new(app.path().into());
+        assert!(!manager.managed_removal_enabled(&account));
+    }
+
     #[tokio::test]
-    async fn managed_removal_requires_opt_in_and_an_exact_shared_grant() {
+    async fn managed_removal_defaults_on_and_requires_an_exact_shared_grant() {
         let app = tempfile::tempdir().unwrap();
         let mut manager = VaultManager::new(app.path().into());
         manager.init_identity("local test password").await.unwrap();
@@ -317,24 +368,24 @@ mod tests {
         let matched_file = app.path().join("vaults").join(format!("{matched}.db"));
         let other_file = app.path().join("vaults").join(format!("{other}.db"));
 
-        manager
-            .apply_managed_vault_policy(&account, policy("active", removal(org, &matched, grant)))
-            .await;
-        assert!(matched_file.exists(), "the default policy is opt out");
-
-        manager.set_managed_removal(&account, true).await.unwrap();
-        manager
-            .set_managed_removal(&foreign_account, true)
-            .await
-            .unwrap();
+        assert!(manager.managed_removal_enabled(&account));
+        manager.set_managed_removal(&account, false).await.unwrap();
         drop(manager);
         let mut manager = VaultManager::new(app.path().into());
         assert!(manager.unlock("local test password").await.unwrap());
-        assert!(manager.managed_removal_enabled(&account));
+        assert!(!manager.managed_removal_enabled(&account));
+        assert!(manager.managed_removal_enabled(&foreign_account));
         assert!(manager
             .user_vaults
             .iter()
             .any(|v| v.id == matched && v.managed_grant == Some(grant)));
+        let expected = || policy("active", removal(org, &matched, grant));
+        assert!(manager
+            .apply_managed_vault_policy(&account, expected())
+            .await
+            .is_empty());
+        assert!(matched_file.exists());
+        manager.set_managed_removal(&account, true).await.unwrap();
 
         for (scope, state, data) in [
             (&account, "active", json!([])),
@@ -351,7 +402,6 @@ mod tests {
             assert!(matched_file.exists() && other_file.exists());
         }
 
-        let expected = || policy("active", removal(org, &matched, grant));
         assert_eq!(
             manager
                 .apply_managed_vault_policy(&account, expected())
