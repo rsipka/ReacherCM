@@ -1104,6 +1104,13 @@ pub fn run() {
     {
         builder = builder.invoke_handler(refuse_web_pages(tauri::generate_handler![
             vault_account_sync_enabled,
+            vault_organizations,
+            vault_organization_list,
+            vault_organization_create,
+            vault_organization_open,
+            vault_organization_grants,
+            vault_organization_grant,
+            vault_organization_finish_rotation,
             sync_account_status,
             sync_account_pair_origin,
             sync_account_pair,

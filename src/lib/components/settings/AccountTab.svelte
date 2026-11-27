@@ -45,7 +45,7 @@
 
 	$effect(() => {
 		const device = account?.deviceId;
-		if (!mobile && device) void loadManagedRemoval(device);
+		if (device) void loadManagedRemoval(device);
 	});
 
 	async function loadManagedRemoval(device: string): Promise<void> {
@@ -168,18 +168,16 @@
 				</Button>
 			</div>
 		</div>
-		{#if !mobile}
-			<div class="setting-row">
-				<div class="setting-info">
-					<span class="setting-label">{t('sync_account.managed_removal')}</span>
-					<span class="setting-description">{t('sync_account.managed_removal_desc')}</span>
-				</div>
-				<div class="setting-control">
-					<Toggle hideLabel label={t('sync_account.managed_removal')} checked={managedRemoval}
-						disabled={managedRemovalBusy || action !== null} onchange={changeManagedRemoval} />
-				</div>
+		<div class="setting-row">
+			<div class="setting-info">
+				<span class="setting-label">{t('sync_account.managed_removal')}</span>
+				<span class="setting-description">{t('sync_account.managed_removal_desc')}</span>
 			</div>
-		{/if}
+			<div class="setting-control">
+				<Toggle hideLabel label={t('sync_account.managed_removal')} checked={managedRemoval}
+					disabled={managedRemovalBusy || action !== null} onchange={changeManagedRemoval} />
+			</div>
+		</div>
 		{@render accountFeedback()}
 		<div class="footer-actions">
 			<Button variant="ghost" size="sm" disabled={action !== null} onclick={signOut}>
@@ -253,11 +251,9 @@
 		{/if}
 	</SettingsCard>
 
-	{#if !mobile}
-		{#key account.server + '/' + account.username}
-			<OrganizationVaults />
-		{/key}
-	{/if}
+	{#key account.server + '/' + account.username}
+		<OrganizationVaults />
+	{/key}
 {:else if action === 'load'}
 	<SettingsCard><p class="feedback" role="status">{t('sync_account.loading')}</p></SettingsCard>
 {:else}

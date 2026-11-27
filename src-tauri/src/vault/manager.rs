@@ -162,7 +162,6 @@ pub async fn sync_vaults(
         if timed && !sync_engine::due(&target).await {
             continue;
         }
-        #[cfg(desktop)]
         let target = if let sync_engine::Backend::Account(account) = &target.backend {
             if account.organization.is_some() {
                 let updated = async {
@@ -2281,7 +2280,6 @@ impl VaultManager {
         let owner_uuid: String = header_row.get(0)?;
         let owner_wrapped_dek_json: String = header_row.get(1)?;
 
-        #[cfg(desktop)]
         if vault.is_organization_vault() && vault.organization_key_epoch().await? > 0 {
             vault.master_dek = Some(vault.organization_master(identity).await?);
             return Ok(());
@@ -2296,7 +2294,6 @@ impl VaultManager {
             return Ok(());
         }
 
-        #[cfg(desktop)]
         if vault.is_organization_vault() {
             vault.master_dek = Some(vault.organization_master(identity).await?);
             return Ok(());
@@ -2559,7 +2556,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         vault.ensure_organization_writable().await?;
         let master_dek = vault
             .master_dek
@@ -2684,7 +2680,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         vault.ensure_organization_writable().await?;
         let master_dek = vault
             .master_dek
@@ -2726,7 +2721,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         vault.ensure_organization_writable().await?;
 
         let now = now_timestamp();
@@ -2749,7 +2743,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         vault.ensure_organization_writable().await?;
 
         vault
@@ -2858,7 +2851,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         if vault.is_organization_vault() {
             return Err(VaultError::AccessDenied("Manage organization vault access in Settings → Account".into()));
         }
@@ -2986,7 +2978,6 @@ impl VaultManager {
             .vaults
             .get(vault_id)
             .ok_or_else(|| VaultError::NotFound(vault_id.to_string()))?;
-        #[cfg(desktop)]
         if vault.is_organization_vault() {
             return Err(VaultError::AccessDenied("Manage organization vault access in Settings → Account".into()));
         }
@@ -4013,14 +4004,11 @@ mod device_link_tests;
 #[path = "manager_managed_access.rs"]
 mod managed_access;
 
-#[cfg(desktop)]
+#[cfg(any(desktop, test))]
 #[path = "manager_account_sync.rs"]
 mod account_sync;
 
-#[cfg(desktop)]
 #[path = "manager_org_sync.rs"]
 mod organization_sync;
-#[cfg(desktop)]
 pub use organization_sync::{Organization, OrganizationVaultGrant, SharedOrganizationVault};
-#[cfg(desktop)]
 pub(super) use organization_sync::valid_organization_vault_name;

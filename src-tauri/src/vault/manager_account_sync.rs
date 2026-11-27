@@ -1,14 +1,20 @@
 use super::*;
-use crate::ipc::sync_account_commands::AccountView;
-use crate::vault::sync_account_store::{AccountTarget, PREFIX};
-use sha2::Digest;
+#[cfg(desktop)]
+use {
+    crate::ipc::sync_account_commands::AccountView,
+    crate::vault::sync_account_store::{AccountTarget, PREFIX},
+    sha2::Digest,
+};
 
+#[cfg(desktop)]
 const PERSONAL: &str = "__personal__";
 
+#[cfg(desktop)]
 fn sync_error(message: &str) -> VaultError {
     VaultError::SyncError(message.into())
 }
 
+#[cfg(desktop)]
 impl VaultManager {
     pub(crate) async fn enable_account_sync(
         &mut self,

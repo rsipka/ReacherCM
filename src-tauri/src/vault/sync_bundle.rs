@@ -186,7 +186,6 @@ fn open(key: &RecordKey, data: &[u8]) -> Result<(HeaderRows, Body), VaultError> 
     Ok((rows, body))
 }
 
-#[cfg(desktop)]
 pub(super) fn reencrypt_row(
     row: &mut sync_local::Row,
     previous: &super::types::Dek,
@@ -210,7 +209,6 @@ pub(super) fn reencrypt_row(
     Ok(())
 }
 
-#[cfg(desktop)]
 pub(super) fn rotate(
     vault: &str,
     data: &[u8],
@@ -252,14 +250,11 @@ async fn counter_seen(local: &Connection) -> Result<i64, VaultError> {
 /// Sync a vault with the file in `store`.
 pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Result<Report, VaultError> {
     let mut report = Report::default();
-    #[cfg(desktop)]
     let organization = matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some());
-    #[cfg(desktop)]
     if let Store::Account(account) = store {
         account.key_epoch = sync_local::state(local, sync_local::KEY_EPOCH_STATE)
             .await?.and_then(|value| value.parse().ok()).unwrap_or(0);
     }
-    #[cfg(desktop)]
     let read_only = if organization {
         let mut roles = local.query("SELECT role FROM organization_vault_access WHERE singleton = 1", ()).await?;
         let role = roles.next().await?
@@ -270,15 +265,12 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
     } else {
         false
     };
-    #[cfg(not(desktop))]
-    let read_only = false;
     sync_local::set_state(local, sync_engine::STATE_FORMAT, "file").await?;
     for _ in 0..ATTEMPTS {
         let seen = counter_seen(local).await?;
         let (rows, body, revision) = match store.get().await? {
             Some((data, revision)) => {
                 let (rows, body) = open(&target.key, &data)?;
-                #[cfg(desktop)]
                 if organization && !matches!(
                     rows.0.get(1),
                     Some(Value::Text(name)) if crate::vault::manager::valid_organization_vault_name(name)
