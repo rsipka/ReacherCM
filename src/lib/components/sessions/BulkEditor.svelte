@@ -245,7 +245,7 @@
 	let domains = $derived(summarize(sessions.filter((s) => appliesTo('domain', s)), (s) => s.domain));
 	let creds = $derived(
 		summarize(sessions.filter((s) => appliesTo('credential', s)), (s) =>
-			s.credential_id === OWN_LOGIN ? t('credential.own_login') : s.credential && !s.credential.missing ? s.credential.name : s.credential_id ? t('credential.missing') : ''
+			s.credential_id === OWN_LOGIN ? t('credential.own_login') : s.credential?.personal_target ? t('credential.personal_login') : s.credential && !s.credential.missing ? s.credential.name : s.credential_id ? t('credential.missing') : ''
 		)
 	);
 	let themes = $derived(
