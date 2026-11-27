@@ -1,4 +1,10 @@
 <script lang="ts">
+	import { getEnabledDevopsTools, type DevopsTool } from '#lib/state/devops.svelte.js';
+	import { requestNewDevopsItem } from '#lib/state/navigation.svelte.js';
+	import * as ansibleState from '#lib/state/ansible.svelte.js';
+	import * as tofuState from '#lib/state/tofu.svelte.js';
+	import { addToast as toastDevops } from '#lib/state/toasts.svelte.js';
+
 	import { wireguardProfiles } from '#lib/state/wireguard.svelte.js';
 	import { untrack } from 'svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
@@ -558,8 +564,44 @@
 	let group = $derived(KIND_GROUPS.find((g) => g.kinds.includes(proto))?.id ?? 'terminal');
 	let groupKinds = $derived((KIND_GROUPS.find((g) => g.id === group)?.kinds ?? []).filter(kindAvailable));
 
+	/* New session's DevOps tab: not a session kind but the way to add what
+	   the DevOps workspaces hold (a cluster, a host, a database connection, a
+	   project), with the editor each of them has. Only for a new session. */
+	let devopsPicked = $state(false);
+	let devopsTools = $derived(getEnabledDevopsTools());
+	let showDevops = $derived(!editSession && !cloneSession && devopsTools.length > 0);
+	$effect(() => {
+		if (!open) devopsPicked = false;
+	});
+
+	function addDevopsItem(tool: DevopsTool): void {
+		if (tool.id === 'ansible' || tool.id === 'tofu') {
+			const st = tool.id === 'ansible' ? ansibleState : tofuState;
+			// The project list holds the add button: leave the open project,
+			// unless a run in it would be hidden.
+			if (st.getActiveProjectId()) {
+				if (st.isCommandRunning()) {
+					toastDevops(t('devops.new_busy'), 'warning');
+					return;
+				}
+				st.closeProject();
+			}
+		}
+		requestNewDevopsItem(tool.id);
+		open = false;
+	}
+
+	const DEVOPS_NEW_LABEL: Record<string, string> = {
+		ansible: 'devops.new_ansible',
+		tofu: 'devops.new_tofu',
+		databases: 'devops.new_database',
+		containers: 'devops.new_container_host',
+		kubernetes: 'devops.new_k8s_cluster'
+	};
+
 	/** A group's tab: its first protocol, unless the session already is one of its. */
 	function pickGroup(id: (typeof KIND_GROUPS)[number]['id']): void {
+		devopsPicked = false;
 		if (id === group) return;
 		const first = KIND_GROUPS.find((g) => g.id === id)?.kinds.find(kindAvailable);
 		if (first) setKind(first);
@@ -1331,11 +1373,17 @@
 			<!-- First the kind of session, then the protocols of that kind. -->
 			<div class="category-tabs" role="tablist" aria-label={t('session.protocol')}>
 				{#each visibleGroups as g (g.id)}
-					<button type="button" role="tab" class="category-tab" class:active={g.id === group} aria-selected={g.id === group} disabled={saving} onclick={() => pickGroup(g.id)}>
+					<button type="button" role="tab" class="category-tab" class:active={!devopsPicked && g.id === group} aria-selected={!devopsPicked && g.id === group} disabled={saving} onclick={() => pickGroup(g.id)}>
 						{t(`session.category_${g.id}`)}
 					</button>
 				{/each}
+				{#if showDevops}
+					<button type="button" role="tab" class="category-tab" class:active={devopsPicked} aria-selected={devopsPicked} disabled={saving} onclick={() => (devopsPicked = true)}>
+						{t('devops.sessions_group')}
+					</button>
+				{/if}
 			</div>
+			{#if !devopsPicked}
 			<div class="auth-toggle protocol-toggle">
 				{#each groupKinds as k (k)}
 					<button type="button" class="auth-btn" class:active={proto === k} disabled={saving} onclick={() => setKind(k)} title={k === 'rdp' ? t('session.protocol_rdp') : undefined}>
@@ -1343,7 +1391,27 @@
 					</button>
 				{/each}
 			</div>
+			{/if}
 		</div>
+
+		{#if devopsPicked}
+			<!-- Each tool's own editor, in its tab: what it needs (a kubeconfig,
+			     an engine, a project folder) differs too much for one form. -->
+			<div class="devops-new">
+				{#each devopsTools as tool (tool.id)}
+					<button type="button" class="devops-new-item" onclick={() => addDevopsItem(tool)}>
+						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							<path d={tool.icon} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+						</svg>
+						<span class="devops-new-text">
+							<span class="devops-new-title">{t(DEVOPS_NEW_LABEL[tool.id])}</span>
+							<span class="devops-new-desc">{tool.description()}</span>
+						</span>
+					</button>
+				{/each}
+				<p class="devops-new-hint">{t('devops.new_hint')}</p>
+			</div>
+		{:else}
 
 		<!-- On a wide window two columns; otherwise the columns vanish
 		     (display: contents) and it is one list as before. -->
@@ -2546,6 +2614,7 @@
 		</Disclosure>
 		</div>
 		</div>
+		{/if}
 
 		{#if error}
 			<div class="error-message">{error}</div>
@@ -2556,6 +2625,7 @@
 		<Button variant="secondary" onclick={handleClose} disabled={saving}>
 			{t('common.cancel')}
 		</Button>
+		{#if !devopsPicked}
 		<Button variant="primary" onclick={handleSave} disabled={!canSave}>
 			{#if saving}
 				<span class="spinner"></span>
@@ -2564,10 +2634,64 @@
 				{isEditing ? t('session.update_session') : t('session.save_session')}
 			{/if}
 		</Button>
+		{/if}
 	{/snippet}
 </Modal>
 
 <style>
+	.devops-new {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+
+	.devops-new-item {
+		display: flex;
+		align-items: flex-start;
+		gap: 12px;
+		padding: 10px 12px;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+		font-family: var(--font-sans);
+		text-align: left;
+		cursor: pointer;
+		transition: border-color 0.15s ease, background-color 0.15s ease;
+	}
+
+	.devops-new-item:hover {
+		border-color: var(--color-accent);
+	}
+
+	.devops-new-item svg {
+		flex-shrink: 0;
+		margin-top: 1px;
+		color: var(--color-text-secondary);
+	}
+
+	.devops-new-text {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		min-width: 0;
+	}
+
+	.devops-new-title {
+		font-size: var(--text-sm);
+		font-weight: 600;
+	}
+
+	.devops-new-desc,
+	.devops-new-hint {
+		font-size: var(--text-xs, 0.75rem);
+		color: var(--color-text-secondary);
+	}
+
+	.devops-new-hint {
+		margin: 4px 2px 0;
+	}
+
 	.form {
 		display: flex;
 		flex-direction: column;

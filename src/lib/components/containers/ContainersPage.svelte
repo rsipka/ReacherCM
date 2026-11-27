@@ -45,7 +45,7 @@
 	import { containerStatus, ago, bytes, type Status } from '#lib/devops/status.js';
 	import { openContainerShell } from '#lib/devops/shell.js';
 	import { busy } from '#lib/state/containers.svelte.js';
-	import { otherTabShowing } from '#lib/state/navigation.svelte.js';
+	import { otherTabShowing, takeNewDevopsItem, wantsNewDevopsItem } from '#lib/state/navigation.svelte.js';
 	import { activateTab, type Tab } from '#lib/state/tabs.svelte.js';
 	import { hostsChanged } from '#lib/state/containers.svelte.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -225,6 +225,14 @@
 	// Closing the tab closes its host's connection.
 	onDestroy(() => {
 		if (opened) ctrClose(opened.key).catch(() => {});
+	});
+
+	// New session → DevOps → Container host: the add editor.
+	$effect(() => {
+		if (wantsNewDevopsItem('containers') && (!tab || tab.active) && takeNewDevopsItem('containers')) {
+			editing = null;
+			editorOpen = true;
+		}
 	});
 
 	// ---------------------------------------------------------------------
