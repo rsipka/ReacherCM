@@ -8,7 +8,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { isMobile } from '#lib/platform.js';
 	import { syncAccountErrorKey } from '#lib/sync/account.js';
-	import { PREFERENCE_KEYS, type PreferenceKey } from '#lib/sync/preferences.js';
+	import { PREFERENCE_CATALOG, PREFERENCE_KEYS, type PreferenceKey } from '#lib/sync/preference-catalog.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
@@ -20,11 +20,21 @@
 	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
 
 	const mobile = isMobile();
-	const preferenceLabels: Record<PreferenceKey, string> = {
-		theme: 'sync_account.base_theme',
-		locale: 'settings.language',
-		terminalCursorStyle: 'cursor.style',
+	const groupLabels = {
+		general: 'settings.general',
+		appearance: 'settings.appearance',
+		terminal: 'settings.page_terminal',
+		input: 'sync_account.preference_input',
+		sessions: 'settings.page_sessions',
+		remote: 'settings.rdp_section',
+		security: 'settings.security',
 	};
+	const groups = Object.entries(groupLabels).map(([group, label]) => ({
+		label,
+		keys: (Object.keys(PREFERENCE_CATALOG) as PreferenceKey[]).filter((key) => PREFERENCE_CATALOG[key].group === group),
+	}));
+	let needsServerUpdate = $derived(preferenceSync.supported !== null && PREFERENCE_KEYS.some((key) =>
+		!preferenceSync.skipped.includes(key) && !preferenceSync.supported?.includes(key)));
 	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
@@ -180,25 +190,45 @@
 					onchange={setPreferenceSync} />
 			</div>
 		</div>
-		{#each PREFERENCE_KEYS as key (key)}
-			<div class="setting-row">
-				<div class="setting-info">
-					<span class="setting-label">{t(preferenceLabels[key])}</span>
-				</div>
-				<div class="setting-control">
-					<select
-						class="preference-mode"
-						aria-label={t(preferenceLabels[key])}
-						value={preferenceSync.skipped.includes(key) ? 'local' : 'sync'}
-						disabled={action !== null}
-						onchange={(event) => setPreferenceSyncIncluded(key, event.currentTarget.value === 'sync')}
-					>
-						<option value="sync">{t('sync_account.preference_sync')}</option>
-						<option value="local">{t('sync_account.preference_keep_local')}</option>
-					</select>
-				</div>
-			</div>
+		{#each groups as group (group.label)}
+			<details class="preference-group">
+				<summary>
+					{t(group.label)}
+					<span class="setting-description">
+						{t('sync_account.preference_selected', { count: String(group.keys.filter((key) =>
+							PREFERENCE_KEYS.includes(key) && !preferenceSync.skipped.includes(key)).length) })}
+					</span>
+				</summary>
+				{#each group.keys as key (key)}
+					{@const definition = PREFERENCE_CATALOG[key]}
+					{@const label = t(definition.label)}
+					<div class="setting-row">
+						<div class="setting-info">
+							<span class="setting-label">{label}</span>
+						</div>
+						<div class="setting-control">
+							{#if definition.kind === 'local'}
+								<span class="setting-description">{t('sync_account.preference_device_only')}</span>
+							{:else}
+								<select
+									class="preference-mode"
+									aria-label={label}
+									value={preferenceSync.skipped.includes(key) ? 'local' : 'sync'}
+									disabled={action !== null}
+									onchange={(event) => setPreferenceSyncIncluded(key, event.currentTarget.value === 'sync')}
+								>
+									<option value="sync">{t('sync_account.preference_sync')}</option>
+									<option value="local">{t('sync_account.preference_keep_local')}</option>
+								</select>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</details>
 		{/each}
+		{#if preferenceSync.enabled && needsServerUpdate}
+			<p class="feedback" role="status">{t('sync_account.preference_server_update')}</p>
+		{/if}
 		{#if preferenceSync.enabled && preferenceSync.skipped.length < PREFERENCE_KEYS.length}
 			<div class="setting-row">
 				<div class="setting-info">
@@ -273,6 +303,18 @@
 	.footer-actions { padding: 8px 0; }
 	.server-address { overflow-wrap: anywhere; }
 	.wrap-control :global(button) { white-space: normal; }
+	.preference-group {
+		border-bottom: 1px solid var(--color-border);
+		padding-inline: 4px;
+	}
+	.preference-group summary {
+		padding: 11px 0;
+		cursor: pointer;
+		color: var(--color-text-primary);
+		font-size: 0.875rem;
+		font-weight: 500;
+	}
+	.preference-group summary span { float: inline-end; font-weight: 400; }
 	.preference-mode {
 		padding: 7px 10px;
 		border: 1px solid var(--color-border-strong);

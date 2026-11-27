@@ -3,6 +3,7 @@
 All notable changes to Reacher CM are documented here. Reacher CM is a personal fork of [Reach](https://github.com/alexandrosnt/Reach) with additional features, written with the help of AI coding tools; the entries from v0.9.1 down are Reach's own.
 
 ## Reacher CM (unreleased, based on Reach v0.9.2)
+- **Sync more application preferences** — Settings → Account now groups appearance, terminal, input, session, remote desktop, and security preferences. Select which options to sync on each installation. Newly supported options start as *Keep local*. An older server still syncs the original three while awaiting an update.
 - **Choose which preferences sync on each device** — Settings → Account lists base theme mode, language, and terminal cursor shape. Choose *Keep local* for any of them to keep this installation’s value independent of the account. The choices are remembered when you turn preference sync off and back on.
 - **Sign in to Account Sync from setup** — Connect to a Reacher CM sync server during first-run setup or when you reopen the wizard from Settings. Desktop opens your browser for approval, and phones and tablets can scan or paste a pairing code. You can also skip sign-in and finish setup.
 - **iDRAC VNC on phones and tablets** — The *VNC* button of an iDRAC server management tab, and *Open VNC* in its session menu, now show on Android and iOS too. They open the app's own VNC viewer, which already worked there; only the buttons were hidden.

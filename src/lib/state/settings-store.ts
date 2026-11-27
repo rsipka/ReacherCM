@@ -368,7 +368,11 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	// An installed or built-in theme other than dark and light. It was
 	// saved but never read back, so the app fell back to dark or light
 	// on every start.
-	settings.themeId = typeof parsed.themeId === 'string' && parsed.themeId ? parsed.themeId : undefined;
+	if (parsed.themeId === 'reach-dark' || parsed.themeId === 'reach-light') {
+		settings.theme = parsed.themeId === 'reach-dark' ? 'dark' : 'light';
+	} else {
+		settings.themeId = typeof parsed.themeId === 'string' && parsed.themeId ? parsed.themeId : undefined;
+	}
 	settings.themeLight = typeof parsed.themeLight === 'string' && parsed.themeLight ? parsed.themeLight : undefined;
 	settings.themeDark = typeof parsed.themeDark === 'string' && parsed.themeDark ? parsed.themeDark : undefined;
 	settings.terminalThemeId = parsed.terminalThemeId ?? defaults.terminalThemeId;

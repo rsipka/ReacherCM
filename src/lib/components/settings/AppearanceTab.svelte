@@ -19,7 +19,6 @@
 	import { actionLabel } from '#lib/state/shortcuts.svelte.js';
 	import { sessionLogDefaultDir } from '#lib/ipc/ssh.js';
 	import { historyForget, historyStats, type HistoryStats } from '#lib/ipc/history.js';
-	import { pushHistoryRetention } from '#lib/state/history.svelte.js';
 	import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 	import { fontsListInstalled, type InstalledFont } from '#lib/ipc/fonts.js';
 	import { freerdpFind } from '#lib/ipc/freerdp.js';
@@ -264,7 +263,7 @@
 		}
 		const theme = themeState.all.find((t2) => t2.id === id);
 		if (!theme) return;
-		updateSetting('themeId', theme.id);
+		updateSetting('themeId', theme.id === DARK.id || theme.id === LIGHT.id ? undefined : theme.id);
 		// Keep `theme` consistent so anything still reading it, and the fallback
 		// path when a themeId no longer resolves, stay sensible.
 		updateSetting('theme', theme.appearance);
@@ -992,17 +991,17 @@
 			<label>
 				{t('history.settings_output_days')}
 				<input class="log-field num" type="number" min="0" value={settings.historyOutputDays}
-					onchange={(e) => { updateSetting('historyOutputDays', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0))); pushHistoryRetention(); }} />
+					onchange={(e) => updateSetting('historyOutputDays', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))} />
 			</label>
 			<label>
 				{t('history.settings_command_days')}
 				<input class="log-field num" type="number" min="0" value={settings.historyCommandDays}
-					onchange={(e) => { updateSetting('historyCommandDays', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0))); pushHistoryRetention(); }} />
+					onchange={(e) => updateSetting('historyCommandDays', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))} />
 			</label>
 			<label>
 				{t('history.settings_max_mb')}
 				<input class="log-field num" type="number" min="0" step="256" value={settings.historyMaxMb}
-					onchange={(e) => { updateSetting('historyMaxMb', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0))); pushHistoryRetention(); }} />
+					onchange={(e) => updateSetting('historyMaxMb', Math.max(0, Math.floor(Number(e.currentTarget.value) || 0)))} />
 			</label>
 		</div>
 	</div>

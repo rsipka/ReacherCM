@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { canFloat } from '#lib/state/windows.svelte.js';
 	import { allowNotifications } from '#lib/terminal/bell.js';
-	import { invoke } from '@tauri-apps/api/core';
 	import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 	import { isMobile } from '#lib/platform.js';
 	import { openUrl } from '@tauri-apps/plugin-opener';
@@ -127,11 +126,6 @@
 		updateSetting('openLastSession', checked);
 	}
 
-	async function onMinimizeToTrayChange(checked: boolean) {
-		await invoke('set_close_to_tray', { enabled: checked });
-		updateSetting('minimizeToTray', checked);
-	}
-
 	/** Turning bell notifications on asks the system for permission first;
 	 *  refused, the switch stays off and says why. */
 	async function onBellNotifyChange(checked: boolean) {
@@ -211,7 +205,7 @@
 					hideLabel
 					checked={settings.minimizeToTray}
 					label={t('settings.minimize_to_tray')}
-					onchange={onMinimizeToTrayChange}
+					onchange={(checked) => updateSetting('minimizeToTray', checked)}
 				/>
 			</div>
 		</div>

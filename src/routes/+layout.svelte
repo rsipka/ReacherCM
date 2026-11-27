@@ -47,6 +47,7 @@
 	// A seamless RemoteApp's window is as bare as the editor's: no tray, lock screen or setup.
 	const isEditorWindow = typeof window !== 'undefined' && ['editor', 'railview'].some((k) => new URLSearchParams(window.location.search).has(k));
 	const settings = getSettings();
+	let settingsLoaded = $state(false);
 	/** A floating session window (#lib/state/windows): a slim shell, and the main window owns the rest. */
 	const isFloat = isFloatWindow();
 
@@ -64,7 +65,7 @@
 
 	function startFloat(): () => void {
 		loadSettings();
-		applyUiZoom();
+		settingsLoaded = true;
 		loadInstalledThemes();
 		void readState();
 		// The main window locked or opened the vault.
@@ -98,9 +99,7 @@
 			if (!quiet) announceSettings();
 		});
 		void startWindows();
-		pushHistoryRetention();
-		// The interface size chosen last time, before anything is laid out.
-		applyUiZoom();
+		settingsLoaded = true;
 		startAutoLock();
 		// The tray's tooltip and menu follow the main window's state.
 		if (!isEditorWindow) startTray();
@@ -112,7 +111,6 @@
 		// are in, themeState.all is just the two built-ins, so an installed
 		// theme silently fell back to dark/light on every launch.
 		loadInstalledThemes();
-		syncTraySettings();
 		syncDevopsTools();
 		// Someone updating has not met the DevOps switches; say once where
 		// Databases lives. A fresh install is seeded with 'devops' as seen.
@@ -151,6 +149,18 @@
 			stopPeriodicChecks();
 			stopPreferenceSync?.();
 		};
+	});
+
+	$effect(() => {
+		if (settingsLoaded) applyUiZoom();
+	});
+
+	$effect(() => {
+		if (settingsLoaded && !isFloat && !isEditorWindow) void syncTraySettings();
+	});
+
+	$effect(() => {
+		if (settingsLoaded && !isFloat && !isEditorWindow) pushHistoryRetention();
 	});
 
 	$effect(() => {

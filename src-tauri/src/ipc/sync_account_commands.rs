@@ -676,6 +676,8 @@ pub struct PreferencePatch {
 pub struct PreferenceSnapshot {
     revision: u64,
     values: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supported: Option<Vec<String>>,
     #[serde(skip_deserializing)]
     conflict: bool,
 }

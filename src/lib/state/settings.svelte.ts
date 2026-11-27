@@ -3,7 +3,7 @@ import * as settingsIpc from '#lib/ipc/settings.js';
 import type { SessionLogConfig } from '#lib/ipc/ssh.js';
 import { defaults, readStoredSettings, storeSettings, STORAGE_KEY, type Settings } from '#lib/state/settings-store.js';
 export { DEFAULT_LOG_NAME } from '#lib/state/settings-store.js';
-import { portablePreferences, type Preferences } from '#lib/sync/preferences.js';
+import { decodePreferences, encodePreferences, type Preferences } from '#lib/sync/preference-catalog.js';
 import { NEW_FEATURE_IDS } from '#lib/data/whats-new.js';
 
 export type { Settings };
@@ -59,23 +59,27 @@ export function updateSetting<K extends keyof Settings>(key: K, value: Settings[
 	const changed = settings[key] !== value;
 	settings[key] = value;
 	if (changed && onPortableChange) {
-		const portable = portablePreferences({ [key]: value });
+		const portable = encodePreferences({ [key]: value });
 		if (Object.keys(portable).length > 0) onPortableChange(portable);
 	}
 	saveSettings();
 }
 
 export function applyPortableSettings(values: Preferences): void {
-	const portable = portablePreferences(values);
-	let changed = Object.entries(portable).some(([key, value]) => settings[key as keyof Settings] !== value);
-	if (portable.theme !== undefined && (settings.themeId === 'reach-dark' || settings.themeId === 'reach-light')
-		&& portable.theme !== settings.theme) {
-		settings.themeId = undefined;
-		changed = true;
+	const decoded = decodePreferences(values);
+	const keys = Object.keys(decoded) as (keyof typeof decoded)[];
+	if (keys.length === 0) return;
+	const normalized = readStoredSettings({ ...settings, ...decoded });
+	let changed = false;
+	const previous = encodePreferences(settings);
+	const next = encodePreferences(normalized);
+	for (const key of keys) {
+		if (previous[key] !== next[key]) {
+			Object.assign(settings, { [key]: normalized[key] });
+			changed = true;
+		}
 	}
-	if (!changed) return;
-	Object.assign(settings, portable);
-	saveSettings();
+	if (changed) saveSettings();
 }
 
 export function loadSettings(): void {
