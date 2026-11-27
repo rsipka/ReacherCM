@@ -212,21 +212,6 @@
 		return () => window.removeEventListener('keydown', onKey, { capture: true });
 	});
 
-	let dbVisited = $state(false);
-	$effect(() => {
-		if (activePage === 'databases') dbVisited = true;
-	});
-	let dbMounted = $derived(dbVisited && isDevopsEnabled('databases'));
-	let containersVisited = $state(false);
-	$effect(() => {
-		if (activePage === 'containers') containersVisited = true;
-	});
-	let containersMounted = $derived(containersVisited && isDevopsEnabled('containers'));
-	let k8sVisited = $state(false);
-	$effect(() => {
-		if (activePage === 'kubernetes') k8sVisited = true;
-	});
-	let k8sMounted = $derived(k8sVisited && isDevopsEnabled('kubernetes'));
 
 	let spawnedPtys = $state(new Set<string>());
 	let connectedSsh = $state(new Set<string>());
@@ -412,7 +397,7 @@
 	<EditorWindow />
 {:else}
 	<div class="page-container">
-		<div class="page-view" class:active={activePage === 'terminal'}>
+		<div class="page-view active">
 			{#if tabs.length === 0}
 				{#if !isFloatWindow()}<StartScreen />{/if}
 			{:else}
@@ -460,6 +445,37 @@
 							{:else if tab.type === 'bmc'}
 								<div class="pane-body">
 									<BmcPanel {tab} active={focused} />
+								</div>
+							{:else if tab.type === 'devops'}
+								<!-- A DevOps workspace: the page that used to fill the window,
+								     now a tab like any session's panel. Kept mounted while
+								     its tab is open, so a query or a log survives a trip to
+								     a terminal. -->
+								<div class="pane-body devops-body">
+									<!-- A workspace that fails shows why in its own tab; the
+									     terminals and the other tabs carry on. -->
+									<svelte:boundary onerror={(e) => console.error('DevOps workspace failed:', e)}>
+									{#if tab.devopsTool && isDevopsEnabled(tab.devopsTool)}
+										{#if tab.devopsTool === 'kubernetes'}
+											<K8sPage {tab} />
+										{:else if tab.devopsTool === 'databases'}
+											<DbPage />
+										{:else if tab.devopsTool === 'containers'}
+											<ContainersPage />
+										{:else if !vaultState.locked}
+											{#key vaultState.userUuid}
+												{#if tab.devopsTool === 'ansible'}<AnsiblePage />{:else}<TofuPage />{/if}
+											{/key}
+										{/if}
+									{/if}
+									{#snippet failed(error, reset)}
+										<div class="devops-failed" role="alert">
+											<p>{t('devops.tab_failed')}</p>
+											<code>{String((error as Error)?.message ?? error)}</code>
+											<button class="devops-retry" onclick={reset}>{t('devops.tab_retry')}</button>
+										</div>
+									{/snippet}
+									</svelte:boundary>
 								</div>
 							{:else if tab.type !== 'rdp' && tab.type !== 'vnc' && tab.type !== 'spice'}
 								{#if appSettings.terminalBar !== 'hidden' || findOpenIn === tab.id}
@@ -546,34 +562,6 @@
 				{/if}
 			{/if}
 		</div>
-
-		<!-- Mounted from the first visit until the tool is switched off, so a
-		     query's text and results survive a trip to the terminal. -->
-		{#if dbMounted}
-			<div class="page-view" class:active={activePage === 'databases'}>
-				<DbPage />
-			</div>
-		{/if}
-
-		<!-- Kept mounted from the first visit, as Databases is, so an open log
-		     and the chosen host survive a trip to the terminal. -->
-		{#if containersMounted}
-			<div class="page-view" class:active={activePage === 'containers'}>
-				<ContainersPage />
-			</div>
-		{/if}
-
-		{#if k8sMounted}
-			<div class="page-view" class:active={activePage === 'kubernetes'}>
-				<K8sPage />
-			</div>
-		{/if}
-
-		{#if activePage === 'ansible' && isDevopsEnabled('ansible') && !vaultState.locked}
-			{#key vaultState.userUuid}<AnsiblePage />{/key}
-		{:else if activePage === 'tofu' && isDevopsEnabled('tofu') && !vaultState.locked}
-			{#key vaultState.userUuid}<TofuPage />{/key}
-		{/if}
 	</div>
 	<!-- One Share dialog for the whole app: the bottom bar's Share chip and the
 	     Sessions + menu both open it, and it must be reachable with no
@@ -640,6 +628,42 @@
 
 	.bar-slot:not(.hover-only) + .pane-body {
 		top: 34px;
+	}
+
+	/* Laid out as the page it was: a column its workspace fills. */
+	.devops-body {
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+	}
+
+	.devops-failed {
+		margin: auto;
+		max-width: 520px;
+		padding: 24px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		text-align: center;
+		color: var(--color-text-secondary);
+		font-size: var(--text-sm);
+	}
+
+	.devops-failed code {
+		max-width: 100%;
+		overflow-wrap: anywhere;
+		color: var(--color-danger, #e5534b);
+	}
+
+	.devops-retry {
+		padding: 6px 14px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg-secondary);
+		color: var(--color-text-primary);
+		font-family: var(--font-sans);
+		cursor: pointer;
 	}
 
 	@media (pointer: coarse) {
