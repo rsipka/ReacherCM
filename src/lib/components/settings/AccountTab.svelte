@@ -35,11 +35,42 @@
 	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
+	let managedRemoval = $state(false);
+	let managedRemovalBusy = $state(false);
 	let action = $state<'load' | 'check' | 'sign-out' | null>('load');
 	let error = $state('');
 	let message = $state('');
 
 	onMount(() => { void load(); });
+
+	$effect(() => {
+		const device = account?.deviceId;
+		if (!mobile && device) void loadManagedRemoval(device);
+	});
+
+	async function loadManagedRemoval(device: string): Promise<void> {
+		managedRemovalBusy = true;
+		try {
+			const allowed = await invoke<boolean>('sync_account_managed_removal');
+			if (account?.deviceId === device) managedRemoval = allowed;
+		} catch {
+			if (account?.deviceId === device) managedRemoval = false;
+		} finally {
+			if (account?.deviceId === device) managedRemovalBusy = false;
+		}
+	}
+
+	async function changeManagedRemoval(enabled: boolean): Promise<void> {
+		managedRemovalBusy = true;
+		error = '';
+		try {
+			managedRemoval = await invoke<boolean>('sync_account_managed_removal', { enabled });
+		} catch (cause) {
+			error = syncAccountErrorKey(cause);
+		} finally {
+			managedRemovalBusy = false;
+		}
+	}
 
 	$effect(() => {
 		if (preferenceSync.error === 'sync_account.error_revoked' && action === null) {
@@ -137,6 +168,18 @@
 				</Button>
 			</div>
 		</div>
+		{#if !mobile}
+			<div class="setting-row">
+				<div class="setting-info">
+					<span class="setting-label">{t('sync_account.managed_removal')}</span>
+					<span class="setting-description">{t('sync_account.managed_removal_desc')}</span>
+				</div>
+				<div class="setting-control">
+					<Toggle hideLabel label={t('sync_account.managed_removal')} checked={managedRemoval}
+						disabled={managedRemovalBusy || action !== null} onchange={changeManagedRemoval} />
+				</div>
+			</div>
+		{/if}
 		{@render accountFeedback()}
 		<div class="footer-actions">
 			<Button variant="ghost" size="sm" disabled={action !== null} onclick={signOut}>

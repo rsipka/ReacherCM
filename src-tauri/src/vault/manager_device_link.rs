@@ -80,7 +80,7 @@ impl VaultManager {
             .user_vaults
             .iter()
             .filter(|v| !account && v.sync_url.is_some() && v.sync_token.is_some())
-            .cloned()
+            .map(|entry| StoredVaultRef { managed_grant: None, ..entry.clone() })
             .collect();
         let has_personal = self.personal_sync_url.is_some() && self.personal_sync_token.is_some();
         if !has_personal && user_vaults.is_empty() {
@@ -204,6 +204,7 @@ impl VaultManager {
                 .iter()
                 .map(|v| StoredVaultRef {
                     sync_token: None,
+                    managed_grant: None,
                     ..v.clone()
                 })
                 .collect(),
@@ -216,7 +217,9 @@ impl VaultManager {
 
         Ok(StoredIdentity {
             personal_sync_token: link.personal_sync_token,
-            user_vaults: link.user_vaults,
+            user_vaults: link.user_vaults.into_iter()
+                .map(|entry| StoredVaultRef { managed_grant: None, ..entry })
+                .collect(),
             ..stored
         })
     }

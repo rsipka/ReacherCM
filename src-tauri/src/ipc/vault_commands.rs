@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use secrecy::SecretBox;
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::state::AppState;
 use crate::vault::manager::INTERNAL_VAULTS;
@@ -669,9 +669,14 @@ pub async fn vault_lock_vault(
 pub async fn vault_sync(
     vault_id: String,
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     // Not under the manager's lock: the backend may take a while.
-    let (_, failed) = crate::vault::manager::sync_vaults(&state.vault_manager, Some(&vault_id), false).await;
+    let (changed, failed) = crate::vault::manager::sync_vaults(&state.vault_manager, Some(&vault_id), false).await;
+    for id in changed {
+        let _ = app.emit("vault-synced", id);
+    }
+    let _ = app.emit("vault-sync-status", ());
     match failed.into_iter().next() {
         Some((_, e)) => Err(e.to_string()),
         None => Ok(()),

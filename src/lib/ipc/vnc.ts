@@ -29,6 +29,8 @@ export interface VncConnectParams {
 	proxmox?: ProxmoxConsole | null;
 	/** The whole connection in TLS (an iDRAC's VNC server with SSL encryption on). */
 	tls?: boolean;
+	/** VeNCrypt: TLS negotiated inside VNC, required. */
+	vencrypt?: boolean;
 	/** A server management session's VNC server: a refused password asks
 	 *  for another one there. */
 	bmcSessionId?: string;
@@ -36,8 +38,8 @@ export interface VncConnectParams {
 
 /** How a connected VNC session is protected on the network. */
 export interface VncSecurity {
-	/** `tls`, `ssh` (through an SSH session), `proxmox` (inside its HTTPS) or `none`. */
-	kind: 'tls' | 'ssh' | 'proxmox' | 'none';
+	/** `tls`, `vencrypt` (TLS inside VNC), `ssh` (through an SSH session), `proxmox` (inside its HTTPS) or `none`. */
+	kind: 'tls' | 'vencrypt' | 'ssh' | 'proxmox' | 'none';
 	protocol: string | null;
 	cipher: string | null;
 	bits: number | null;
@@ -49,6 +51,16 @@ export async function vncSecurity(id: string): Promise<VncSecurity | null> {
 }
 
 export type VncStatus = RdpStatus;
+
+/** A connect error starting with this is a certificate the session does not
+ *  trust yet; its SHA-256 fingerprint follows. */
+export const VNC_UNTRUSTED_CERT = 'VNC_UNTRUSTED_CERT:';
+
+/** Trust a certificate for a saved VNC session, by the fingerprint its
+ *  failed connect reported. */
+export async function vncTrustCert(sessionId: string, fingerprint: string): Promise<void> {
+	await invoke('vnc_session_cert_trust', { sessionId, fingerprint });
+}
 
 export async function vncConnect(params: VncConnectParams, onFrame: (frame: ArrayBuffer) => void): Promise<void> {
 	const onFrameChannel = new Channel<ArrayBuffer | Uint8Array | number[]>();
