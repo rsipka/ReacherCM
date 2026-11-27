@@ -54,7 +54,7 @@
 	"tmuxConnectWindows": {"label": "settings.tmux_connect_windows", "group": "sessions", "kind": "enum", "choices": ["last", "all"]},
 	"tmuxHideStatus": {"label": "settings.tmux_hide_status", "group": "sessions", "kind": "boolean"},
 	"sessionLogMode": {"label": "settings.log_mode", "group": "sessions", "kind": "enum", "choices": ["off", "printable", "all"]},
-	"sessionLogFolder": {"label": "settings.log_folder", "group": "sessions", "kind": "local"},
+	"sessionLogFolder": {"label": "settings.log_folder", "group": "sessions", "kind": "text", "maxBytes": 4096},
 	"sessionLogName": {"label": "settings.log_name", "group": "sessions", "kind": "text", "maxBytes": 4096},
 	"sessionLogAppend": {"label": "settings.log_append", "group": "sessions", "kind": "boolean"},
 	"sessionLogHeader": {"label": "settings.log_header", "group": "sessions", "kind": "boolean"},

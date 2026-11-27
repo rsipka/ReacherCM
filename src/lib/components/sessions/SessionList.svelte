@@ -75,7 +75,8 @@
 	import AddressPicker from './AddressPicker.svelte';
 	// Passwords are now stored encrypted in vault, not in memory cache
 	import { createTab, updateTabOs, getSessionTabStates, getTabs, activateTab, toggleFilesView, closeTab } from '#lib/state/tabs.svelte.js';
-	import { getSettings, sessionLogConfig } from '#lib/state/settings.svelte.js';
+	import { getSettings } from '#lib/state/settings.svelte.js';
+	import { validatedSessionLogConfig } from '#lib/state/log-folder.svelte.js';
 	import { isMobile, isWindows } from '#lib/platform.js';
 	import { unsupportedReason } from '#lib/sessions/support.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
@@ -2010,6 +2011,7 @@
 				? (session.auth_method.passphrase_ref ?? undefined)
 				: undefined;
 			const bmcConsole = isBmcConsole(session);
+			const sessionLog = session.files ? null : await validatedSessionLogConfig(session.name);
 			const paramsFor = (addr: ResolvedAddress) => ({
 				id,
 				host: addr.host,
@@ -2032,7 +2034,7 @@
 				terminal: session.terminal ?? null,
 				// A controller's command line is no shell to set up.
 				injectColors: session.files || bmcConsole ? false : getSettings().typeShellSetup,
-				sessionLog: session.files ? null : sessionLogConfig(session.name),
+				sessionLog,
 				showLoginMessage: getSettings().showLoginMessage,
 				tryAgentKeys: authType === 'Key' && session.try_agent_keys === true,
 				sshOptions: session.ssh_options ?? null,

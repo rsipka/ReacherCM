@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { isMobile } from '#lib/platform.js';
+import { clearLogFolderWarning, logFolderExists, warnAboutLogFolder } from '#lib/state/log-folder.svelte.js';
 import { getSettings, onPortableSettingChanged, applyPortableSettings } from '#lib/state/settings.svelte.js';
 import { DEFAULT_SKIPPED_KEYS, encodePreferences } from '#lib/sync/preference-catalog.js';
 import { defaults } from '#lib/state/settings-store.js';
@@ -65,8 +67,10 @@ export function bindPreferenceAccount(account: SyncAccount | null): void {
 	if (accountRevision && scope(current) === scope(account)) return;
 	accountRevision++;
 	current = account;
+	clearLogFolderWarning('account');
 	const saved = readJournal();
 	journal = saved?.scope === scope(account) && account ? saved : null;
+	if (journal && isMobile()) setPreferenceIncluded(journal, 'sessionLogFolder', false);
 	preferenceSync.enabled = journal?.enabled ?? false;
 	preferenceSync.skipped = journal?.skipped ?? DEFAULT_SKIPPED_KEYS;
 	preferenceSync.supported = null;
@@ -79,18 +83,20 @@ export function setPreferenceSync(enabled: boolean): void {
 	if (!current || enabled === preferenceSync.enabled) return;
 	journal = {
 		scope: scope(current), enabled,
-		...readPreferenceJournal({ catalogVersion: 2, skipped: journal?.skipped ?? DEFAULT_SKIPPED_KEYS, seed: journal?.seed }),
+		...readPreferenceJournal({ catalogVersion: 3, skipped: journal?.skipped ?? DEFAULT_SKIPPED_KEYS, seed: journal?.seed }),
 	};
 	preferenceSync.enabled = enabled;
+	if (!enabled) clearLogFolderWarning('account');
 	preferenceSync.error = '';
 	persist();
 	if (enabled) schedule();
 }
 
 export function setPreferenceSyncIncluded(key: PreferenceKey, included: boolean): void {
-	if (!current || !PREFERENCE_KEYS.includes(key)) return;
+	if (!current || !PREFERENCE_KEYS.includes(key) || (isMobile() && key === 'sessionLogFolder')) return;
 	journal ??= { scope: scope(current), enabled: false, ...readPreferenceJournal({}) };
 	setPreferenceIncluded(journal, key, included);
+	if (key === 'sessionLogFolder' && !included) clearLogFolderWarning('account');
 	preferenceSync.skipped = journal.skipped;
 	preferenceSync.error = '';
 	persist();
@@ -166,23 +172,47 @@ export async function syncPreferences(): Promise<void> {
 	preferenceSync.syncing = true;
 	preferenceSync.error = '';
 	try {
+		const folder = active.pending.sessionLogFolder ?? getSettings().sessionLogFolder;
+		const canSendFolder = active.skipped.includes('sessionLogFolder') ? false : await logFolderExists(folder);
+		if (journal !== active) return;
 		const remote = await reconcilePreferences(
 			active, async (patch) => {
 				const snapshot = await request(account.deviceId, patch);
 				if (journal === active) preferenceSync.supported = supportedPreferenceKeys(snapshot);
 				return snapshot;
 			},
-			() => encodePreferences(getSettings()), () => journal === active, persist
+			() => encodePreferences(getSettings()), () => journal === active, persist,
+			(changes) => {
+				if (changes.sessionLogFolder && (!canSendFolder || changes.sessionLogFolder !== folder)) {
+					delete changes.sessionLogFolder;
+				}
+				return changes;
+			},
 		);
 		if (!remote || journal !== active) return;
 		const unavailable = PREFERENCE_KEYS.filter((key) => !preferenceSync.supported?.includes(key));
 		const previous = portablePreferences(active.remote, unavailable);
-		applyPortableSettings(incomingPreferences(previous, remote, active.pending, encodePreferences(defaults)));
+		const incoming = incomingPreferences(previous, remote, active.pending, encodePreferences(defaults));
+		const folderToApply = incoming.sessionLogFolder;
+		const folderMissing = !!folderToApply && !await logFolderExists(folderToApply);
+		if (journal !== active) return;
+		if (folderMissing) delete incoming.sessionLogFolder;
+		// A local edit to any field may have arrived while checking the folder.
+		for (const key of PREFERENCE_KEYS) {
+			if (active.skipped.includes(key) || active.pending[key] !== undefined) delete incoming[key];
+		}
+		applyPortableSettings(incoming);
+		for (const key of active.skipped) delete remote[key];
 		for (const key of unavailable) {
 			if (active.remote[key] !== undefined) remote[key] = active.remote[key];
 		}
 		active.remote = remote;
 		persist();
+
+		const folderStillCurrent = () => journal === active && !active.skipped.includes('sessionLogFolder')
+			&& active.remote.sessionLogFolder === folderToApply && active.pending.sessionLogFolder === undefined;
+		if (folderMissing && folderStillCurrent()) warnAboutLogFolder(folderToApply, 'account', folderStillCurrent);
+		else clearLogFolderWarning('account');
 	} catch (cause) {
 		if (journal !== active || active.skipped.length === PREFERENCE_KEYS.length) return;
 		const error = typeof cause === 'string' && cause.startsWith('sync_account.')

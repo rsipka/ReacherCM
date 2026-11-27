@@ -41,18 +41,19 @@ export interface PreferenceJournal {
 	pending: Preferences;
 	remote: Preferences;
 	skipped: PreferenceKey[];
-	catalogVersion: 2;
+	catalogVersion: 3;
 	seed: PreferenceKey[];
 }
 
-export function readPreferenceJournal(value: Partial<PreferenceJournal>): PreferenceJournal {
+export function readPreferenceJournal(value: Partial<Omit<PreferenceJournal, 'catalogVersion'>> & { catalogVersion?: number }): PreferenceJournal {
 	const saved = Array.isArray(value.skipped) ? value.skipped : [];
 	const savedSeed = Array.isArray(value.seed) ? value.seed : [];
 	const skipped = PREFERENCE_KEYS.filter((key) => saved.includes(key)
-		|| (value.catalogVersion !== 2 && DEFAULT_SKIPPED_KEYS.includes(key)));
+		|| (value.catalogVersion !== 2 && value.catalogVersion !== 3 && DEFAULT_SKIPPED_KEYS.includes(key))
+		|| (value.catalogVersion === 2 && key === 'sessionLogFolder'));
 	return {
 		initialized: value.initialized === true,
-		catalogVersion: 2,
+		catalogVersion: 3,
 		seed: PREFERENCE_KEYS.filter((key) => savedSeed.includes(key) && !skipped.includes(key)),
 		pending: portablePreferences(value.pending, skipped),
 		remote: portablePreferences(value.remote, skipped),
@@ -84,6 +85,7 @@ export async function reconcilePreferences(
 	local: () => Preferences,
 	active: () => boolean,
 	persist: () => void,
+	filterOutgoing: (changes: Preferences) => Preferences = (changes) => changes,
 ): Promise<Preferences | undefined> {
 	if (journal.skipped.length === PREFERENCE_KEYS.length) return;
 	let snapshot = await request();
@@ -95,10 +97,10 @@ export async function reconcilePreferences(
 		const initial = PREFERENCE_KEYS.filter((key) => initialAccount
 			|| (journal.seed.includes(key) && snapshot.values[key] === undefined));
 		const seed = initial.length > 0 ? portablePreferences(local(), excluded) : {};
-		const sent = portablePreferences({
+		const sent = filterOutgoing(portablePreferences({
 			...Object.fromEntries(initial.map((key) => [key, seed[key]])),
 			...journal.pending,
-		}, excluded);
+		}, excluded));
 
 		journal.seed = journal.seed.filter((key) => !supported.includes(key) || snapshot.values[key] === undefined);
 		if (Object.keys(sent).length === 0) break;

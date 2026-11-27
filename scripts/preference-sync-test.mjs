@@ -10,12 +10,12 @@ import {
 } from '../src/lib/sync/preferences.ts';
 
 function journal(pending = {}, initialized = false) {
-	return { initialized, pending, remote: {}, skipped: [...DEFAULT_SKIPPED_KEYS], catalogVersion: 2, seed: [] };
+	return { initialized, pending, remote: {}, skipped: [...DEFAULT_SKIPPED_KEYS], catalogVersion: 3, seed: [] };
 }
 
 test('only allowlisted preferences leave the device', () => {
 	assert.deepEqual(portablePreferences({ theme: 'system', locale: 'cs', terminalCursorStyle: 'bar',
-		sessionLogFolder: '/example', openrouterApiKey: 'example' }),
+		fileEditorCommand: '/example', openrouterApiKey: 'example' }),
 	{ theme: 'system', locale: 'cs', terminalCursorStyle: 'bar' });
 	assert.deepEqual(portablePreferences({ locale: 'unknown', theme: null }), {});
 });
@@ -84,10 +84,10 @@ test('a response from a previous account cannot apply or acknowledge edits', asy
 
 test('saved choices survive a restart and existing journals still sync every preference', () => {
 	const legacy = { initialized: true, pending: { theme: 'light' }, remote: { theme: 'dark', locale: 'cs' } };
-	assert.deepEqual(readPreferenceJournal(legacy), { ...legacy, skipped: DEFAULT_SKIPPED_KEYS, catalogVersion: 2, seed: [] });
-	const saved = JSON.parse(JSON.stringify({ ...legacy, catalogVersion: 2, skipped: ['theme', 'theme', 'unknown'] }));
+	assert.deepEqual(readPreferenceJournal(legacy), { ...legacy, skipped: DEFAULT_SKIPPED_KEYS, catalogVersion: 3, seed: [] });
+	const saved = JSON.parse(JSON.stringify({ ...legacy, catalogVersion: 3, skipped: ['theme', 'theme', 'unknown'] }));
 	assert.deepEqual(readPreferenceJournal(saved), {
-		initialized: true, pending: {}, remote: { locale: 'cs' }, skipped: ['theme'], catalogVersion: 2, seed: [],
+		initialized: true, pending: {}, remote: { locale: 'cs' }, skipped: ['theme'], catalogVersion: 3, seed: [],
 	});
 });
 
@@ -206,4 +206,28 @@ test('first opt-in only seeds missing values and preserves a value another devic
 	assert.deepEqual(sent, [undefined, { revision: 2, changes: { fontSize: '18' } }]);
 	assert.deepEqual(latest, { fontSize: '22', compactLayout: 'true' });
 	assert.deepEqual(state.seed, []);
+});
+
+test('an expanded journal keeps the newly supported log folder local by default', () => {
+	const previous = readPreferenceJournal({ catalogVersion: 2, skipped: ['theme'] });
+	assert.deepEqual(previous.skipped, ['theme', 'sessionLogFolder']);
+	setPreferenceIncluded(previous, 'sessionLogFolder', true);
+	assert.deepEqual(readPreferenceJournal(previous).skipped, ['theme']);
+});
+
+test('a missing log folder can be held back while other preference edits are sent', async () => {
+	const state = journal({ sessionLogFolder: '/example/missing', locale: 'cs' }, true);
+	setPreferenceIncluded(state, 'sessionLogFolder', true);
+	const sent = [];
+	await reconcilePreferences(state, async (patch) => {
+		sent.push(patch);
+		return {
+			revision: patch ? 2 : 1, supported: ['sessionLogFolder', 'locale'], conflict: false,
+			values: { locale: patch ? 'cs' : 'en' },
+		};
+	}, () => ({}), () => true, () => {}, ({ sessionLogFolder: _unavailable, ...other }) => other);
+	assert.deepEqual(sent, [undefined, { revision: 1, changes: { locale: 'cs' } }]);
+	assert.deepEqual(state.pending, { sessionLogFolder: '/example/missing' });
+	setPreferenceIncluded(state, 'sessionLogFolder', false);
+	assert.deepEqual(state.pending, {});
 });

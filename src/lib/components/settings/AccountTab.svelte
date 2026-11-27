@@ -207,7 +207,7 @@
 							<span class="setting-label">{label}</span>
 						</div>
 						<div class="setting-control">
-							{#if definition.kind === 'local'}
+							{#if definition.kind === 'local' || (key === 'sessionLogFolder' && mobile)}
 								<span class="setting-description">{t('sync_account.preference_device_only')}</span>
 							{:else}
 								<select

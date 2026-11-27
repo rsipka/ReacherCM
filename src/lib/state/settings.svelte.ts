@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import * as settingsIpc from '#lib/ipc/settings.js';
+import { isMobile } from '#lib/platform.js';
 import type { SessionLogConfig } from '#lib/ipc/ssh.js';
 import { defaults, readStoredSettings, storeSettings, STORAGE_KEY, type Settings } from '#lib/state/settings-store.js';
 export { DEFAULT_LOG_NAME } from '#lib/state/settings-store.js';
@@ -40,7 +41,7 @@ export function sessionLogConfig(session = ''): SessionLogConfig | null {
 	if (settings.sessionLogMode === 'off') return null;
 	return {
 		mode: settings.sessionLogMode,
-		folder: settings.sessionLogFolder.trim(),
+		folder: isMobile() ? '' : settings.sessionLogFolder.trim(),
 		name: settings.sessionLogName.trim(),
 		session: session.trim(),
 		append: settings.sessionLogAppend,
@@ -55,10 +56,10 @@ export function onPortableSettingChanged(listener: (values: Preferences) => void
 	return () => { if (onPortableChange === listener) onPortableChange = null; };
 }
 
-export function updateSetting<K extends keyof Settings>(key: K, value: Settings[K]): void {
+export function updateSetting<K extends keyof Settings>(key: K, value: Settings[K], syncUnchanged = false): void {
 	const changed = settings[key] !== value;
 	settings[key] = value;
-	if (changed && onPortableChange) {
+	if ((changed || syncUnchanged) && onPortableChange) {
 		const portable = encodePreferences({ [key]: value });
 		if (Object.keys(portable).length > 0) onPortableChange(portable);
 	}

@@ -12,7 +12,8 @@
 	import { isMobile, isWindows } from '#lib/platform.js';
 	import { setActivePage } from '#lib/state/navigation.svelte.js';
 	import { createTab } from '#lib/state/tabs.svelte.js';
-	import { getSettings, sessionLogConfig } from '#lib/state/settings.svelte.js';
+	import { getSettings } from '#lib/state/settings.svelte.js';
+	import { validatedSessionLogConfig } from '#lib/state/log-folder.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	/** What the sessions search field parsed out of `user@host:port`. */
@@ -201,7 +202,7 @@
 				rows: 24,
 				shell: shell.trim() || undefined,
 				injectColors: getSettings().typeShellSetup,
-				sessionLog: sessionLogConfig(),
+				sessionLog: await validatedSessionLogConfig(),
 				showLoginMessage: getSettings().showLoginMessage,
 				jumpChain,
 				proxy: proxyEnabled ? {

@@ -721,6 +721,17 @@ pub fn session_log_default_dir() -> String {
     crate::ssh::session_log::default_dir().display().to_string()
 }
 
+/// Whether a custom logging folder can be used on this installation.
+#[tauri::command]
+pub async fn session_log_folder_exists(folder: String) -> bool {
+    let folder = folder.trim();
+    if folder.is_empty() {
+        return true;
+    }
+    let path = std::path::Path::new(folder);
+    path.is_absolute() && tokio::fs::metadata(path).await.is_ok_and(|metadata| metadata.is_dir())
+}
+
 /// The file log of a terminal stream, if it is writing or paused.
 #[tauri::command]
 pub fn session_log_status(stream: String) -> Option<crate::ssh::session_log::LogStatus> {

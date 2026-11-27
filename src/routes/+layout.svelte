@@ -40,6 +40,7 @@
 	import { initScreenEdges } from '#lib/edges.js';
 	import { initKeyboardViewport } from '#lib/keyboard-viewport.js';
 	import { onMount } from 'svelte';
+	import { checkConfiguredLogFolder } from '#lib/state/log-folder.svelte.js';
 	import { startPreferenceSync } from '#lib/state/preference-sync.svelte.js';
 
 	let { children }: { children: Snippet } = $props();
@@ -161,6 +162,10 @@
 
 	$effect(() => {
 		if (settingsLoaded && !isFloat && !isEditorWindow) pushHistoryRetention();
+	});
+
+	$effect(() => {
+		if (settingsLoaded && !isFloat && !isEditorWindow) checkConfiguredLogFolder();
 	});
 
 	$effect(() => {
