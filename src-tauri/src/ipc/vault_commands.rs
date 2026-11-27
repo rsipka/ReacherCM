@@ -1308,14 +1308,12 @@ pub async fn vault_enable_account_sync(state: State<'_, AppState>) -> Result<Str
     state.vault_manager.lock().await.enable_account_sync(&account).await.map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 fn organization_account() -> Result<crate::ipc::sync_account_commands::AccountView, String> {
     crate::ipc::sync_account_commands::account_status()
         .map_err(str::to_owned)?
         .ok_or_else(|| "Sign in to Reacher CM Sync first".to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organizations() -> Result<Vec<crate::vault::manager::Organization>, String> {
     crate::vault::manager::VaultManager::organizations(&organization_account()?)
@@ -1323,7 +1321,6 @@ pub async fn vault_organizations() -> Result<Vec<crate::vault::manager::Organiza
         .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_list(
     organization: uuid::Uuid,
@@ -1338,7 +1335,6 @@ pub async fn vault_organization_list(
         .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_create(
     organization: uuid::Uuid,
@@ -1356,7 +1352,6 @@ pub async fn vault_organization_create(
         .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_open(
     organization: uuid::Uuid,
@@ -1375,7 +1370,6 @@ pub async fn vault_organization_open(
         .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_grants(
     organization: uuid::Uuid,
@@ -1390,7 +1384,6 @@ pub async fn vault_organization_grants(
     .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_grant(
     vault_id: String,
@@ -1409,7 +1402,6 @@ pub async fn vault_organization_grant(
         .map_err(|e| e.to_string())
 }
 
-#[cfg(desktop)]
 #[tauri::command]
 pub async fn vault_organization_finish_rotation(
     vault_id: String,

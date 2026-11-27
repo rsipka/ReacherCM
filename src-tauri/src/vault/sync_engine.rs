@@ -107,14 +107,10 @@ impl Backend {
     /// - anything else is a Turso URL.
     pub fn parse(url: &str, token: &str, app_dir: &Path) -> Result<Backend, VaultError> {
         let url = url.trim();
-        if url.starts_with(crate::vault::sync_account_store::PREFIX) {
+        if url.starts_with(crate::vault::sync_account_store::PREFIX)
+            || url.starts_with(crate::vault::sync_account_store::ORG_PREFIX)
+        {
             return crate::vault::sync_account_store::AccountTarget::parse(url, token).map(Backend::Account);
-        }
-        if url.starts_with(crate::vault::sync_account_store::ORG_PREFIX) {
-            #[cfg(desktop)]
-            return crate::vault::sync_account_store::AccountTarget::parse(url, token).map(Backend::Account);
-            #[cfg(not(desktop))]
-            return Err(VaultError::SyncError("Organization vaults are available on desktop".into()));
         }
         if let Some(path) = url.strip_prefix("folder:") {
             let path = PathBuf::from(path.trim());
