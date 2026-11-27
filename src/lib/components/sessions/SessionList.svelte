@@ -1,4 +1,5 @@
 <script lang="ts">
+	import DevopsGroup from './DevopsGroup.svelte';
 	import PasswordField from '#lib/components/shared/PasswordField.svelte';
 	import { openHistoryPanel } from '#lib/state/history.svelte.js';
 	import QuickConnect, { type QuickConnectPrefill } from './QuickConnect.svelte';
@@ -2842,6 +2843,7 @@
 				<div class="ungrouped-drop" data-folder-id="__ungrouped__">
 					{#each folderTree.ungrouped as session (session.id)}{@render sessionRow(session, -1)}{/each}
 				</div>
+				{#if !selecting}<DevopsGroup search={searchQuery} />{/if}
 			</div>
 		{/if}
 		{/if}

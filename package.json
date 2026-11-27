@@ -63,6 +63,7 @@
     "rdp-files:test": "node --import ./scripts/resolve-lib.mjs scripts/rdp-files-test.mjs",
     "net-tools:test": "node --import ./scripts/resolve-lib.mjs scripts/net-tools-test.mjs",
     "net-tools:live": "node scripts/net-tools-live-test.mjs",
+    "devops-tabs:live": "node scripts/devops-tabs-live-test.mjs",
     "release-notes:test": "node --import ./scripts/resolve-lib.mjs scripts/release-notes-test.mjs",
     "folder-tree:test": "node --import ./scripts/resolve-lib.mjs scripts/folder-tree-test.mjs",
     "color-schemes:test": "node scripts/color-schemes-test.mjs",

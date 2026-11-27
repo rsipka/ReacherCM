@@ -82,7 +82,8 @@ const outgoing = new Map<string, Set<string>>();
 
 function payloadFor(ids: string[], layout?: Layout): MovePayload | null {
 	const all = getTabs();
-	const moving = ids.map((id) => all.find((t) => t.id === id)).filter((t): t is Tab => !!t);
+	// A DevOps workspace keeps its state in this window, so it stays here.
+	const moving = ids.map((id) => all.find((t) => t.id === id)).filter((t): t is Tab => !!t && t.type !== 'devops');
 	if (moving.length === 0) return null;
 	const moveId = crypto.randomUUID();
 	const active = getActiveTab()?.id;
@@ -95,7 +96,7 @@ function payloadFor(ids: string[], layout?: Layout): MovePayload | null {
 			return { ...plain, handoff: undefined };
 		}),
 		layout: layout !== undefined ? layout : subLayout(getSplit(), moving.map((t) => t.id)),
-		active: active && ids.includes(active) ? active : moving[0].id
+		active: active && moving.some((t) => t.id === active) ? active : moving[0].id
 	};
 }
 

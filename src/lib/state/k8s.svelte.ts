@@ -19,3 +19,15 @@ export async function busy<T>(work: () => Promise<T>): Promise<T> {
 		inFlight -= 1;
 	}
 }
+
+let clustersVersion = $state(0);
+
+/** Bumped when a cluster is saved or deleted, so lists of them read again
+ *  (the Sessions list's Kubernetes group). */
+export function getClustersVersion(): number {
+	return clustersVersion;
+}
+
+export function clustersChanged(): void {
+	clustersVersion += 1;
+}
