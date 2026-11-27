@@ -4228,6 +4228,8 @@
   "sync_account.manage": "Geräte verwalten",
   "sync_account.check": "Verbindung prüfen",
   "sync_account.sign_out": "Abmelden",
+  "sync_account.managed_removal": "Verwaltetes Entfernen von Tresoren erlauben",
+  "sync_account.managed_removal_desc": "Tresorbesitzer können nach einem Zugriffsentzug das Löschen des geteilten Tresors auf diesem Gerät anfordern, einschließlich nicht synchronisierter Änderungen.",
   "sync_account.loading": "Konto wird geprüft…",
   "sync_account.device_name": "Gerätename",
   "sync_account.sign_in": "Anmelden",

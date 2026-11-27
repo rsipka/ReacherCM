@@ -4228,6 +4228,8 @@
   "sync_account.manage": "管理设备",
   "sync_account.check": "检查连接",
   "sync_account.sign_out": "退出登录",
+  "sync_account.managed_removal": "允许受管理的保险库删除",
+  "sync_account.managed_removal_desc": "共享保险库的所有者撤销访问权限后，可以请求从此设备删除该保险库及未同步的修改。",
   "sync_account.loading": "正在检查账户…",
   "sync_account.device_name": "设备名称",
   "sync_account.sign_in": "登录",
