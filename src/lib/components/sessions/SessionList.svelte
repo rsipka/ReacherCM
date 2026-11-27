@@ -1415,10 +1415,6 @@
 	 * connects it, asking for a password or about a certificate there.
 	 */
 	function openFtp(session: SessionConfig): void {
-		if (isMobile()) {
-			addToast(t('files.desktop_only'), 'error');
-			return;
-		}
 		setActivePage('terminal');
 		const tab = createTab('ftp', session.host, undefined, session.name, null);
 		tab.ftpConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
@@ -1836,10 +1832,6 @@
 		}
 		if (sessionKind(session) === 'proxmox') {
 			openProxmox(session);
-			return;
-		}
-		if (session.files && isMobile()) {
-			addToast(t('files.desktop_only'), 'error');
 			return;
 		}
 		// Check if credentials are stored in the session (from vault)

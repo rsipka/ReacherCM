@@ -390,7 +390,7 @@ export function updateTabTitle(id: string, title: string): void {
 /** Whether a tab can show the full-pane file manager: an SSH tab on a
  *  desktop, where there is a local side to show beside the server. */
 export function canShowFilesView(tab: Tab | undefined): boolean {
-	return !!tab && tab.type === 'ssh' && !isMobile();
+	return !!tab && tab.type === 'ssh';
 }
 
 /** Switch an SSH tab between its terminal and the full-pane file manager. */

@@ -5,6 +5,13 @@
 	 * Commander (Tab switches sides, F5 copies to the other side, F6 moves,
 	 * F7 makes a folder, F8 deletes, Insert marks). It covers the tab's
 	 * terminal, which keeps running behind it.
+	 *
+	 * Narrower than SINGLE_BELOW (a phone, a folded foldable) it shows one
+	 * side at a time with a switch between them; wider (a tablet, Samsung
+	 * DeX, an unfolded foldable) both, as on a computer. On a phone or
+	 * tablet the local side is the app's own folder there, and fingers work
+	 * it: a tap opens a folder or a file's menu, a long press opens the
+	 * menu, and once a row is marked taps mark more.
 	 */
 	import { onMount, tick } from 'svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
@@ -27,6 +34,10 @@
 	import { formatModified } from '#lib/explorer/format.js';
 	import { formatBytes } from '#lib/utils/formatters.js';
 	import { actionLabel } from '#lib/state/shortcuts.svelte.js';
+	import { isMobile } from '#lib/platform.js';
+	import { longPress } from '#lib/utils/longPress.js';
+	import { localRoots } from '#lib/ipc/localfs.js';
+	import { canAskStorage, requestStorage, storageGranted } from '#lib/explorer/device-storage.js';
 
 	interface Props {
 		connectionId: string;
@@ -47,6 +58,27 @@
 		const entries = await sftpListDir(connectionId, path);
 		return { path, parent: remoteParent(path), entries };
 	});
+
+	/** A phone or tablet: no external editor, no file manager to reveal in. */
+	const mobile = isMobile();
+	/** Below this width one side shows at a time. */
+	const SINGLE_BELOW = 720;
+	let width = $state(0);
+	let single = $derived(width > 0 && width < SINGLE_BELOW);
+	/** The last press was a finger: taps open, and buttons are larger. */
+	let touch = $state(isMobile());
+	/** Where the local side can start besides its home (Android's shared storage). */
+	let roots = $state<string[]>([]);
+	/** Android: whether the shared storage can be listed (All files access). */
+	let storageOk = $state(storageGranted());
+
+	function localName(): string {
+		return mobile ? t('files.this_device') : t('files.this_computer');
+	}
+
+	function sideName(kind: 'local' | 'remote'): string {
+		return kind === 'local' ? localName() : t('files.server');
+	}
 
 	let side = $state<'local' | 'remote'>('remote');
 	let pane = $derived(side === 'local' ? local : remote);
@@ -69,6 +101,23 @@
 
 	onMount(() => {
 		void local.load('');
+		if (mobile) void localRoots().then((r) => (roots = r.slice(1))).catch(() => {});
+		if (!canAskStorage()) return;
+		// Back from the system screen that grants All files access.
+		const recheck = () => {
+			if (document.visibilityState !== 'visible') return;
+			const ok = storageGranted();
+			if (ok !== storageOk) {
+				storageOk = ok;
+				void local.refresh();
+			}
+		};
+		document.addEventListener('visibilitychange', recheck);
+		window.addEventListener('focus', recheck);
+		return () => {
+			document.removeEventListener('visibilitychange', recheck);
+			window.removeEventListener('focus', recheck);
+		};
 	});
 
 	// As each queued copy ends, the side it went to (and the side a move
@@ -142,11 +191,13 @@
 		if (items.length === 0 || !dst.path) return;
 		const taken = items.filter((i) => dst.entries.some((e) => e.name === i.name));
 		const what = describe(items);
-		let question = move ? t('files.move_confirm', { what, to: dst.path }) : '';
+		// One side at a time, the other side's folder is out of sight: say where.
+		const to = single ? `${sideName(dst.kind)}: ${dst.path}` : dst.path;
+		let question = move ? t('files.move_confirm', { what, to }) : single ? t('files.copy_confirm', { what, to }) : '';
 		if (taken.length > 0) {
 			question = [question, t('files.overwrite_confirm', { count: taken.length, to: dst.path })].filter(Boolean).join(' ');
 		}
-		if (question && !(await ask(question, { confirmLabel: move ? t('files.move') : t('files.overwrite') }))) return;
+		if (question && !(await ask(question, { confirmLabel: move ? t('files.move') : taken.length > 0 ? t('files.overwrite') : t('files.copy') }))) return;
 
 		enqueue(connectionId, items, src.kind, dst.path, move);
 		for (const item of items) src.marked.delete(item.path);
@@ -162,7 +213,7 @@
 		const p = pane;
 		const items = p.selection();
 		if (items.length === 0) return;
-		const where = p.kind === 'local' ? t('files.this_computer') : t('files.server');
+		const where = p.kind === 'local' ? localName() : t('files.server');
 		if (!(await ask(t('files.delete_confirm', { what: describe(items), where }), { confirmLabel: t('common.delete') }))) return;
 		busy = true;
 		try {
@@ -230,6 +281,11 @@
 	 *  uploaded back. */
 	async function edit(row: Row | undefined = pane.current, p: Pane = pane): Promise<void> {
 		if (!row || row.isDirectory) return;
+		// No other programs to open it in on a phone: the app's own editor.
+		if (mobile) {
+			if (p.kind === 'remote') await editInApp(row, p);
+			return;
+		}
 		try {
 			if (p.kind === 'local') {
 				await openInEditor(row.path);
@@ -251,8 +307,8 @@
 
 	/** Shift+F4: a server file in Reacher CM's own editor, as the sidebar's
 	 *  Edit does. */
-	async function editInApp(row: Row | undefined = pane.current): Promise<void> {
-		if (!row || row.isDirectory || pane.kind !== 'remote') return;
+	async function editInApp(row: Row | undefined = pane.current, p: Pane = pane): Promise<void> {
+		if (!row || row.isDirectory || p.kind !== 'remote') return;
 		try {
 			const content = await sftpReadFile(connectionId, row.path);
 			await openEditor(connectionId, row.path, row.name, content);
@@ -417,14 +473,19 @@
 		if (sel.length === 0) return backgroundMenu(p);
 		const one = sel.length === 1 ? sel[0] : undefined;
 		const file = one && !one.isDirectory ? one : undefined;
-		const otherSide = p.kind === 'local' ? t('files.server') : t('files.this_computer');
+		const otherSide = p.kind === 'local' ? t('files.server') : localName();
 		const pair = sel.length <= 2 && sel.every((e) => !e.isDirectory) ? comparePair(p) : undefined;
 		const items: MenuItem[] = [];
 		if (one?.isDirectory) items.push({ label: t('files.open'), hint: 'Enter', action: () => p.enter(one) });
 		if (file) {
 			items.push({ label: t('files.view'), hint: 'F3', action: () => void view(file, p) });
-			items.push({ label: t('explorer.edit'), hint: 'F4', action: () => void edit(file, p) });
-			if (p.kind === 'remote') items.push({ label: t('files.edit_in_app'), hint: '⇧F4', action: () => void editInApp(file) });
+			if (!mobile) items.push({ label: t('explorer.edit'), hint: 'F4', action: () => void edit(file, p) });
+			if (p.kind === 'remote') items.push({ label: t('files.edit_in_app'), hint: '⇧F4', action: () => void editInApp(file, p) });
+		}
+		// Fingers have no Insert or Ctrl+click: marking is in the menu.
+		if (touch && one) {
+			const marked = p.marked.has(one.path);
+			items.push({ label: marked ? t('files.unmark') : t('files.mark'), action: () => p.toggleMark(one) });
 		}
 		if (items.length) items.push({ label: '', separator: true });
 		items.push(
@@ -435,7 +496,7 @@
 		items.push({ label: sel.length > 1 ? t('files.delete_n', { count: sel.length }) : t('common.delete'), hint: 'F8', danger: true, disabled: busy, action: () => void remove() });
 		if (pair) {
 			const with_ = pair[0].entry === file ? pair[1] : pair[0];
-			const label = sel.length === 2 ? t('files.compare_files') : with_.pane === p ? t('files.compare_with', { name: with_.entry.name }) : t('files.compare_with', { name: `${with_.pane === local ? t('files.this_computer') : t('files.server')}: ${with_.entry.name}` });
+			const label = sel.length === 2 ? t('files.compare_files') : with_.pane === p ? t('files.compare_with', { name: with_.entry.name }) : t('files.compare_with', { name: `${with_.pane === local ? localName() : t('files.server')}: ${with_.entry.name}` });
 			items.push({ label: '', separator: true });
 			items.push({ label, hint: '⇧F9', action: () => void compareFiles(pair) });
 		}
@@ -447,7 +508,7 @@
 			items.push({ label: t('explorer.copy_path'), action: () => void copyText(sel.map((e) => e.path).join('\n')) });
 		}
 		if (one?.isDirectory && p.kind === 'remote' && terminal) items.push({ label: t('explorer.cd_here'), action: () => cdTerminal(one.path) });
-		if (one && p.kind === 'local') items.push({ label: t('files.reveal'), action: () => void reveal(one.path) });
+		if (one && p.kind === 'local' && !mobile) items.push({ label: t('files.reveal'), action: () => void reveal(one.path) });
 		return items;
 	}
 
@@ -471,8 +532,10 @@
 			if (p.path) items.push({ label: t('files.cd_terminal_here'), action: () => cdTerminal(p.path) });
 		} else {
 			items.push({ label: t('files.home'), action: () => void p.load('') });
-			if (p.path) items.push({ label: t('files.reveal'), action: () => void reveal(p.path) });
+			for (const root of roots) items.push({ label: root, action: () => void p.load(root) });
+			if (p.path && !mobile) items.push({ label: t('files.reveal'), action: () => void reveal(p.path) });
 		}
+		if (p.marked.size > 0) items.push({ label: t('files.unmark_all'), action: () => p.marked.clear() });
 		return items;
 	}
 
@@ -629,6 +692,10 @@
 	function clickRow(e: MouseEvent, p: Pane, i: number): void {
 		side = p.kind;
 		const row = p.rows[i];
+		if (touch) {
+			tapRow(e, p, i);
+			return;
+		}
 		if (e.ctrlKey || e.metaKey) {
 			p.toggleMark(row);
 			anchor = i;
@@ -640,6 +707,26 @@
 		}
 		p.cursor = i;
 		rootEl?.focus();
+	}
+
+	/** A finger's tap: while rows are marked it marks more (or unmarks);
+	 *  else a folder opens and a file's menu shows. */
+	function tapRow(e: MouseEvent, p: Pane, i: number): void {
+		const row = p.rows[i];
+		p.cursor = i;
+		if (p.marked.size > 0 && !row.up) {
+			p.toggleMark(row);
+			return;
+		}
+		if (row.isDirectory) {
+			p.enter(row);
+			return;
+		}
+		menu = { x: e.clientX, y: e.clientY, items: rowMenu(p) };
+	}
+
+	function onPointerDown(e: PointerEvent): void {
+		touch = e.pointerType === 'touch' || (mobile && e.pointerType !== 'mouse');
 	}
 
 	function openRow(p: Pane, i: number): void {
@@ -674,7 +761,8 @@
 	const ALL_KEYS: { key: string; label: string; run: () => void; remoteOnly?: boolean }[] = [
 		{ key: 'F2', label: 'explorer.rename', run: startRename },
 		{ key: 'F3', label: 'files.view', run: () => void view() },
-		{ key: 'F4', label: 'explorer.edit', run: () => void edit() },
+		// On a phone only a server file can be edited, in the app's editor.
+		{ key: 'F4', label: 'explorer.edit', run: () => void edit(), remoteOnly: mobile },
 		{ key: 'F5', label: 'files.copy', run: () => void copy() },
 		{ key: 'F6', label: 'files.move', run: () => void copy(true) },
 		{ key: 'F7', label: 'explorer.new_folder', run: startMkdir },
@@ -685,6 +773,13 @@
 	];
 	/** No way back to a terminal where there is none. */
 	let KEYS = $derived(terminal ? ALL_KEYS : ALL_KEYS.filter((k) => k.key !== 'F10'));
+
+	/** A key's label: Copy and Move name the other side when it is out of sight. */
+	function keyLabel(k: { key: string; label: string }): string {
+		if (single && k.key === 'F5') return t('files.copy_to', { where: sideName(other.kind) });
+		if (single && k.key === 'F6') return t('files.move_to', { where: sideName(other.kind) });
+		return t(k.label);
+	}
 </script>
 
 {#snippet icon(d: string, size = 14)}
@@ -696,9 +791,9 @@
 {#snippet paneView(p: Pane)}
 	{@const focused = side === p.kind}
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_element_interactions -->
-	<section class="pane" class:focused aria-label={p.kind === 'local' ? t('files.this_computer') : t('files.server')} onclick={() => { side = p.kind; if (!editingPath) rootEl?.focus(); }}>
+	<section class="pane" class:focused={focused && !single} aria-label={sideName(p.kind)} onclick={() => { side = p.kind; if (!editingPath) rootEl?.focus(); }}>
 		<header class="pane-head">
-			<span class="side-label">{p.kind === 'local' ? t('files.this_computer') : t('files.server')}</span>
+			{#if !single}<span class="side-label">{sideName(p.kind)}</span>{/if}
 			<button class="ib" type="button" onclick={() => p.up()} disabled={p.parent === null} title={`${t('explorer.go_parent')} (Backspace)`} aria-label={t('explorer.go_parent')}>{@render icon('M15 18l-6-6 6-6')}</button>
 			{#if p.kind === 'local' || !terminal}
 				<button class="ib" type="button" onclick={() => void (p.kind === 'local' ? p.load('') : goHome())} title={t('files.home')} aria-label={t('files.home')}>{@render icon('M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10')}</button>
@@ -731,7 +826,13 @@
 				</button>
 			{/each}
 		</div>
-		<div class="list" bind:this={listEls[p.kind]} role="listbox" tabindex="-1" aria-multiselectable="true" aria-label={p.path} oncontextmenu={(e) => listContextMenu(e, p)}>
+		<div class="list" bind:this={listEls[p.kind]} role="listbox" tabindex="-1" aria-multiselectable="true" aria-label={p.path} oncontextmenu={(e) => listContextMenu(e, p)} use:longPress={mobile}>
+			{#if p.kind === 'local' && !storageOk}
+				<div class="storage-note">
+					<span>{t('files.storage_access_hint')}</span>
+					<button class="btn small" type="button" onclick={(e) => { e.stopPropagation(); requestStorage(); }}>{t('files.storage_access_allow')}</button>
+				</div>
+			{/if}
 			{#if p.error}
 				<div class="note error">{p.error}</div>
 			{:else if p.rows.length === 0 && !p.loading}
@@ -772,9 +873,20 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<div class="dual" bind:this={rootEl} tabindex="0" role="application" aria-label={t('files.title')} onkeydown={onKeydown}>
+<div class="dual" class:touch class:single bind:this={rootEl} bind:clientWidth={width} tabindex="0" role="application" aria-label={t('files.title')} onkeydown={onKeydown} onpointerdowncapture={onPointerDown}>
+	{#if single}
+		<div class="sides" role="tablist" aria-label={t('files.title')}>
+			{#each [local, remote] as p (p.kind)}
+				<button class="side-tab" class:on={side === p.kind} type="button" role="tab" aria-selected={side === p.kind} onclick={() => (side = p.kind)}>
+					<span>{sideName(p.kind)}</span>
+					{#if p.marked.size > 0}<span class="side-count">{p.marked.size}</span>{/if}
+				</button>
+			{/each}
+		</div>
+	{/if}
 	<div class="panes">
-		{@render paneView(local)}
+		{#if !single || side === 'local'}{@render paneView(local)}{/if}
+		{#if !single}
 		<div class="mid" aria-hidden="true">
 			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.copy')} (F5)`} onclick={() => { side = 'local'; void copy(); }}>{@render icon('M5 12h14M13 6l6 6-6 6', 16)}</button>
 			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.copy')} (F5)`} onclick={() => { side = 'remote'; void copy(); }}>{@render icon('M19 12H5M11 6l-6 6 6 6', 16)}</button>
@@ -782,7 +894,8 @@
 			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.compare_files')} (⇧F9)`} onclick={() => void compareFiles()}>{@render icon('M8 4v16M16 4v16M4 8h4M4 12h4M16 12h4M16 16h4', 16)}</button>
 			<button class="arrow-btn" type="button" tabindex="-1" title={`${t('files.compare_folders')} (F9)`} onclick={compareDirs}>{@render icon('M3 6h6l2 2h10v11H3zM12 11v5M9.5 13.5h5', 16)}</button>
 		</div>
-		{@render paneView(remote)}
+		{/if}
+		{#if !single || side === 'remote'}{@render paneView(remote)}{/if}
 	</div>
 
 	{#if queue.length > 0}
@@ -854,11 +967,16 @@
 		{#each KEYS as k (k.key)}
 			{#if !k.remoteOnly || side === 'remote'}
 				<button class="key" type="button" disabled={busy && k.key !== 'F10'} onclick={() => { k.run(); }}>
-					<kbd>{k.key}</kbd><span>{t(k.label)}</span>
+					{#if !touch}<kbd>{k.key}</kbd>{/if}<span>{keyLabel(k)}</span>
 				</button>
 			{/if}
 		{/each}
-		<span class="hint">{terminal ? t('files.keys_hint', { key: actionLabel('files.toggle') }) : t('files.keys_hint_files')}</span>
+		{#if touch && pane.marked.size === 0}
+			<button class="key" type="button" disabled={pane.entries.length === 0} onclick={() => pane.markAll()}><span>{t('files.select_all')}</span></button>
+		{:else if touch}
+			<button class="key" type="button" onclick={() => pane.marked.clear()}><span>{t('files.unmark_all')}</span></button>
+		{/if}
+		{#if !touch}<span class="hint">{terminal ? t('files.keys_hint', { key: actionLabel('files.toggle') }) : t('files.keys_hint_files')}</span>{/if}
 	</div>
 </div>
 
@@ -1405,6 +1523,97 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		min-width: 0;
+	}
+
+	/* One side at a time: a switch between them on top. */
+	.sides {
+		display: flex;
+		gap: 4px;
+		padding: 8px 8px 0;
+	}
+
+	.side-tab {
+		flex: 1 1 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		min-width: 0;
+		height: 32px;
+		border: 1px solid var(--color-border);
+		border-radius: 8px;
+		background: var(--color-bg-secondary);
+		color: var(--color-text-secondary);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.side-tab.on {
+		border-color: var(--color-accent);
+		color: var(--color-accent);
+		background: var(--color-accent-subtle);
+	}
+
+	.side-count {
+		padding: 0 6px;
+		border-radius: 9px;
+		background: var(--color-warning);
+		color: var(--color-bg-primary);
+		font-size: 0.6875rem;
+	}
+
+	.storage-note {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 6px 8px;
+		padding: 6px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: 6px;
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
+		font-size: 0.75rem;
+	}
+
+	.storage-note span {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	.btn.small {
+		flex: 0 0 auto;
+		height: 28px;
+	}
+
+	/* Fingers: larger rows and buttons, and no keyboard hints. */
+	.touch .row {
+		height: 40px;
+	}
+
+	.touch .ib {
+		width: 34px;
+		height: 34px;
+	}
+
+	.touch .path,
+	.touch .path-input {
+		height: 32px;
+	}
+
+	.touch .key {
+		height: 36px;
+		padding: 0 12px;
+	}
+
+	.touch .keys {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		padding-bottom: calc(8px + var(--safe-bottom, 0px));
+	}
+
+	.touch .key {
+		flex: 0 0 auto;
 	}
 
 	@media (max-width: 760px) {

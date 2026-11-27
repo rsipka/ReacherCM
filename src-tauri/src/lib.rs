@@ -93,7 +93,6 @@ use ipc::saved_credential_commands::*;
 use ipc::credential_folder_commands::*;
 use ipc::session_commands::*;
 use ipc::sftp_commands::*;
-#[cfg(desktop)]
 use ipc::local_fs_commands::*;
 #[cfg(desktop)]
 use ipc::editor_detect::*;
@@ -1295,6 +1294,18 @@ pub fn run() {
             ftp_connect,
             ftp_disconnect,
             ftp_session_cert_trust,
+            // The phone's own files, for the full-pane file manager
+            local_list_dir,
+            local_mkdir,
+            local_prepare_download_dir,
+            local_rename,
+            local_delete,
+            local_join,
+            local_roots,
+            local_read_text,
+            local_stat,
+            local_edit_copy_path,
+            local_touch,
             bmc_connect,
             bmc_disconnect,
             bmc_session_cert_trust,
@@ -1725,6 +1736,9 @@ pub fn run() {
             }
             #[cfg(target_os = "android")]
             let _ = ANDROID_APP.set(app.handle().clone());
+            // The phone's own folder for the file manager's local side.
+            #[cfg(mobile)]
+            ipc::local_fs_commands::set_device_files_dir(app.handle());
             let data_dir = app_data_dir();
             let _ = std::fs::create_dir_all(&data_dir);
             // The same for where those copies are kept now (`private_tmp_dir`),

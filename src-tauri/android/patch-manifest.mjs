@@ -10,6 +10,11 @@
 // - Samsung's keepalive flag keeps the process when the density changes.
 // - A free-form window (DeX, Android's desktop windowing) opens at a desktop
 //   size instead of a phone's, and cannot be made too small to use.
+//
+// The file manager's phone side lists the shared storage by file path, which
+// needs "All files access" (Android 11+) or the storage permission (older;
+// Android 10 also needs the legacy storage switch). MainActivity's
+// ReachStorage asks for it.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const path = process.argv[2] ?? 'src-tauri/gen/android/app/src/main/AndroidManifest.xml';
@@ -36,6 +41,12 @@ const DEX_META = [
 	'<meta-data android:name="com.samsung.android.multidisplay.keep_process_alive" android:value="true" />'
 ];
 
+const STORAGE_PERMISSIONS = [
+	'<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />',
+	'<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />',
+	'<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />'
+];
+
 export function patchManifest(xml) {
 	const activity = /<activity\b[^>]*android:name="\.MainActivity"[^>]*>/.exec(xml);
 	if (!activity) throw new Error('MainActivity not found in the manifest');
@@ -52,8 +63,16 @@ export function patchManifest(xml) {
 
 	const app = /<application\b[^>]*>/.exec(out);
 	if (!app) throw new Error('<application> not found in the manifest');
+	let appTag = app[0];
+	if (!/android:requestLegacyExternalStorage=/.test(appTag)) {
+		appTag = appTag.replace(/<application\b/, '<application android:requestLegacyExternalStorage="true"');
+		out = out.replace(app[0], appTag);
+	}
 	const missing = DEX_META.filter((m) => !out.includes(/android:name="([^"]+)"/.exec(m)[0]));
-	if (missing.length) out = out.replace(app[0], `${app[0]}\n        ${missing.join('\n        ')}`);
+	if (missing.length) out = out.replace(appTag, `${appTag}\n        ${missing.join('\n        ')}`);
+
+	const perms = STORAGE_PERMISSIONS.filter((p) => !out.includes(/android:name="([^"]+)"/.exec(p)[0]));
+	if (perms.length) out = out.replace(appTag, `${perms.join('\n    ')}\n    ${appTag}`);
 	return out;
 }
 
