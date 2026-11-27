@@ -3,6 +3,7 @@
 All notable changes to Reacher CM are documented here. Reacher CM is a personal fork of [Reach](https://github.com/alexandrosnt/Reach) with additional features, written with the help of AI coding tools; the entries from v0.9.1 down are Reach's own.
 
 ## Reacher CM (unreleased, based on Reach v0.9.2)
+- **Sign in to Account Sync from setup** — Connect to a Reacher CM sync server during first-run setup or when you reopen the wizard from Settings. Desktop opens your browser for approval, and phones and tablets can scan or paste a pairing code. You can also skip sign-in and finish setup.
 - **iDRAC VNC on phones and tablets** — The *VNC* button of an iDRAC server management tab, and *Open VNC* in its session menu, now show on Android and iOS too. They open the app's own VNC viewer, which already worked there; only the buttons were hidden.
 - **iOS build fixed** — The iOS app stopped building after the iDRAC remote console change, because the check that logs out of an iDRAC before its web window closes ran on phones too, where there are no web windows. It now runs on desktop only.
 - **Connect without the WireGuard tunnel** — The question that asks to turn a session's WireGuard tunnel on now has a third button, *Connect without tunnel*. It connects straight to the address, for when the computer's own VPN already reaches it or you are on the same network. *Cancel* still stops the connection. This works for every session type that can use a tunnel. In all 10 languages. Not yet tried in the real app.

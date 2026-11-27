@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Расширьте Reach плагинами из магазина",
   "setup.plugins_empty": "Плагины пока недоступны",
   "setup.plugins_empty_hint": "Реестр пуст или недоступен. Вы можете установить плагины в любое время в Настройках > Плагины.",
+  "setup.account_title": "Синхронизация аккаунта",
+  "setup.account_subtitle": "Подключите это устройство к своему серверу синхронизации Reacher CM.",
   "setup.storage_title": "Режим хранения",
   "setup.storage_subtitle": "Выберите, как хранить данные",
   "setup.local_only": "Только локально",

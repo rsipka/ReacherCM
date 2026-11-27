@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onMount } from 'svelte';
 	import OrganizationVaults from './OrganizationVaults.svelte';
 	import SettingsCard from './SettingsCard.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
-	import Input from '#lib/components/shared/Input.svelte';
+	import AccountSignIn from '#lib/components/account/AccountSignIn.svelte';
 	import Toggle from '#lib/components/shared/Toggle.svelte';
-	import { Channel, invoke } from '@tauri-apps/api/core';
+	import { invoke } from '@tauri-apps/api/core';
 	import { isMobile } from '#lib/platform.js';
-	import { scanLinkCode } from '#lib/state/link-scan.js';
+	import { syncAccountErrorKey } from '#lib/sync/account.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
@@ -18,23 +18,17 @@
 	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
 
 	const mobile = isMobile();
-	let pairingCode = $state('');
-	let pairingServer = $state('');
-	let verificationCode = $state('');
 	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
 	let vaultSync = $state(false);
 	let confirmVaultSync = $state(false);
 	let vaultError = $state('');
-	let action = $state<'load' | 'sign-in' | 'check' | 'sign-out' | 'vault' | 'scan' | 'pair' | null>('load');
+	let action = $state<'load' | 'check' | 'sign-out' | 'vault' | null>('load');
 	let error = $state('');
 	let message = $state('');
 
 	onMount(() => { void load(); });
-	onDestroy(() => {
-		if (action === 'pair') void invoke('sync_account_cancel');
-	});
 
 	$effect(() => {
 		if (preferenceSync.error === 'sync_account.error_revoked' && action === null) {
@@ -51,81 +45,22 @@
 				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			}
 		} catch (cause) {
-			error = errorKey(cause);
+			error = syncAccountErrorKey(cause);
 		} finally {
 			action = null;
 		}
 	}
 
-	function errorKey(cause: unknown): string {
-		return typeof cause === 'string' && cause.startsWith('sync_account.')
-			? cause
-			: 'sync_account.error_server';
-	}
-
-	async function signIn(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
-		action = 'sign-in';
-		error = '';
-		message = 'sync_account.browser_pending';
-		try {
-			const signedIn = await invoke<SyncAccount>('sync_account_sign_in', { server, label });
-			server = signedIn.server;
-			bindPreferenceAccount(signedIn);
-			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
-			message = '';
-		} catch (cause) {
-			error = errorKey(cause);
-			message = '';
-		} finally {
-			action = null;
-		}
-	}
-
-	async function scanPairing(): Promise<void> {
-		action = 'scan';
-		error = '';
-		try {
-			const code = await scanLinkCode();
-			if (code) {
-				pairingCode = code;
-				pairingServer = await invoke<string>('sync_account_pair_origin', { code });
-			}
-		} catch (cause) {
-			error = typeof cause === 'string' ? errorKey(cause) : 'sync_account.pair_camera';
-		} finally {
-			action = null;
-		}
-	}
-
-	async function pair(event: SubmitEvent): Promise<void> {
-		event.preventDefault();
+	async function loadVaultSync(): Promise<void> {
+		action = 'load';
 		error = '';
 		message = '';
-		if (!pairingServer) {
-			action = 'scan';
-			try {
-				pairingServer = await invoke<string>('sync_account_pair_origin', { code: pairingCode });
-			} catch (cause) {
-				error = errorKey(cause);
-			} finally {
-				action = null;
-			}
-			return;
-		}
-		action = 'pair';
+		vaultSync = false;
 		try {
-			const verification = new Channel<string>((code) => { verificationCode = code; });
-			const paired = await invoke<SyncAccount>('sync_account_pair', { code: pairingCode, label, verification });
-			server = paired.server;
-			bindPreferenceAccount(paired);
 			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 		} catch (cause) {
-			error = errorKey(cause);
+			error = syncAccountErrorKey(cause);
 		} finally {
-			verificationCode = '';
-			pairingCode = '';
-			pairingServer = '';
 			action = null;
 		}
 	}
@@ -138,7 +73,7 @@
 			bindPreferenceAccount(await invoke<SyncAccount>('sync_account_check'));
 			message = 'sync_account.connected';
 		} catch (cause) {
-			error = errorKey(cause);
+			error = syncAccountErrorKey(cause);
 			if (error === 'sync_account.error_revoked') {
 				bindPreferenceAccount(null);
 			}
@@ -158,7 +93,7 @@
 			vaultError = '';
 			if (!revoked) message = 'sync_account.signed_out_locally';
 		} catch (cause) {
-			error = errorKey(cause);
+			error = syncAccountErrorKey(cause);
 		} finally {
 			action = null;
 		}
@@ -184,7 +119,7 @@
 		try {
 			await invoke('sync_account_manage');
 		} catch (cause) {
-			error = errorKey(cause);
+			error = syncAccountErrorKey(cause);
 		}
 	}
 </script>
@@ -300,68 +235,17 @@
 	{/if}
 {:else if action === 'load'}
 	<SettingsCard><p class="feedback" role="status">{t('sync_account.loading')}</p></SettingsCard>
-{:else if mobile}
-	<SettingsCard title={t('sync_account.pair_start')}>
-		<form class="auth-form" onsubmit={pair}>
-			{#if pairingServer}
-				<div class="setting-info">
-					<span class="setting-label">{t('sync_account.server')}</span>
-					<span class="setting-description server-address">{pairingServer}</span>
-				</div>
-				<Input label={t('sync_account.device_name')} bind:value={label} maxlength={64} required disabled={action !== null} />
-			{:else}
-				<p class="setting-description">{t('sync_account.pair_help')}</p>
-				<div class="scan-action">
-					<Button variant="secondary" disabled={action !== null} onclick={scanPairing}>{t('sync_account.pair_scan')}</Button>
-				</div>
-				<Input label={t('sync_account.pair_code')} bind:value={pairingCode} maxlength={2048}
-					autocomplete="off" spellcheck={false} autocapitalize="off" required disabled={action !== null} />
-			{/if}
-			{#if verificationCode}
-				<div class="confirmation" role="status">
-					<p class="setting-description">{t('sync_account.pair_match')}</p>
-					<strong class="verification">{verificationCode}</strong>
-				</div>
-			{/if}
-			{@render accountFeedback()}
-			<div class="actions">
-				{#if action === 'pair' || pairingServer}
-					<Button variant="ghost" onclick={() => {
-						if (action === 'pair') void invoke('sync_account_cancel');
-						else { pairingServer = ''; pairingCode = ''; }
-					}}>{t('common.cancel')}</Button>
-				{/if}
-				<Button type="submit" disabled={action !== null || !(pairingServer ? label.trim() : pairingCode.trim())}>
-					{t(pairingServer ? 'sync_account.pair_start' : 'authprompt.continue')}
-				</Button>
-			</div>
-		</form>
-	</SettingsCard>
 {:else}
-	<SettingsCard title={t('sync_account.sign_in')}>
-		<form class="auth-form" onsubmit={signIn}>
-			<p class="setting-description">{t('sync_account.sign_in_help')}</p>
-			<Input label={t('sync_account.server')} type="url" bind:value={server} placeholder="https://sync.example.com"
-				required disabled={action !== null} spellcheck={false} autocapitalize="off" />
-			<Input label={t('sync_account.device_name')} bind:value={label} maxlength={64} required disabled={action !== null} />
-			{@render accountFeedback()}
-			<div class="actions">
-				{#if action === 'sign-in'}
-					<Button variant="ghost" onclick={() => void invoke('sync_account_cancel')}>{t('common.cancel')}</Button>
-				{/if}
-				<Button type="submit" disabled={action !== null || !server.trim() || !label.trim()}>{t('sync_account.sign_in')}</Button>
-			</div>
-		</form>
+	<SettingsCard title={t(mobile ? 'sync_account.pair_start' : 'sync_account.sign_in')}>
+		<AccountSignIn {mobile} bind:server bind:label initialError={error} initialMessage={message} onSignedIn={loadVaultSync} />
 	</SettingsCard>
 {/if}
 
 <style>
-	.auth-form { display: grid; gap: 12px; padding: 14px 0; max-width: 36rem; }
-	.auth-form p, .confirmation p { margin: 0; }
+	.confirmation p { margin: 0; }
 	.actions, .footer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 	.footer-actions { padding: 8px 0; }
 	.server-address { overflow-wrap: anywhere; }
-	.scan-action { justify-self: start; }
 	.wrap-control :global(button) { white-space: normal; }
 	.feedback { margin: 0; padding: 9px 0; color: var(--color-text-secondary); font-size: 0.8125rem; }
 	.error, .setting-description.error { color: var(--color-danger); }
@@ -380,5 +264,4 @@
 		color: var(--color-success);
 		font-size: 0.75rem;
 	}
-	.verification { font: 600 1.75rem var(--font-mono, monospace); letter-spacing: 0.15em; }
 </style>

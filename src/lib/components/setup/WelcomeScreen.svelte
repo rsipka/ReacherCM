@@ -5,6 +5,7 @@
 	import SecurityStep from './SecurityStep.svelte';
 	import PluginsStep from './PluginsStep.svelte';
 	import TursoStep from './TursoStep.svelte';
+	import AccountStep from './AccountStep.svelte';
 	import CompleteStep from './CompleteStep.svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { updateSetting } from '#lib/state/settings.svelte.js';
@@ -16,6 +17,7 @@
 	const steps = wizardSteps({ rerun });
 
 	let currentStep = $state(0);
+	let accountBusy = $state(false);
 	let step = $derived(steps[currentStep]);
 	let last = $derived(currentStep === steps.length - 1);
 
@@ -53,7 +55,7 @@
 				{/each}
 			</div>
 			{#if !last}
-				<button type="button" class="skip-rest" onclick={skipRest}>{t('setup.skip_rest')}</button>
+				<button type="button" class="skip-rest" disabled={accountBusy} onclick={skipRest}>{t('setup.skip_rest')}</button>
 			{/if}
 		</div>
 
@@ -79,6 +81,8 @@
 				<PluginsStep onNext={next} onBack={back} />
 			{:else if step === 'storage'}
 				<TursoStep onNext={next} onBack={back} />
+			{:else if step === 'account'}
+				<AccountStep onNext={next} onBack={back} bind:busy={accountBusy} />
 			{:else if step === 'complete'}
 				<CompleteStep onComplete={complete} onBack={back} {rerun} />
 			{/if}
@@ -156,7 +160,12 @@
 		cursor: pointer;
 	}
 
-	.skip-rest:hover {
+	.skip-rest:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.skip-rest:hover:not(:disabled) {
 		color: var(--color-accent);
 		text-decoration: underline;
 	}

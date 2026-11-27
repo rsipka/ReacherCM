@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Разшири Reach с приставки от магазина",
   "setup.plugins_empty": "Все още няма налични приставки",
   "setup.plugins_empty_hint": "Регистърът е празен или недостъпен. Можеш да инсталираш приставки по всяко време от Настройки > Приставки.",
+  "setup.account_title": "Синхронизация на акаунта",
+  "setup.account_subtitle": "Свържете това устройство със сървъра си за синхронизация на Reacher CM.",
   "setup.storage_title": "Режим на съхранение",
   "setup.storage_subtitle": "Изберете как да съхранявате данните си",
   "setup.local_only": "Само локално",

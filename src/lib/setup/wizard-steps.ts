@@ -10,7 +10,7 @@
  * made; sync is set up on the Sync page after that.
  */
 
-export type WizardStep = 'personalize' | 'sessions' | 'logging' | 'security' | 'plugins' | 'storage' | 'complete';
+export type WizardStep = 'personalize' | 'sessions' | 'logging' | 'security' | 'plugins' | 'storage' | 'account' | 'complete';
 
 export interface WizardOptions {
 	/** Opened from Settings, after the first run. */
@@ -19,8 +19,8 @@ export interface WizardOptions {
 
 export function wizardSteps({ rerun }: WizardOptions): WizardStep[] {
 	return rerun
-		? ['personalize', 'sessions', 'logging', 'security', 'complete']
-		: ['personalize', 'sessions', 'logging', 'security', 'plugins', 'storage', 'complete'];
+		? ['personalize', 'sessions', 'logging', 'security', 'account', 'complete']
+		: ['personalize', 'sessions', 'logging', 'security', 'plugins', 'storage', 'account', 'complete'];
 }
 
 /** Where "Skip the rest" goes: the last screen, which only sums up and

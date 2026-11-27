@@ -24,10 +24,10 @@ const first = wizardSteps({ rerun: false });
 const again = wizardSteps({ rerun: true });
 check(
 	'first run asks everything, in order',
-	same(first, ['personalize', 'sessions', 'logging', 'security', 'plugins', 'storage', 'complete']),
+	same(first, ['personalize', 'sessions', 'logging', 'security', 'plugins', 'storage', 'account', 'complete']),
 	JSON.stringify(first)
 );
-check('run again leaves out plugins and storage', same(again, ['personalize', 'sessions', 'logging', 'security', 'complete']), JSON.stringify(again));
+check('run again offers account sync and leaves out plugins and storage', same(again, ['personalize', 'sessions', 'logging', 'security', 'account', 'complete']), JSON.stringify(again));
 check('both end on the summary', first.at(-1) === 'complete' && again.at(-1) === 'complete');
 check('no step twice', new Set(first).size === first.length);
 check('Skip goes to the summary', first[skipTarget(first)] === 'complete' && again[skipTarget(again)] === 'complete');
@@ -38,7 +38,7 @@ const dir = new URL('../src/lib/components/setup/', import.meta.url);
 const missing = [];
 for (const file of readdirSync(dir).filter((f) => f.endsWith('.svelte'))) {
 	const src = readFileSync(new URL(file, dir), 'utf8');
-	for (const m of src.matchAll(/['"]((?:setup|settings|history|themes|security)\.[a-z0-9_]+)['"]/g)) {
+	for (const m of src.matchAll(/['"]((?:setup|settings|history|themes|security|sync_account)\.[a-z0-9_]+)['"]/g)) {
 		if (!(m[1] in en)) missing.push(`${file}: ${m[1]}`);
 	}
 }

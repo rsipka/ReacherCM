@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Extend Reach with plugins from the marketplace",
   "setup.plugins_empty": "No plugins available yet",
   "setup.plugins_empty_hint": "The registry is empty or unreachable. You can install plugins any time from Settings > Plugins.",
+  "setup.account_title": "Account Sync",
+  "setup.account_subtitle": "Connect this device to your Reacher CM sync server.",
   "setup.storage_title": "Storage mode",
   "setup.storage_subtitle": "Choose how to store your data",
   "setup.local_only": "Local only",

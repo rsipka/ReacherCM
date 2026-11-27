@@ -2,6 +2,7 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
+	import { getSyncAccount } from '#lib/state/preference-sync.svelte.js';
 	import { isMobile } from '#lib/platform.js';
 
 	interface Props {
@@ -17,6 +18,7 @@
 	const mobile = isMobile();
 	let hasTurso = $derived(!!settings.pendingTursoOrg);
 	let storageLabel = $derived(hasTurso ? t('setup.cloud_sync') : t('setup.local_only'));
+	let account = $derived(getSyncAccount());
 
 	const LOG_LABEL = { off: 'settings.log_off', printable: 'settings.log_printable', all: 'settings.log_all' } as const;
 	const HISTORY_LABEL = { off: 'history.mode_off', commands: 'history.mode_commands', output: 'history.mode_output' } as const;
@@ -52,6 +54,11 @@
 				label: t('setup.storage_title'),
 				value: storageLabel + (hasTurso ? ` (${settings.pendingTursoOrg})` : ''),
 				show: !rerun
+			},
+			{
+				label: t('setup.account_title'),
+				value: account?.username ?? '',
+				show: account !== null
 			}
 		].filter((r) => r.show)
 	);
@@ -167,6 +174,7 @@
 	.summary-value {
 		font-size: 0.75rem;
 		color: var(--color-text-secondary);
+		overflow-wrap: anywhere;
 	}
 
 	.step-actions {
