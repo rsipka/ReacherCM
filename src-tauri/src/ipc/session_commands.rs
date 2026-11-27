@@ -783,6 +783,7 @@ pub async fn session_create(
     telnet: Option<crate::telnet::protocol::TelnetOptions>,
     serial: Option<crate::serial::options::SerialOptions>,
     spice: Option<crate::spice::SpiceOptions>,
+    vnc: Option<crate::vnc::VncOptions>,
     notes: Option<String>,
     custom_fields: Option<Vec<crate::state::CustomField>>,
     terminal_theme: Option<String>,
@@ -914,6 +915,14 @@ pub async fn session_create(
                 b
             })
             .filter(|b| !b.is_empty()),
+        // Its encryption as the editor sent it; certificates likewise.
+        vnc: vnc
+            .filter(|_| kind == crate::state::SessionKind::Vnc)
+            .map(|mut v| {
+                v.certs.clear();
+                v
+            })
+            .filter(|v| !v.is_empty()),
         // Its realm and token as the editor sent them; certificates likewise.
         proxmox: proxmox
             .filter(|_| kind == crate::state::SessionKind::Proxmox)
@@ -1081,6 +1090,15 @@ async fn prepare_update(
         let mut b = session.bmc.take().unwrap_or_default();
         b.certs = stored.as_ref().and_then(|s| s.bmc.as_ref()).map(|b| b.certs.clone()).unwrap_or_default();
         Some(b).filter(|b| !b.is_empty())
+    } else {
+        None
+    };
+    // A VNC session's encryption is the editor's, its certificates the
+    // stored ones (see `vnc_session_cert_trust`).
+    session.vnc = if session.kind == crate::state::SessionKind::Vnc {
+        let mut v = session.vnc.take().unwrap_or_default();
+        v.certs = stored.as_ref().and_then(|s| s.vnc.as_ref()).map(|v| v.certs.clone()).unwrap_or_default();
+        Some(v).filter(|v| !v.is_empty())
     } else {
         None
     };

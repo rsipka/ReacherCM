@@ -39,12 +39,12 @@ use subtle::ConstantTimeEq;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use zeroize::Zeroizing;
 
-const RFB_38: &[u8; 12] = b"RFB 003.008\n";
+pub(super) const RFB_38: &[u8; 12] = b"RFB 003.008\n";
 /// What macOS announces, and wants back to offer its own logins.
 const RFB_APPLE: &[u8; 12] = b"RFB 003.889\n";
 
 const NONE: u8 = 1;
-const VNC_AUTH: u8 = 2;
+pub(super) const VNC_AUTH: u8 = 2;
 const APPLE_DH: u8 = 30;
 const APPLE_RSA_SRP: u8 = 33;
 
@@ -103,7 +103,7 @@ where
         // version and choice are dropped, as they were already sent.
         t @ (NONE | VNC_AUTH) => {
             stream.write_all(&[t]).await.map_err(io)?;
-            Ok(Prelude { replay: [&RFB_38[..], &[1, t]].concat(), swallow: 13 })
+            Ok(hand_over(t))
         }
         APPLE_RSA_SRP => {
             rsa_srp(stream, login.username, login.password).await?;
@@ -119,9 +119,16 @@ where
     }
 }
 
+/// vnc-rs takes over from the security type on, the server's answer to it
+/// included: it is shown a 3.8 server offering just `t`, and its version
+/// and choice are dropped, as they were already sent.
+pub(super) fn hand_over(t: u8) -> Prelude {
+    Prelude { replay: [&RFB_38[..], &[1, t]].concat(), swallow: 13 }
+}
+
 /// After a Mac login: vnc-rs is shown a 3.8 server that wants none and
 /// says so, then the desktop.
-fn logged_in() -> Result<Prelude, String> {
+pub(super) fn logged_in() -> Result<Prelude, String> {
     Ok(Prelude { replay: [&RFB_38[..], &[1, NONE], &[0, 0, 0, 0]].concat(), swallow: 13 })
 }
 
@@ -156,14 +163,14 @@ async fn security_result<S: AsyncRead + Unpin>(stream: &mut S) -> Result<(), Str
 
 const WRONG_LOGIN: &str = "Wrong macOS user name or password";
 
-async fn read_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Result<String, String> {
+pub(super) async fn read_reason<S: AsyncRead + Unpin>(stream: &mut S) -> Result<String, String> {
     let len = stream.read_u32().await.map_err(io)? as usize;
     let mut text = vec![0u8; len.min(4096)];
     stream.read_exact(&mut text).await.map_err(io)?;
     Ok(String::from_utf8_lossy(&text).into_owned())
 }
 
-fn io(e: std::io::Error) -> String {
+pub(super) fn io(e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::UnexpectedEof {
         "The server closed the connection during the login".to_string()
     } else {

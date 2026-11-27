@@ -103,6 +103,19 @@ pub async fn ftp_session_cert_trust(
     trust_session_cert(&state, &session_id, &fingerprint, "ftp").await
 }
 
+/// Trust a certificate for a VNC session, by the fingerprint its failed
+/// connect reported (`crate::vnc::UNTRUSTED_CERT`) and the user agreed to.
+/// At most 16 are kept.
+#[tauri::command]
+#[tracing::instrument(skip(state))]
+pub async fn vnc_session_cert_trust(
+    state: State<'_, AppState>,
+    session_id: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    trust_session_cert(&state, &session_id, &fingerprint, "vnc").await
+}
+
 /// Add a certificate fingerprint to `<kind>.certs` of a stored session of
 /// that kind (`ftp`, `bmc`), keeping the newest 16.
 pub(super) async fn trust_session_cert(state: &AppState, session_id: &str, fingerprint: &str, kind: &str) -> Result<(), String> {

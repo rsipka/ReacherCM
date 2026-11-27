@@ -52,13 +52,21 @@ pub async fn vnc_connect(
         //
         // The password and the SSH leg's own entries are one operation: a
         // password manager passphrase that must be asked for is asked once.
-        // TLS to a server management session's controller (an iDRAC's VNC
-        // server): its certificate may be one that session trusts.
-        if params.tls && !running {
+        // TLS: the certificate may be one the saved session trusts. A VNC
+        // session's own (trusted from its tab), or a server management
+        // session's for its controller's VNC server (an iDRAC's).
+        if (params.tls || params.vencrypt) && !running {
             if let Some(sid) = session_id.as_deref() {
                 if let Ok(stored) = crate::ipc::session_commands::stored_session(&state, sid).await {
                     if stored.host.eq_ignore_ascii_case(&params.host) {
-                        params.tls_trusted = stored.bmc.map(|b| b.certs).unwrap_or_default();
+                        match stored.kind {
+                            crate::state::SessionKind::Vnc => {
+                                params.tls_trusted = stored.vnc.map(|v| v.certs).unwrap_or_default();
+                                params.own_certs = true;
+                            }
+                            crate::state::SessionKind::Bmc => params.tls_trusted = stored.bmc.map(|b| b.certs).unwrap_or_default(),
+                            _ => {}
+                        }
                     }
                 }
             }

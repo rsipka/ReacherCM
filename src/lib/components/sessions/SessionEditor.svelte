@@ -8,7 +8,7 @@
 	import { RDP_INTERVALS, RDP_KEYBOARDS, RDP_RESOLUTIONS, RDP_SCALES, rdpIntervalLabel } from '#lib/sessions/rdp-choices.js';
 	import { osChoices } from '#lib/data/distro-icons.js';
 	import Input from '#lib/components/shared/Input.svelte';
-	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, type BmcVnc, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
+	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, type VncOptions, type BmcVnc, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
 	import { BMC_VNC_PORT } from '#lib/sessions/bmc-console.js';
 	import { formatMac, parseMac } from '#lib/net/tools.js';
 	import { defaultSessionName, folderTmux, tmuxTool, validTmuxName, type TmuxTool } from '#lib/terminal/tmux.js';
@@ -250,6 +250,8 @@
 	}
 	/** VNC only: the saved SSH session to go through, or '' for direct. */
 	let viaSessionId = $state('');
+	/** VNC only: `vencrypt`, `tls` or '' for none. */
+	let vncEncryption = $state<'' | 'vencrypt' | 'tls'>('');
 	let wslDistro = $state('');
 	/** Telnet only: how it talks to the device. */
 	let telnetOptions = $state<TelnetOptions>({ ...DEFAULT_TELNET_OPTIONS });
@@ -760,6 +762,7 @@
 			rdpForwardLockKeys = editSession.rdp_forward_lock_keys ?? true;
 			fillRdpOptions(editSession.rdp);
 			viaSessionId = editSession.via_session_id ?? '';
+			vncEncryption = editSession.vnc?.encryption ?? '';
 			wslDistro = editSession.wsl_distro ?? '';
 			telnetOptions = { ...DEFAULT_TELNET_OPTIONS, ...(editSession.telnet ?? {}) };
 			serialOptions = { ...DEFAULT_SERIAL_OPTIONS, ...(editSession.serial ?? {}) };
@@ -857,6 +860,7 @@
 			rdpForwardLockKeys = true;
 			fillRdpOptions(null);
 			viaSessionId = '';
+			vncEncryption = '';
 			telnetOptions = { ...DEFAULT_TELNET_OPTIONS };
 			serialOptions = { ...DEFAULT_SERIAL_OPTIONS };
 			spiceTlsPort = '';
@@ -956,6 +960,7 @@
 		const proxmoxToSave = pve ? proxmoxOptionsToSave() : null;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
 		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
+		const vncToSave: VncOptions | null = vnc && vncEncryption ? { encryption: vncEncryption } : null;
 		const via = vnc || spice ? viaSessionId || null : null;
 		const tlsPort = parseInt(spiceTlsPort, 10);
 		const spiceToSave: SpiceOptions | null = spice
@@ -1124,6 +1129,7 @@
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
+					vnc: vncToSave,
 					ssh_options: sshOptionsToSave,
 					credential_id: credential,
 					credential: null,
@@ -1182,6 +1188,7 @@
 					files: filesToSave,
 					ftp: ftpToSave,
 					spice: spiceToSave,
+					vnc: vncToSave,
 					credentialId: credential,
 					notes: notesToSave,
 					customFields: fieldsToSave,
@@ -1714,13 +1721,27 @@
 			</details>
 		{:else if kind === 'vnc'}
 			<div class="shell-field">
-				<Input label={t('session.vnc_mac_username')} bind:value={username} placeholder={t('session.vnc_mac_username_placeholder')} disabled={saving} />
-				<p class="shell-hint">{t('session.vnc_mac_username_hint')}</p>
+				<label class="via-label" for="vnc-encryption">{t('session.vnc_encryption')}</label>
+				<select id="vnc-encryption" class="via-select" bind:value={vncEncryption} disabled={saving}>
+					<option value="">{t('session.vnc_encryption_none')}</option>
+					<option value="vencrypt">{t('session.vnc_encryption_vencrypt')}</option>
+					<option value="tls">{t('session.vnc_encryption_tls')}</option>
+				</select>
+				<p class="shell-hint">{vncEncryption ? t('session.vnc_encryption_hint') : t('session.vnc_encryption_none_hint')}</p>
+			</div>
+			<div class="shell-field">
+				{#if vncEncryption === 'vencrypt'}
+					<Input label={t('session.vnc_vencrypt_username')} bind:value={username} disabled={saving} />
+					<p class="shell-hint">{t('session.vnc_vencrypt_username_hint')}</p>
+				{:else}
+					<Input label={t('session.vnc_mac_username')} bind:value={username} placeholder={t('session.vnc_mac_username_placeholder')} disabled={saving} />
+					<p class="shell-hint">{t('session.vnc_mac_username_hint')}</p>
+				{/if}
 			</div>
 			<div class="shell-field">
 				<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} />
 				{@render pastPasswords()}
-				<p class="shell-hint">{username.trim() ? t('session.vnc_mac_password_hint') : t('session.vnc_password_hint')}</p>
+				<p class="shell-hint">{username.trim() ? (vncEncryption === 'vencrypt' ? t('session.vnc_vencrypt_password_hint') : t('session.vnc_mac_password_hint')) : t('session.vnc_password_hint')}</p>
 			</div>
 			<div class="shell-field">
 				<label class="via-label" for="vnc-via">{t('session.vnc_via')}</label>

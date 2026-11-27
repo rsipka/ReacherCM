@@ -1320,7 +1320,10 @@
 			passwordRef: session.auth_method.type === 'Password' ? (session.auth_method.password_ref ?? null) : null,
 			sessionId: session.id,
 			viaSessionId: session.via_session_id ?? null,
-			tls: extra?.tls ?? false,
+			// A server management session's VNC server says itself; a VNC
+			// session's encryption is its own.
+			tls: extra?.tls ?? session.vnc?.encryption === 'tls',
+			vencrypt: !extra && session.vnc?.encryption === 'vencrypt',
 			bmcSessionId: extra?.bmcSessionId,
 		};
 		addToast(t('session.connected_toast', { name: session.name }), 'success');

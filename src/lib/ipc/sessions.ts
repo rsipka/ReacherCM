@@ -83,6 +83,8 @@ export interface SessionConfig {
   serial?: SerialOptions | null;
   /** SPICE only: TLS port and certificate checks. */
   spice?: SpiceOptions | null;
+  /** VNC only: encryption and the certificates it trusts. */
+  vnc?: VncOptions | null;
   /** A saved credential this session logs in with (see savedCredentials.ts).
    *  Unset: its folder's, if one applies. */
   credential_id?: string | null;
@@ -165,6 +167,18 @@ export interface WakeOnLan {
 export type FilesProtocol = 'sftp' | 'scp';
 
 /** An FTP session's settings (see src-tauri/src/ftp/mod.rs). */
+/** A VNC session's encryption. */
+export interface VncOptions {
+  /** `vencrypt`: TLS negotiated inside VNC (QEMU/libvirt, TigerVNC, wayvnc);
+   *  `tls`: TLS from the first byte (an iDRAC with SSL encryption on);
+   *  unset: none. */
+  encryption?: 'vencrypt' | 'tls' | null;
+  /** SHA-256 fingerprints of certificates this session trusts although the
+   *  system does not. Read only here: trusted from the desktop's tab, kept
+   *  by a save. */
+  certs?: string[];
+}
+
 export interface FtpOptions {
   /** Unset: explicit (AUTH TLS, required). */
   tls?: 'implicit' | 'none' | null;
@@ -459,6 +473,7 @@ export async function sessionCreate(params: {
   telnet?: TelnetOptions | null;
   serial?: SerialOptions | null;
   spice?: SpiceOptions | null;
+  vnc?: VncOptions | null;
   notes?: string | null;
   customFields?: CustomField[] | null;
   terminalTheme?: string | null;
@@ -510,6 +525,7 @@ export async function sessionCreate(params: {
     telnet: params.kind === 'telnet' ? (params.telnet ?? null) : null,
     serial: params.kind === 'serial' ? (params.serial ?? null) : null,
     spice: params.kind === 'spice' ? (params.spice ?? null) : null,
+    vnc: params.kind === 'vnc' ? (params.vnc ?? null) : null,
     notes: params.notes?.trim() ? params.notes : null,
     customFields: params.customFields?.length ? params.customFields : null,
     terminalTheme: params.terminalTheme || null,
