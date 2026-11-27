@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Amplía Reach con complementos del mercado",
   "setup.plugins_empty": "Aún no hay complementos disponibles",
   "setup.plugins_empty_hint": "El registro está vacío o no es accesible. Puedes instalar complementos en cualquier momento desde Ajustes > Complementos.",
+  "setup.account_title": "Sincronización de cuenta",
+  "setup.account_subtitle": "Conecta este dispositivo a tu servidor de sincronización de Reacher CM.",
   "setup.storage_title": "Modo de almacenamiento",
   "setup.storage_subtitle": "Elige cómo almacenar tus datos",
   "setup.local_only": "Solo local",

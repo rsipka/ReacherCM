@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Étendez Reach avec des extensions du marché",
   "setup.plugins_empty": "Aucune extension disponible pour l'instant",
   "setup.plugins_empty_hint": "Le registre est vide ou inaccessible. Vous pouvez installer des extensions à tout moment depuis Paramètres > Extensions.",
+  "setup.account_title": "Synchronisation du compte",
+  "setup.account_subtitle": "Connectez cet appareil à votre serveur de synchronisation Reacher CM.",
   "setup.storage_title": "Mode de stockage",
   "setup.storage_subtitle": "Choisissez comment stocker vos données",
   "setup.local_only": "Local uniquement",

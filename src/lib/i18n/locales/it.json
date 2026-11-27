@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Estendi Reach con i plugin del marketplace",
   "setup.plugins_empty": "Nessun plugin ancora disponibile",
   "setup.plugins_empty_hint": "Il registro è vuoto o irraggiungibile. Puoi installare plugin in qualsiasi momento da Impostazioni > Plugin.",
+  "setup.account_title": "Sincronizzazione account",
+  "setup.account_subtitle": "Collega questo dispositivo al tuo server di sincronizzazione Reacher CM.",
   "setup.storage_title": "Modalità di archiviazione",
   "setup.storage_subtitle": "Scegli come archiviare i tuoi dati",
   "setup.local_only": "Solo locale",

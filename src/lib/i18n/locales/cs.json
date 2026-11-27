@@ -1204,6 +1204,8 @@
   "setup.plugins_subtitle": "Rozšiřte Reach o pluginy z tržiště",
   "setup.plugins_empty": "Zatím nejsou k dispozici žádné pluginy",
   "setup.plugins_empty_hint": "Registr je prázdný nebo nedostupný. Pluginy můžete kdykoli nainstalovat v Nastavení > Pluginy.",
+  "setup.account_title": "Synchronizace účtu",
+  "setup.account_subtitle": "Připojte toto zařízení k synchronizačnímu serveru Reacher CM.",
   "setup.storage_title": "Režim úložiště",
   "setup.storage_subtitle": "Zvolte, jak ukládat data",
   "setup.local_only": "Jen místně",

@@ -1224,6 +1224,8 @@
   "setup.plugins_subtitle": "Erweitere Reach mit Plugins aus dem Marktplatz",
   "setup.plugins_empty": "Noch keine Plugins verfügbar",
   "setup.plugins_empty_hint": "Die Registry ist leer oder nicht erreichbar. Du kannst Plugins jederzeit unter Einstellungen > Plugins installieren.",
+  "setup.account_title": "Kontosynchronisierung",
+  "setup.account_subtitle": "Verbinde dieses Gerät mit deinem Reacher-CM-Synchronisierungsserver.",
   "setup.storage_title": "Speichermodus",
   "setup.storage_subtitle": "Wähle, wie deine Daten gespeichert werden",
   "setup.local_only": "Nur lokal",
