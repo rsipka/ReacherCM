@@ -11,7 +11,7 @@
 	import { sessionCreate, sessionList, sessionUpdate, sessionKind, wslListDistros, type SessionConfig, type SessionKind, type AuthMethod, type JumpHostConfig, type Folder, type SshOptions, type CustomField, type TmuxSetting, type X11DesktopKind, X11_DESKTOPS, type TerminalOptions, TERMINAL_TYPES, TERMINAL_ENCODINGS, type ConnectMode, type SessionAddress, type WebOptions, type WebLogin, type WebCert, type WakeOnLan, type FilesProtocol, type FtpOptions, type BmcVnc, webSessionCertAdd, webSessionCertRemove, webSessionClearData } from '#lib/ipc/sessions.js';
 	import { BMC_VNC_PORT } from '#lib/sessions/bmc-console.js';
 	import { formatMac, parseMac } from '#lib/net/tools.js';
-	import { defaultTmuxName, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
+	import { DEFAULT_TMUX_NAME, folderTmux, validTmuxName } from '#lib/terminal/tmux.js';
 	import { isIos, isMobile, isWindows } from '#lib/platform.js';
 
 	/** From this window width the editor is wide, with two columns. */
@@ -2421,7 +2421,7 @@
 			{#if tmuxOn}
 				<div class="shell-field">
 					<label class="via-label" for="session-tmux-name">{t('tmux.name_label')}</label>
-					<input id="session-tmux-name" class="field-input" bind:value={tmuxName} placeholder={defaultTmuxName(name.trim())} spellcheck="false" autocomplete="off" disabled={saving} />
+					<input id="session-tmux-name" class="field-input" bind:value={tmuxName} placeholder={DEFAULT_TMUX_NAME} spellcheck="false" autocomplete="off" disabled={saving} />
 					<p class="shell-hint">{tmuxChoice === 'ask' ? t('tmux.ask_hint') : t('tmux.session_hint')}</p>
 				</div>
 				<div class="shell-field">
