@@ -13,3 +13,6 @@
 -keep class com.google.android.gms.internal.mlkit_vision_barcode.** { *; }
 -keep class com.google.android.gms.internal.mlkit_vision_common.** { *; }
 -keep class com.google.android.gms.internal.mlkit_common.** { *; }
+# The bundled barcode model (see no-gms.gradle.kts) reaches its native code
+# through these classes.
+-keep class com.google.android.gms.internal.mlkit_vision_barcode_bundled.** { *; }
