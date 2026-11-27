@@ -325,6 +325,8 @@ export interface TmuxSetting {
   name?: string | null;
   /** tmux's mouse mode for this session: the wheel scrolls tmux's history. */
   mouse?: boolean;
+  /** The program: tmux (unset), Byobu or Zellij. */
+  tool?: 'tmux' | 'byobu' | 'zellij' | null;
 }
 
 /** One named value of a session's documentation. */

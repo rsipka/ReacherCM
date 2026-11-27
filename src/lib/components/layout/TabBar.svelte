@@ -10,7 +10,7 @@
 	import { vncSecurity, type VncSecurity } from '#lib/ipc/vnc.js';
 	import { sshConnectionAlgorithms, sshTmuxKill, sshTmuxList, sshTmuxWindows, sshTmuxWindow, type NegotiatedAlgorithms, type TmuxListed, type TmuxWindow, type TmuxWindowOp } from '#lib/ipc/ssh.js';
 	import { validTmuxName } from '#lib/terminal/tmux.js';
-	import { newTab, isTmuxViewTab, openTmuxWindowTab, switchTmuxSession, tmuxSessionOf } from '#lib/terminal/tmux-tabs.js';
+	import { newTab, isTmuxViewTab, listedMeta, openTmuxWindowTab, switchTmuxSession, tmuxSessionOf } from '#lib/terminal/tmux-tabs.js';
 	import { SPLIT_MIN_WIDTH, contains, leaves } from '#lib/terminal/split.js';
 	import { isMobile } from '#lib/platform.js';
 	import { getSettings } from '#lib/state/settings.svelte.js';
@@ -388,7 +388,7 @@
 		switchList = null;
 		switchNew = '';
 		try {
-			const list = await sshTmuxList(tab.connectionId);
+			const list = await sshTmuxList(tab.connectionId, tab.sshConnectParams?.tmux?.tool);
 			if (switchTab === tab) switchList = list;
 		} catch (err) {
 			switchTab = null;
@@ -457,7 +457,7 @@
 		try {
 			// Its tmux client then exits, which ends the tab's session as an
 			// exit typed would (and closes it, if Settings say so).
-			await sshTmuxKill(tab.connectionId, name);
+			await sshTmuxKill(tab.connectionId, name, tab.sshConnectParams?.tmux?.tool);
 		} catch (err) {
 			addToast(t('tmux.kill_failed', { error: String(err) }), 'error');
 		}
@@ -810,7 +810,7 @@
 				{#each switchList as s (s.name)}
 					<button type="button" class="tmux-switch-row" class:current={s.name === tmuxOf(switchTab)} disabled={!validTmuxName(s.name)} onclick={() => switchTo(s.name)}>
 						<span class="tmux-switch-name">{s.name}</span>
-						<span class="tmux-switch-meta">{t('tmux.windows', { count: String(s.windows) })}{#if s.attached > 0} · {t('tmux.attached', { count: String(s.attached) })}{/if}</span>
+						<span class="tmux-switch-meta">{listedMeta(s)}</span>
 					</button>
 				{/each}
 			</div>

@@ -602,7 +602,7 @@ fn apply_patch(s: &mut SessionConfig, patch: &SessionPatch, uses_credential: imp
     }
     if let Some(t) = &patch.tmux {
         if tmux_kind {
-            let mut setting = s.tmux.clone().unwrap_or(crate::ssh::tmux::TmuxSetting { mode: "inherit".into(), name: None, mouse: false });
+            let mut setting = s.tmux.clone().unwrap_or(crate::ssh::tmux::TmuxSetting { mode: "inherit".into(), name: None, mouse: false, tool: None });
             if let Some(mode) = &t.mode {
                 // WSL has no picker: asking there means attach, as in the editor.
                 setting.mode = if mode == "ask" && s.kind != SessionKind::Ssh { "attach".into() } else { mode.clone() };
@@ -610,7 +610,7 @@ fn apply_patch(s: &mut SessionConfig, patch: &SessionPatch, uses_credential: imp
             if let Some(mouse) = t.mouse {
                 setting.mouse = mouse;
             }
-            let plain = setting.mode == "inherit" && setting.name.is_none() && !setting.mouse;
+            let plain = setting.mode == "inherit" && setting.name.is_none() && !setting.mouse && setting.tool.is_none();
             s.tmux = (!plain).then_some(setting);
         } else {
             skipped.push("tmux");
