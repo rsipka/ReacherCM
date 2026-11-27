@@ -9,6 +9,7 @@
 //! hands out a private key is [`resolve`], which is called by `ssh_connect`
 //! while building a handshake and never reaches the frontend.
 
+use crate::ipc::personal_login_commands::DEFAULT_KEY;
 use crate::ssh::keystore::{self, StoredKeyInfo, StoredKeyMaterial};
 use crate::state::AppState;
 use crate::vault::manager::SSH_KEYS_VAULT;
@@ -319,6 +320,17 @@ pub(crate) async fn resolve(
     if manager.is_locked() {
         return Err("Vault is locked — unlock it to use an imported key.".into());
     }
+    // "My default key": the imported key this person picked as theirs.
+    let default_id;
+    let id = if id == DEFAULT_KEY {
+        default_id = crate::ipc::settings_commands::read_setting_by_key(&manager, DEFAULT_KEY_SETTING)
+            .await
+            .filter(|k| !k.trim().is_empty())
+            .ok_or_else(|| NO_DEFAULT_KEY.to_string())?;
+        default_id.as_str()
+    } else {
+        id
+    };
     let vault_id = manager
         .get_vault_id_by_name(SSH_KEYS_VAULT)
         .ok_or_else(|| MISSING_KEY.to_string())?;
@@ -327,6 +339,14 @@ pub(crate) async fn resolve(
         .map_err(|_| MISSING_KEY.to_string())?;
     Ok((&material).into())
 }
+
+/// The setting naming the imported key a session set to "My default key"
+/// uses: each person's own (it lives in their settings, not the session).
+pub const DEFAULT_KEY_SETTING: &str = "ssh_default_key";
+
+/// What a session set to "My default key" says when none is picked.
+pub const NO_DEFAULT_KEY: &str =
+    "This session uses your default SSH key, and you have not picked one. Choose it in Settings > Security > Default SSH key.";
 
 /// What a session says when the key it names is not on this machine. The
 /// connect dialog matches on it, so keep the two in step.
