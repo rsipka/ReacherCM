@@ -1,6 +1,6 @@
 import { toggleMute } from '#lib/state/mute.svelte.js';
 import { newTab } from '#lib/terminal/tmux-tabs.js';
-import { createTab, closeTab, getActiveTab, getTabs, activateTab, canShowFilesView, toggleFilesView } from './tabs.svelte';
+import { closeTab, getActiveTab, getTabs, activateTab, canShowFilesView, toggleFilesView, groupHidden, lastUsedTab } from './tabs.svelte';
 import { toggleAIPanel } from './ai-chat.svelte';
 import { togglePalette, requestSessionAction } from './palette.svelte';
 import { stepUiZoom } from './ui-zoom';
@@ -61,22 +61,34 @@ export function setRecordingShortcut(on: boolean): void {
 	recording = on;
 }
 
-function nextTab(): void {
-	const tabs = getTabs();
-	if (tabs.length <= 1) return;
-
-	const activeIndex = tabs.findIndex((t) => t.active);
-	const nextIndex = (activeIndex + 1) % tabs.length;
-	activateTab(tabs[nextIndex].id);
+/** The tabs a key steps through, in the bar's order: not those folded away
+ *  in a group, unless it is the one in front. */
+function switchableTabs() {
+	return getTabs().filter((t) => t.active || !groupHidden(t));
 }
 
-function previousTab(): void {
-	const tabs = getTabs();
+function stepTab(by: 1 | -1): void {
+	const tabs = switchableTabs();
 	if (tabs.length <= 1) return;
+	const at = tabs.findIndex((t) => t.active);
+	activateTab(tabs[(at + by + tabs.length) % tabs.length].id);
+}
 
-	const activeIndex = tabs.findIndex((t) => t.active);
-	const prevIndex = (activeIndex - 1 + tabs.length) % tabs.length;
-	activateTab(tabs[prevIndex].id);
+/** The n-th tab of the bar (from 1); past the end, nothing. */
+function goToTab(n: number): void {
+	const tab = switchableTabs()[n - 1];
+	if (tab && !tab.active) activateTab(tab.id);
+}
+
+function goToLastTab(): void {
+	const tabs = switchableTabs();
+	const tab = tabs[tabs.length - 1];
+	if (tab && !tab.active) activateTab(tab.id);
+}
+
+function goToLastUsed(): void {
+	const tab = lastUsedTab();
+	if (tab) activateTab(tab.id);
 }
 
 function closeActiveTab(): void {
@@ -113,8 +125,18 @@ const handlers: Partial<Record<ActionId, () => void>> = {
 	'session.new': () => requestSessionAction({ kind: 'new-session' }),
 	'session.quickConnect': () => requestSessionAction({ kind: 'quick-connect' }),
 	'tab.close': closeActiveTab,
-	'tab.next': nextTab,
-	'tab.previous': previousTab,
+	'tab.next': () => stepTab(1),
+	'tab.previous': () => stepTab(-1),
+	'tab.last': goToLastUsed,
+	'tab.go1': () => goToTab(1),
+	'tab.go2': () => goToTab(2),
+	'tab.go3': () => goToTab(3),
+	'tab.go4': () => goToTab(4),
+	'tab.go5': () => goToTab(5),
+	'tab.go6': () => goToTab(6),
+	'tab.go7': () => goToTab(7),
+	'tab.go8': () => goToTab(8),
+	'tab.goLast': goToLastTab,
 	'app.settings': () => openSettings(),
 	'app.palette': openCommandPalette,
 	'app.aiPanel': toggleAIPanel,

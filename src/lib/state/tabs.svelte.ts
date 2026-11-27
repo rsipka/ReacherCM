@@ -14,7 +14,10 @@ import * as splits from '#lib/terminal/split.js';
 import { isMobile } from '#lib/platform.js';
 import type { Direction, Layout, Side } from '#lib/terminal/split.js';
 
-export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial' | 'ftp' | 'bmc' | 'proxmox';
+export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial' | 'ftp' | 'bmc' | 'proxmox' | 'devops';
+
+/** The DevOps workspaces a `devops` tab can show (see #lib/state/devops). */
+export type DevopsTabTool = 'ansible' | 'tofu' | 'databases' | 'containers' | 'kubernetes';
 
 /** A tab that shows a remote desktop rather than a terminal. */
 export function isDesktopTab(tab: Pick<Tab, 'type'> | undefined): boolean {
@@ -107,6 +110,12 @@ export interface Tab {
 	/** A remote desktop tab whose desktop is up (set by its panel); unset
 	 *  while it connects, and once it closed. */
 	desktopUp?: boolean;
+	/** A DevOps workspace tab (Ansible, Kubernetes...): which one. Its page
+	 *  is shown in the tab like any session's panel; see #lib/state/navigation. */
+	devopsTool?: DevopsTabTool;
+	/** A Kubernetes tab's saved cluster: one tab per cluster. Unset while the
+	 *  tab shows the cluster picker. */
+	k8sClusterId?: string;
 }
 
 /** An FTP tab's saved session; the backend takes the rest from it. */
@@ -274,6 +283,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 	};
 
 	tabs.push(tab);
+	noteFront(id);
 	return tab;
 }
 
@@ -377,6 +387,26 @@ export function activateTab(id: string): void {
 	for (const tab of tabs) {
 		tab.active = tab.id === id;
 	}
+	noteFront(id);
+}
+
+/** Tab ids, the one brought to the front most recently first, for the
+ *  last-used tab key. Not state: nothing on screen shows it. */
+let recent: string[] = [];
+
+function noteFront(id: string): void {
+	recent = [id, ...recent.filter((x) => x !== id && tabs.some((t) => t.id === x))].slice(0, 50);
+}
+
+/** The open tab that was in front before the one in front now. */
+export function lastUsedTab(): Tab | undefined {
+	const front = activeTab?.id;
+	for (const id of recent) {
+		if (id === front) continue;
+		const tab = tabs.find((t) => t.id === id);
+		if (tab) return tab;
+	}
+	return undefined;
 }
 
 export function updateTabTitle(id: string, title: string): void {

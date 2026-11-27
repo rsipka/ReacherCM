@@ -35,7 +35,7 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { folderPath } from '#lib/sessions/folder-tree.js';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
-	import { savedCredentialList, credentialsFor, credentialFolderList, groupByFolder, type SavedCredential, type CredentialFolder } from '#lib/ipc/savedCredentials.js';
+	import { savedCredentialList, credentialsFor, credentialFolderList, groupByFolder, PERSONAL_LOGIN, type SavedCredential, type CredentialFolder } from '#lib/ipc/savedCredentials.js';
 	import { DEFAULT_TELNET_OPTIONS, type TelnetOptions } from '#lib/ipc/telnet.js';
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
@@ -405,6 +405,17 @@
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
 	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox');
+	/** The session or the folder it takes its login from asks each person
+	 *  for their own (only offered in a shared vault). Its login is then
+	 *  nobody's here: only a user name is kept with the session. */
+	let personalFromFolder = $derived(folderCredential?.folder.credential_id === PERSONAL_LOGIN);
+	let personal = $derived(takesCredential && (credentialId === PERSONAL_LOGIN || (credentialId === '' && personalFromFolder)));
+	/** What the reading person signs in with here, as the session was read. */
+	let myPersonal = $derived.by(() => {
+		const c = editSession?.credential;
+		if (!c?.personal_target || c.missing) return null;
+		return c.name || t('credential.personal_default_key');
+	});
 	/** The saved credential the login comes from; null: the fields below. */
 	let usedCredential = $derived(
 		!takesCredential || credentialId === OWN_LOGIN
@@ -675,7 +686,7 @@
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
-		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || !!usedCredential || username.trim().length > 0) &&
+		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || !!usedCredential || personal || username.trim().length > 0) &&
 		!saving
 	);
 
@@ -778,7 +789,9 @@
 			addressRows = (editSession.alt_addresses ?? []).map((a) => ({ label: a.label ?? '', host: a.host, port: a.port ? String(a.port) : '', direct: !!a.direct, via: a.via_session_id ?? '', wireguard: a.via_wireguard ?? '' }));
 			addressMode = editSession.connect_mode ?? 'auto';
 			addressCheck = editSession.address_check == null ? '' : editSession.address_check ? 'on' : 'off';
-			username = editSession.username;
+			// A session that asks for each person's own login was read with
+			// the reader's filled in; its own user name is the one to edit.
+			username = editSession.credential?.personal_target ? (editSession.credential.own_username ?? editSession.username) : editSession.username;
 			authType = editSession.auth_method.type === 'Password' && editSession.auth_method.password_ref ? 'Manager' : editSession.auth_method.type;
 			password = editSession.auth_method.password ?? '';
 			keyPath = editSession.auth_method.path ?? '';
@@ -929,7 +942,7 @@
 		// "Password manager" without a chosen entry would save a login with
 		// no password at all.
 		const ssh = kind === 'ssh';
-		if (ssh && ((authType === 'Manager' && !passwordRef && !usedCredential) || (jumpEnabled && jumpHops.some((h) => h.authType === 'Manager' && !h.passwordRef && !hopCredential(h))))) {
+		if (ssh && ((authType === 'Manager' && !passwordRef && !usedCredential && !personal) || (jumpEnabled && jumpHops.some((h) => h.authType === 'Manager' && !h.passwordRef && !hopCredential(h))))) {
 			error = t('session.manager_pick_entry');
 			return;
 		}
@@ -975,7 +988,10 @@
 		// RDP and VNC are password logons; the toggle below is SSH-only and
 		// its value is ignored here rather than trusted. WSL signs in by
 		// itself: nothing to keep, so a password left in the form is not saved.
-		const authMethod: AuthMethod = wsl || serial
+		// Each person's own: nothing secret is kept with the shared session.
+		const authMethod: AuthMethod = personal
+			? { type: 'Agent' }
+			: wsl || serial
 			? { type: 'Password' }
 			: desktop
 			? passwordAuth(password, passwordRef)
@@ -1426,10 +1442,13 @@
 				<label class="via-label" for="session-login">{t('credential.login')}</label>
 				<select id="session-login" class="via-select" value={credentialId} onchange={(e) => pickCredential(e.currentTarget.value)} disabled={saving}>
 					{#if folderCredential}
-						<option value="">{folderCredential.credential ? t('credential.from_folder', { name: folderCredential.credential.name, folder: folderCredential.folder.name }) : t('credential.from_folder_missing', { folder: folderCredential.folder.name })}</option>
+						<option value="">{personalFromFolder ? t('credential.from_folder_personal', { folder: folderCredential.folder.name }) : folderCredential.credential ? t('credential.from_folder', { name: folderCredential.credential.name, folder: folderCredential.folder.name }) : t('credential.from_folder_missing', { folder: folderCredential.folder.name })}</option>
 						<option value={OWN_LOGIN}>{t('credential.own_login')}</option>
 					{:else}
 						<option value="">{t('credential.own_login')}</option>
+					{/if}
+					{#if sessionVault !== null || credentialId === PERSONAL_LOGIN}
+						<option value={PERSONAL_LOGIN}>{t('credential.personal_login')}</option>
 					{/if}
 					{#each credentialGroups as g (g.label ?? '')}
 						{#if g.label === null}
@@ -1444,11 +1463,14 @@
 							</optgroup>
 						{/if}
 					{/each}
-					{#if credentialId && credentialId !== OWN_LOGIN && !credentials.some((c) => c.id === credentialId)}
+					{#if credentialId && credentialId !== OWN_LOGIN && credentialId !== PERSONAL_LOGIN && !credentials.some((c) => c.id === credentialId)}
 						<option value={credentialId}>{t('credential.missing')}</option>
 					{/if}
 				</select>
-				{#if usedCredential}
+				{#if personal}
+					<p class="shell-hint">{t('credential.personal_hint')}</p>
+					<p class="shell-hint">{myPersonal ? t('credential.personal_yours', { name: myPersonal }) : t('credential.personal_yours_none')}</p>
+				{:else if usedCredential}
 					<p class="shell-hint">{t('credential.login_hint', { username: usedCredential.username })}</p>
 				{:else if credentialId && credentialId !== OWN_LOGIN}
 					<p class="shell-hint">{t('credential.missing_hint')}</p>
@@ -1457,7 +1479,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
+			<Input label={personal ? t('credential.personal_username') : kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -1471,7 +1493,7 @@
 					{#if rdpClient === 'freerdp'}<p class="shell-hint">{t('session.rdp_client_freerdp_hint')}</p>{/if}
 				</div>
 			{/if}
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 			<div class="shell-field">
 				<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 				{@render pastPasswords()}
@@ -1787,7 +1809,7 @@
 		{:else if kind === 'telnet'}
 			<!-- Telnet has no login of its own: what is saved here is typed in
 			     when the device prompts for it. No keys, jump hosts or proxies. -->
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 					{@render pastPasswords()}
@@ -1824,7 +1846,7 @@
 		{:else if kind === 'web'}
 			<!-- The page runs in a window of its own that cannot reach the app;
 			     the login is typed into it from the backend. See src-tauri/src/web. -->
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 				</div>
@@ -1998,7 +2020,7 @@
 		{:else if kind === 'ftp'}
 			<!-- A password login, sent inside TLS unless plain FTP is chosen.
 			     No user name: anonymous. -->
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 					{@render pastPasswords()}
@@ -2017,7 +2039,7 @@
 		{:else if kind === 'bmc'}
 			<!-- A Redfish login: the BMC's own user (root on an iDRAC,
 			     Administrator on an iLO). -->
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 					{@render pastPasswords()}
@@ -2050,7 +2072,7 @@
 				{/if}
 				<p class="shell-hint">{t('proxmox.realm_hint')}</p>
 			</div>
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 					{@render pastPasswords()}
@@ -2064,7 +2086,7 @@
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->
-			{#if !usedCredential}
+			{#if !usedCredential && !personal}
 				<div class="shell-field">
 					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
 					{@render pastPasswords()}
@@ -2079,7 +2101,7 @@
 				<p class="shell-hint">{t('session.wsl_user_hint')}</p>
 			</div>
 		{:else}
-		{#if !usedCredential}
+		{#if !usedCredential && !personal}
 		<div class="auth-section">
 			<span class="auth-label">{t('session.auth_method')}</span>
 			<div class="auth-toggle">

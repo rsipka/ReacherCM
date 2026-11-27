@@ -31,8 +31,7 @@
 	import LayoutsDialog from './LayoutsDialog.svelte';
 	import { getLayouts, openLayout } from '#lib/state/layouts.svelte.js';
 	import Button from '#lib/components/shared/Button.svelte';
-	import { getActivePage, setActivePage, type Page } from '#lib/state/navigation.svelte.js';
-	import { getEnabledDevopsTools } from '#lib/state/devops.svelte.js';
+	import { DEVOPS_TOOLS } from '#lib/state/devops.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import DistroIcon from '#lib/components/sessions/DistroIcon.svelte';
 	import * as mcp from '#lib/state/mcp.svelte.js';
@@ -53,7 +52,8 @@
 
 	/** Moving a tab (or its whole split) to a window of its own, or to another one. */
 	function windowItems(id: string): MenuItem[] {
-		if (!canFloat()) return [];
+		// A DevOps workspace keeps its state in this window.
+		if (!canFloat() || tabs.find((x) => x.id === id)?.type === 'devops') return [];
 		const items: MenuItem[] = [{ label: '', separator: true }];
 		const alone = floating && tabs.length === 1;
 		items.push({ label: t('windows.move_new'), icon: WINDOW_ICON, disabled: alone, action: () => void moveToNewWindow([id]) });
@@ -98,7 +98,6 @@
 
 	let tabs = $derived(getTabs());
 	let activeTab = $derived(getActiveTab());
-	let activePage = $derived(getActivePage());
 	let broadcastTargets = $derived(getBroadcastTargets());
 
 	/** Typing into several terminals at once: this tab in or out, a group,
@@ -198,7 +197,6 @@
 			t('tabs.algo_compression', { name: bothWays(a.compression_out, a.compression_in) })
 		].join('\n');
 	}
-	let pageMenu = $state<{ x: number; y: number } | null>(null);
 	/** Saved split layouts: the menu of the button beside +, and the dialog to save and manage them. */
 	let layoutMenu = $state<{ x: number; y: number } | null>(null);
 	let layoutsOpen = $state(false);
@@ -210,9 +208,6 @@
 		items.push({ label: t('layouts.manage'), action: () => (layoutsOpen = true) });
 		return items;
 	}
-	// When the page menu last closed: a press on its button closes it, and the
-	// click that follows must not open it again.
-	let pageMenuClosedAt = 0;
 	/** A drag ended on this tab's own pointerup: that is not a click. */
 	let swallowClick = false;
 	const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
@@ -547,22 +542,6 @@
 		];
 	}
 
-	/** Each page's icon, 24×24 and stroked, for the page button and menu. */
-	const PAGE_ICONS: Record<string, string> = {
-		terminal: 'M4 17l6-5-6-5M12 19h8',
-		ansible: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8.5 16.5 12 7l3.5 9.5M9.6 13.5h4.8',
-		tofu: 'M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z',
-		databases: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
-		containers: 'M3 7.5 12 3l9 4.5v9L12 21l-9-4.5zM3 7.5 12 12l9-4.5M12 12v9',
-		kubernetes: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v3M12 14v3M7 12h3M14 12h3M8.5 8.5l2 2M13.5 13.5l2 2M15.5 8.5l-2 2M10.5 13.5l-2 2'
-	};
-
-	// The terminal always, then whichever DevOps tools are switched on.
-	let pages = $derived<{ id: Page; label: () => string; icon: string }[]>([
-		{ id: 'terminal', label: () => t('nav.terminal'), icon: PAGE_ICONS.terminal },
-		...getEnabledDevopsTools().map((tool) => ({ id: tool.page, label: tool.label, icon: PAGE_ICONS[tool.page] })),
-	]);
-	let currentPage = $derived(pages.find((p) => p.id === activePage) ?? pages[0]);
 
 	// SVG icon paths
 	const terminalIcon = 'M4 17l6-5-6-5M12 19h8';
@@ -572,208 +551,171 @@
 </script>
 
 <nav class="tabbar">
-	<!-- One button for the current page and a menu of the others: side by
-	     side, Terminal, Ansible, OpenTofu and the rest took 550px, more than
-	     a phone's screen and room the session tabs need on a desktop. -->
-	<div class="page-switcher" class:floating>
-		{#if floating}
-			<!-- A floating window shows sessions only: no other pages. -->
-		{:else if pages.length > 1}
-			<button
-				class="page-btn active page-pick"
-				aria-haspopup="menu"
-				aria-expanded={pageMenu !== null}
-				onclick={(e) => {
-					const r = e.currentTarget.getBoundingClientRect();
-					if (performance.now() - pageMenuClosedAt < 400) return;
-					pageMenu = { x: r.left, y: r.bottom + 4 };
-				}}
-			>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-					<path d={currentPage.icon} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-				</svg>
-				{currentPage.label()}
-				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-			</button>
-		{:else}
-			<button class="page-btn active" onclick={() => setActivePage('terminal')}>{t('nav.terminal')}</button>
-		{/if}
-	</div>
-
-	{#if activePage === 'terminal'}
-		{#if !floating}<div class="divider"></div>{/if}
-
-		<div class="tabs-scroll">
-			{#each tabs as tab, i (tab.id)}
-				{#if startsGroup(i)}
-					{@const g = groups.find((x) => x.id === tab.groupId)}
-					{#if g}
-						{#if renaming === g.id}
-							<!-- svelte-ignore a11y_autofocus -->
-							<input
-								class="group-chip group-rename"
-								style:--group={groupColor(g.color)}
-								bind:value={renameValue}
-								aria-label={t('tabs.group_name')}
-								autofocus
-								onblur={finishRename}
-								onkeydown={(e) => { if (e.key === 'Enter') finishRename(); else if (e.key === 'Escape') renaming = null; }}
-							/>
-						{:else}
-							<button
-								class="group-chip"
-								class:collapsed={g.collapsed}
-								style:--group={groupColor(g.color)}
-								aria-expanded={!g.collapsed}
-								title={g.collapsed ? t('tabs.group_expand') : t('tabs.group_collapse')}
-								onclick={() => toggleGroup(g.id)}
-								ondblclick={() => beginRename(g)}
-								oncontextmenu={(e) => { e.preventDefault(); groupMenu = { x: e.clientX, y: e.clientY, id: g.id }; }}
-							>
-								<span class="group-dot"></span>
-								<span class="group-name">{g.name}</span>
-								{#if g.collapsed}<span class="group-count">{tabs.filter((x) => x.groupId === g.id).length}</span>{/if}
-							</button>
-						{/if}
-					{/if}
-				{/if}
-				{#if !groupHidden(tab)}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div
-					class="tab"
-					data-tab-id={tab.id}
-					class:grouped={!!tab.groupId}
-					style:--group={tab.groupId ? groupColor(groups.find((x) => x.id === tab.groupId)?.color ?? 'grey') : undefined}
-					class:active={tab.id === activeTab?.id}
-					class:in-split={inSplit(tab.id)}
-					class:broadcast={broadcastTargets.includes(tab.id)}
-					class:dragging={dragged === tab.id}
-					onclick={() => onTabClick(tab.id)}
-					onpointerdown={(e) => beginDrag(e, tab.id)}
-					oncontextmenu={(e) => {
-						e.preventDefault();
-						menu = { x: e.clientX, y: e.clientY, id: tab.id };
-						void otherWindows().then((w) => (windows = w));
-					}}
-					onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') activateTab(tab.id); }}
-					role="tab"
-					tabindex="0"
-					aria-selected={tab.id === activeTab?.id}
-					onpointerenter={() => { if (tab.type === 'vnc') readVncSecurity(tab.id); }}
-					title={tabTooltip(tab)}
-				>
-					{#if tab.type === 'ssh' && tab.detectedOs}
-						<DistroIcon osId={tab.detectedOs} size={14} />
+	<!-- The DevOps workspaces (Ansible, Kubernetes...) used to be pages picked
+	     here; they are tabs now, opened from the Sessions list (see
+	     #lib/state/navigation). -->
+	<div class="tabs-lead" class:floating></div>
+	<div class="tabs-scroll">
+		{#each tabs as tab, i (tab.id)}
+			{#if startsGroup(i)}
+				{@const g = groups.find((x) => x.id === tab.groupId)}
+				{#if g}
+					{#if renaming === g.id}
+						<!-- svelte-ignore a11y_autofocus -->
+						<input
+							class="group-chip group-rename"
+							style:--group={groupColor(g.color)}
+							bind:value={renameValue}
+							aria-label={t('tabs.group_name')}
+							autofocus
+							onblur={finishRename}
+							onkeydown={(e) => { if (e.key === 'Enter') finishRename(); else if (e.key === 'Escape') renaming = null; }}
+						/>
 					{:else}
-						<svg class="tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
-							{#if tab.type === 'local'}
-								<path d={terminalIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							{:else if isDesktopTab(tab)}
-								<path d={rdpIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							{:else if tab.type === 'proxmox'}
-								<path d={PROXMOX_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							{:else if tab.type === 'bmc'}
-								<path d={BMC_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							{:else if tab.type === 'ftp'}
-								<path d={FOLDER_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							{:else}
-								<path d={sshIcon} fill="currentColor" />
-							{/if}
-						</svg>
-					{/if}
-
-					<span class="tab-title">{tab.sessionName || tab.title}{#if tab.tmuxWindow?.name}<span class="tab-tmux-window"> · {tab.tmuxWindow.name}</span>{/if}</span>
-					{#if broadcastTargets.includes(tab.id)}
-						<!-- Typing into one of the marked tabs goes to all of them. -->
-						<span class="mark-tip" title={t('broadcast.tab_mark')}><svg class="broadcast-mark" width="13" height="13" viewBox="0 0 24 24" fill="none" role="img" aria-label={t('broadcast.tab_mark')}>
-							<path d={BROADCAST_ICON} stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
-						</svg></span>
-					{/if}
-					{#if tab.link}
-						<!-- Seen from any tab: this session dropped, or is coming back. -->
-						<span
-							class="link-mark"
-							class:reconnecting={tab.link === 'reconnecting'}
-							role="img"
-							aria-label={tab.link === 'reconnecting' ? t('terminal.reconnecting') : t('tabs.disconnected')}
-							title={tab.link === 'reconnecting' ? t('terminal.reconnecting') : t('tabs.disconnected')}
-						></span>
-					{/if}
-
-					{#if mcpStatus.enabled && shareIdOf(tab)}
-						{@const sid = shareIdOf(tab) as string}
-						{@const on = mcp.isShared(sid)}
 						<button
-							class="tab-share"
-							class:shared={on}
-							onclick={(e) => toggleShare(e, tab)}
-							aria-pressed={on}
-							title={on ? t('mcp.unshare_tab') : t('mcp.share_tab')}
-							aria-label={on ? t('mcp.unshare_tab') : t('mcp.share_tab')}
+							class="group-chip"
+							class:collapsed={g.collapsed}
+							style:--group={groupColor(g.color)}
+							aria-expanded={!g.collapsed}
+							title={g.collapsed ? t('tabs.group_expand') : t('tabs.group_collapse')}
+							onclick={() => toggleGroup(g.id)}
+							ondblclick={() => beginRename(g)}
+							oncontextmenu={(e) => { e.preventDefault(); groupMenu = { x: e.clientX, y: e.clientY, id: g.id }; }}
 						>
-							<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-								{#if on}
-									<!-- Live: a filled eye. Reads as "something is watching this" from
-									     across the room, which is the whole point of this control. -->
-									<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="currentColor" opacity="0.9" />
-									<circle cx="12" cy="12" r="2.6" fill="var(--color-bg-primary)" />
-								{:else}
-									<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-									<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.8" />
-								{/if}
-							</svg>
+							<span class="group-dot"></span>
+							<span class="group-name">{g.name}</span>
+							{#if g.collapsed}<span class="group-count">{tabs.filter((x) => x.groupId === g.id).length}</span>{/if}
 						</button>
 					{/if}
+				{/if}
+			{/if}
+			{#if !groupHidden(tab)}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="tab"
+				data-tab-id={tab.id}
+				class:grouped={!!tab.groupId}
+				style:--group={tab.groupId ? groupColor(groups.find((x) => x.id === tab.groupId)?.color ?? 'grey') : undefined}
+				class:active={tab.id === activeTab?.id}
+				class:in-split={inSplit(tab.id)}
+				class:broadcast={broadcastTargets.includes(tab.id)}
+				class:dragging={dragged === tab.id}
+				onclick={() => onTabClick(tab.id)}
+				onpointerdown={(e) => beginDrag(e, tab.id)}
+				oncontextmenu={(e) => {
+					e.preventDefault();
+					menu = { x: e.clientX, y: e.clientY, id: tab.id };
+					void otherWindows().then((w) => (windows = w));
+				}}
+				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') activateTab(tab.id); }}
+				role="tab"
+				tabindex="0"
+				aria-selected={tab.id === activeTab?.id}
+				onpointerenter={() => { if (tab.type === 'vnc') readVncSecurity(tab.id); }}
+				title={tabTooltip(tab)}
+			>
+				{#if tab.type === 'ssh' && tab.detectedOs}
+					<DistroIcon osId={tab.detectedOs} size={14} />
+				{:else}
+					<svg class="tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none">
+						{#if tab.type === 'local'}
+							<path d={terminalIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if isDesktopTab(tab)}
+							<path d={rdpIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if tab.type === 'proxmox'}
+							<path d={PROXMOX_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if tab.type === 'bmc'}
+							<path d={BMC_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if tab.type === 'ftp'}
+							<path d={FOLDER_ICON} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if tab.type === 'devops'}
+							<path d={DEVOPS_TOOLS.find((d) => d.id === tab.devopsTool)?.icon ?? terminalIcon} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+						{:else}
+							<path d={sshIcon} fill="currentColor" />
+						{/if}
+					</svg>
+				{/if}
 
+				<span class="tab-title">{tab.sessionName || tab.title}{#if tab.tmuxWindow?.name}<span class="tab-tmux-window"> · {tab.tmuxWindow.name}</span>{/if}</span>
+				{#if broadcastTargets.includes(tab.id)}
+					<!-- Typing into one of the marked tabs goes to all of them. -->
+					<span class="mark-tip" title={t('broadcast.tab_mark')}><svg class="broadcast-mark" width="13" height="13" viewBox="0 0 24 24" fill="none" role="img" aria-label={t('broadcast.tab_mark')}>
+						<path d={BROADCAST_ICON} stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+					</svg></span>
+				{/if}
+				{#if tab.link}
+					<!-- Seen from any tab: this session dropped, or is coming back. -->
+					<span
+						class="link-mark"
+						class:reconnecting={tab.link === 'reconnecting'}
+						role="img"
+						aria-label={tab.link === 'reconnecting' ? t('terminal.reconnecting') : t('tabs.disconnected')}
+						title={tab.link === 'reconnecting' ? t('terminal.reconnecting') : t('tabs.disconnected')}
+					></span>
+				{/if}
+
+				{#if mcpStatus.enabled && shareIdOf(tab)}
+					{@const sid = shareIdOf(tab) as string}
+					{@const on = mcp.isShared(sid)}
 					<button
-						class="tab-close"
-						onclick={(e) => handleCloseTab(e, tab.id)}
-						aria-label={t('common.close_tab', { title: tab.sessionName || tab.title })}
+						class="tab-share"
+						class:shared={on}
+						onclick={(e) => toggleShare(e, tab)}
+						aria-pressed={on}
+						title={on ? t('mcp.unshare_tab') : t('mcp.share_tab')}
+						aria-label={on ? t('mcp.unshare_tab') : t('mcp.share_tab')}
 					>
-						<svg width="8" height="8" viewBox="0 0 8 8" fill="none">
-							<path d="M1 1l6 6M7 1L1 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+						<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							{#if on}
+								<!-- Live: a filled eye. Reads as "something is watching this" from
+								     across the room, which is the whole point of this control. -->
+								<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="currentColor" opacity="0.9" />
+								<circle cx="12" cy="12" r="2.6" fill="var(--color-bg-primary)" />
+							{:else}
+								<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+								<circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.8" />
+							{/if}
 						</svg>
 					</button>
-				</div>
 				{/if}
-			{/each}
-		</div>
 
-		{#if !mobile && !floating}
-			<button
-				class="new-tab-btn"
-				onclick={(e) => {
-					const r = e.currentTarget.getBoundingClientRect();
-					layoutMenu = { x: r.left, y: r.bottom + 4 };
-				}}
-				title={t('layouts.title')}
-				aria-label={t('layouts.title')}
-				aria-haspopup="menu"
-			>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={LAYOUT_ICON} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
-			</button>
-			<button class="new-tab-btn" onclick={handleNewTab} title={newTabTip} aria-label={newTabTip}>
-				<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-					<path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-				</svg>
-			</button>
-		{/if}
+				<button
+					class="tab-close"
+					onclick={(e) => handleCloseTab(e, tab.id)}
+					aria-label={t('common.close_tab', { title: tab.sessionName || tab.title })}
+				>
+					<svg width="8" height="8" viewBox="0 0 8 8" fill="none">
+						<path d="M1 1l6 6M7 1L1 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+					</svg>
+				</button>
+			</div>
+			{/if}
+		{/each}
+	</div>
+
+	{#if !mobile && !floating}
+		<button
+			class="new-tab-btn"
+			onclick={(e) => {
+				const r = e.currentTarget.getBoundingClientRect();
+				layoutMenu = { x: r.left, y: r.bottom + 4 };
+			}}
+			title={t('layouts.title')}
+			aria-label={t('layouts.title')}
+			aria-haspopup="menu"
+		>
+			<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={LAYOUT_ICON} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+		</button>
+		<button class="new-tab-btn" onclick={handleNewTab} title={newTabTip} aria-label={newTabTip}>
+			<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+				<path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+			</svg>
+		</button>
 	{/if}
 </nav>
 
 {#if menu}
 	<DbMenu x={menu.x} y={menu.y} items={menuItems(menu.id)} onclose={() => (menu = null)} />
-{/if}
-{#if pageMenu}
-	<DbMenu
-		x={pageMenu.x}
-		y={pageMenu.y}
-		items={pages.map((p) => ({ label: p.label(), icon: p.icon, checked: p.id === activePage, action: () => setActivePage(p.id) }))}
-		onclose={() => {
-			pageMenu = null;
-			pageMenuClosedAt = performance.now();
-		}}
-	/>
 {/if}
 {#if layoutMenu}
 	<DbMenu x={layoutMenu.x} y={layoutMenu.y} items={layoutItems()} onclose={() => (layoutMenu = null)} />
@@ -1078,53 +1020,14 @@
 		user-select: none;
 	}
 
-	.page-switcher.floating {
+	/* A little room before the first tab, none in a floating window. */
+	.tabs-lead {
+		width: 6px;
+		flex-shrink: 0;
+	}
+
+	.tabs-lead.floating {
 		display: none;
-	}
-
-	.page-switcher {
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		padding: 0 8px;
-		flex-shrink: 0;
-	}
-
-	.page-btn.page-pick {
-		gap: 6px;
-	}
-
-	.page-btn {
-		display: flex;
-		align-items: center;
-		padding: 4px 10px;
-		border: none;
-		border-radius: 6px;
-		background: transparent;
-		color: var(--color-text-secondary);
-		font-family: var(--font-sans);
-		font-size: 0.6875rem;
-		font-weight: 500;
-		cursor: pointer;
-		white-space: nowrap;
-		transition: background-color 150ms ease, color 150ms ease;
-	}
-
-	.page-btn:hover {
-		background-color: var(--color-bg-secondary);
-		color: var(--color-text-primary);
-	}
-
-	.page-btn.active {
-		background-color: var(--color-bg-elevated, var(--color-bg-secondary));
-		color: var(--color-text-primary);
-	}
-
-	.divider {
-		width: 1px;
-		margin: 8px 0;
-		background: var(--color-border);
-		flex-shrink: 0;
 	}
 
 	/* Scrolls its tabs: without min-width 0 it grew to fit them instead and

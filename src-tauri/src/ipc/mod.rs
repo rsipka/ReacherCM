@@ -23,6 +23,7 @@ pub mod vnc_commands;
 pub mod spice_commands;
 pub mod saved_credential_commands;
 pub mod credential_folder_commands;
+pub mod personal_login_commands;
 pub(crate) mod password_history;
 pub mod session_commands;
 pub mod sftp_commands;

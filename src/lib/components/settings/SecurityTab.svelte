@@ -20,7 +20,8 @@
 		unlockMethods,
 		type UnlockMethods
 	} from '#lib/ipc/vault.js';
-	import { forgetBiometricKeys } from '#lib/ipc/savedCredentials.js';
+	import { forgetBiometricKeys, DEFAULT_KEY_SETTING } from '#lib/ipc/savedCredentials.js';
+	import { sshKeyList, type StoredKeyInfo } from '#lib/ipc/sshkeys.js';
 	import { get as getSetting, set as setSetting } from '#lib/ipc/settings.js';
 	import {
 		PASSWORD_HISTORY_DEFAULT_LIMIT,
@@ -110,6 +111,37 @@
 		}))
 	);
 
+	// "My default key": the imported key sessions set to it sign in with
+	// (a shared vault's, so each member uses their own). Kept in the vault's
+	// settings, so it follows the user to their other devices.
+	let defaultKey = $state('');
+	let importedKeys = $state<StoredKeyInfo[]>([]);
+	let defaultKeyError = $state('');
+	const defaultKeyOptions = $derived([
+		{ label: t('security.default_key_none'), value: '' },
+		...importedKeys.map((k) => ({ label: k.algo ? `${k.name} · ${k.algo}` : k.name, value: k.id })),
+		...(defaultKey && !importedKeys.some((k) => k.id === defaultKey) ? [{ label: t('session.key_missing_option'), value: defaultKey }] : [])
+	]);
+
+	async function loadDefaultKey() {
+		try {
+			importedKeys = await sshKeyList();
+			defaultKey = (await getSetting(DEFAULT_KEY_SETTING)) ?? '';
+		} catch {
+			// Locked: nothing to pick from yet
+		}
+	}
+
+	async function changeDefaultKey(value: string) {
+		defaultKeyError = '';
+		try {
+			await setSetting(DEFAULT_KEY_SETTING, value);
+			defaultKey = value;
+		} catch (e) {
+			defaultKeyError = String(e);
+		}
+	}
+
 	async function loadHistoryLimit() {
 		try {
 			const v = await getSetting(PASSWORD_HISTORY_LIMIT_SETTING);
@@ -180,6 +212,7 @@
 	$effect(() => {
 		loadStatus();
 		void loadHistoryLimit();
+		void loadDefaultKey();
 	});
 
 	async function loadStatus() {
@@ -408,6 +441,19 @@
 					{t('security.host_keys_remove_all_button')}
 				</Button>
 			{/if}
+		</div>
+	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
+			<span class="setting-label">{t('security.default_key')}</span>
+			<span class="setting-description">{t('security.default_key_desc')}</span>
+			{#if defaultKeyError}
+				<span class="form-error">{defaultKeyError}</span>
+			{/if}
+		</div>
+		<div class="setting-control">
+			<Dropdown options={defaultKeyOptions} selected={defaultKey} onchange={(v) => void changeDefaultKey(v)} />
 		</div>
 	</div>
 

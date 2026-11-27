@@ -552,3 +552,25 @@ select:not([multiple]):disabled {
   color: var(--color-text-secondary);
   white-space: pre-line;
 }
+
+/* Sync settings: what is in use right now. A badge beside the label, and
+   an accent bar along the part (Settings > Sync > Sync location). */
+.settings-content .active-badge {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  color: var(--color-accent);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  vertical-align: middle;
+}
+
+.settings-content .in-use {
+  border-inline-start: 3px solid var(--color-accent);
+  padding-inline-start: 10px;
+  margin-inline-start: -13px;
+}

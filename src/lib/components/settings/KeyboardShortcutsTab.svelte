@@ -40,7 +40,8 @@
 	let recorderEl = $state<HTMLElement | null>(null);
 
 	function label(id: ActionId): string {
-		return t(ACTIONS.find((a) => a.id === id)?.label ?? id);
+		const a = ACTIONS.find((x) => x.id === id);
+		return a ? t(a.label, a.labelParams) : id;
 	}
 
 	function save(next: KeyOverrides): void {
@@ -134,7 +135,7 @@
 				{@const keys = keysFor(action.id, overrides, mac)}
 				{@const changed = !isDefault(action.id, overrides, mac)}
 				<div class="shortcut-row" class:changed>
-					<span class="setting-label">{t(action.label)}</span>
+					<span class="setting-label">{t(action.label, action.labelParams)}</span>
 					<div class="keys">
 						{#if keys.length === 0 && recording?.id !== action.id}
 							<span class="none">{t('shortcuts.none')}</span>

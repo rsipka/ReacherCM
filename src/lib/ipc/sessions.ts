@@ -361,6 +361,13 @@ export interface CredentialUse {
   /** Not in the session's vault (deleted, or not synced yet): the session's
    *  own stored login is used. */
   missing?: boolean;
+  /** Set when the session or its folder asks for each person's own login
+   *  (`credential_id` = PERSONAL_LOGIN): the session or folder id the
+   *  reader's choice is kept under. `missing` then means none is chosen. */
+  personal_target?: string | null;
+  /** With `personal_target`: the session's own user name, which the
+   *  reader's choice may have replaced. The editor shows and keeps it. */
+  own_username?: string | null;
 }
 
 /** A config file as it was read at import. */

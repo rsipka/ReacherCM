@@ -162,3 +162,32 @@ export async function forgetBiometricKeys(): Promise<void> {
 export async function setKeysUnlockEnabled(enabled: boolean): Promise<void> {
   return invoke('credential_keys_unlock_enabled', { enabled });
 }
+
+/** A session's or folder's `credential_id` that says: each person signs in
+ *  with their own login, chosen in their own vault (see PersonalLoginDialog). */
+export const PERSONAL_LOGIN = 'personal';
+
+/** A personal choice, and an imported-key id, that means: the session's user
+ *  name with the SSH key picked in Settings > Security > Default SSH key. */
+export const DEFAULT_KEY = '@default';
+
+/** The setting naming the imported key used as "My default key". */
+export const DEFAULT_KEY_SETTING = 'ssh_default_key';
+
+/** One person's own login for a session or folder that asks for it. */
+export interface PersonalLogin {
+  /** The session or folder id. */
+  target: string;
+  /** One of their own saved credentials, or DEFAULT_KEY. */
+  credential_id: string;
+}
+
+export async function personalLoginList(): Promise<PersonalLogin[]> {
+  return invoke<PersonalLogin[]>('personal_login_list');
+}
+
+/** Choose (or, with null, forget) the current person's own login for a
+ *  session or folder that asks for each person's own. */
+export async function personalLoginSet(target: string, credentialId: string | null): Promise<void> {
+  return invoke<void>('personal_login_set', { target, credentialId });
+}

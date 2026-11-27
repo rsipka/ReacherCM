@@ -530,6 +530,17 @@ pub struct CredentialUse {
     /// yet): the session's own stored login was used.
     #[serde(default)]
     pub missing: bool,
+    /// Set when the session or its folder says "each person's own login"
+    /// (`credential_id` = `personal`): the session or folder id the reading
+    /// person's choice is kept under, in their own vault. `missing` then
+    /// means they have not chosen one yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub personal_target: Option<String>,
+    /// With `personal_target`: the session's own user name, which the
+    /// reader's choice may have replaced. The editor shows and keeps this
+    /// one, so saving never writes someone's own user name to the session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own_username: Option<String>,
 }
 
 /// Proxy configuration for SSH connections (Tor, SOCKS5, HTTP CONNECT).
