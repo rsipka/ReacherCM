@@ -39,6 +39,7 @@ const CHANGED = {
 	compactLayout: true,
 	terminalBar: 'hover',
 	mobileBarKeys: ['esc', 'tab'],
+	mobileBarShow: 'never',
 	doubleClickToOpen: true,
 	showUnsupportedSessions: false,
 	closeTabOnExit: true,
