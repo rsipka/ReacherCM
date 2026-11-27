@@ -206,7 +206,7 @@
 									<span>{t('sync.pending_changes', { count: String(vault.pending) })}</span>
 								{/if}
 								{#if vault.lastError}
-									<span class="bad">{t('sync.sync_failed', { error: vault.lastError })}</span>
+									<span class="bad">{t('sync.sync_failed', { error: t(vault.lastError) })}</span>
 								{/if}
 								{#if vault.conflicts > 0}
 									<span class="warning">{t('sync.conflicts', { count: String(vault.conflicts) })}</span>

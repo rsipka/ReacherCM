@@ -56,6 +56,12 @@ pub enum VaultError {
     #[error("Sync error: {0}")]
     SyncError(String),
 
+    #[error("organization.verify_owner_required")]
+    OrganizationOwnerVerificationRequired,
+
+    #[error("organization.rotation_upgrade_required")]
+    OrganizationRotationUpgradeRequired,
+
     #[error("Keychain error: {0}")]
     KeychainError(String),
 

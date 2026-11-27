@@ -71,8 +71,15 @@
 		window.dispatchEvent(new CustomEvent('reach:sessions-changed'));
 	}
 
-	function open(vaultId: string, manage = false, ownerKey?: string): Promise<void> {
-		return run(async () => {
+	function promptForOwnerKey(vaultId: string): void {
+		if (error === 'organization.verify_owner_required' && verifying !== vaultId) {
+			verifying = vaultId;
+			verifiedOwnerKey = '';
+		}
+	}
+
+	async function open(vaultId: string, manage = false, ownerKey?: string): Promise<void> {
+		await run(async () => {
 			const vault = await invoke<{ id: string; name: string }>('vault_organization_open', {
 				organization, vaultId, verifiedOwnerKey: ownerKey
 			});
@@ -90,6 +97,7 @@
 				await activate(vault.id);
 			}
 		});
+		promptForOwnerKey(vaultId);
 	}
 
 	function create(event: SubmitEvent): void {
@@ -120,13 +128,14 @@
 		});
 	}
 
-	function finishRotation(vaultId: string): Promise<void> {
-		return run(async () => {
+	async function finishRotation(vaultId: string): Promise<void> {
+		await run(async () => {
 			await invoke('vault_organization_open', { organization, vaultId });
 			await invoke('vault_organization_finish_rotation', { vaultId });
 			await loadVaults();
 			message = 'organization.key_rotated';
 		});
+		promptForOwnerKey(vaultId);
 	}
 
 	function grant(event: SubmitEvent): void {
@@ -197,6 +206,7 @@
 						{#if vault.rotation_required}
 							<p>{t('organization.rotation_pending')}</p>
 							{#if vault.role === 'owner'}
+								<p>{t('organization.rotation_update_clients')}</p>
 								<button type="button" disabled={busy} onclick={() => finishRotation(vault.id)}>
 									{t('organization.finish_rotation')}
 								</button>
@@ -235,6 +245,7 @@
 								</label>
 								{#if confirmingTransfer}
 									<p>{t('organization.transfer_confirm')}</p>
+									<p>{t('organization.rotation_update_clients')}</p>
 									<div class="actions">
 										<button type="button" disabled={busy} onclick={() => changeGrant('owner')}>{t('common.confirm')}</button>
 										<button type="button" disabled={busy} onclick={() => confirmingTransfer = false}>{t('common.cancel')}</button>

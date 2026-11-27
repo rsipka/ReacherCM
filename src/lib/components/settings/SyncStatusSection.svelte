@@ -40,7 +40,7 @@
 			await action();
 			addToast(done, 'success');
 		} catch (e) {
-			addToast(e instanceof Error ? e.message : String(e), 'error');
+			addToast(t(e instanceof Error ? e.message : String(e)), 'error');
 		} finally {
 			busy = null;
 			confirmUpgrade = null;
@@ -71,7 +71,7 @@
 						<span class="setting-description">{t('sync.pending_changes', { count: String(s.pending) })}</span>
 					{/if}
 					{#if s.lastError}
-						<span class="setting-description bad">{t('sync.sync_failed', { error: s.lastError })}</span>
+						<span class="setting-description bad">{t('sync.sync_failed', { error: t(s.lastError) })}</span>
 					{/if}
 					{#if s.format === 'legacy'}
 						<span class="setting-description warn">{t('sync.legacy_format')}</span>
