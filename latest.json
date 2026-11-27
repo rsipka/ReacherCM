@@ -1,0 +1,47 @@
+{
+  "version": "26.11.1-dev.11",
+  "notes": "Reacher CM Dev 26.11.1-dev.11, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.10:\n\n- More preferences sync by default\n- DevOps tab in New session\n- Fewer sidebar buttons\n- Container hosts, database connections and Ansible/OpenTofu projects in the Sessions list\n- Organization vaults on iOS and Android\n- Managed Sync vault access\n- Sync location starts on the Reacher CM account\n- VeNCrypt for VNC sessions\n- DevOps workspaces open as tabs, from the Sessions list\n- Each person's own login in shared vaults\n- My default SSH key\n- Sync, Account and Backup settings reorganised\n- Keys to switch tabs\n- FTP/SFTP/SCP file sessions and the full-pane file manager on phones and tablets\n- Better on Samsung DeX\n- Notification position, history and system notifications\n- Byobu and Zellij\n- Keys no longer repeat by themselves on remote desktops\n- QR code scanning on Android phones without Google\n- Shorter tmux session name\n- Missing session log folders\n- Sync more application preferences\n- Choose which preferences sync on each device\n- Sign in to Account Sync from setup\n- iDRAC VNC on phones and tablets\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+  "pub_date": "2026-11-27T23:36:05.075Z",
+  "platforms": {
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabG5DUXpXZGFKTnRLcGIxM0hWYkNJaUxHVy8xNlZiL2VoTVRaR04zeUgzeUNVTXRWU2NvTjdLdnZwc1Q0MHJlZzh5cDNIZXE5VmdxSHMxMWxneVQ4WUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIxNzQ2CWZpbGU6UmVhY2hlckNNLmFwcC50YXIuZ3oJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQp3ei9Nc0tOOE5XSWpueWpRdmx2ZDNxNFVyaHpjbGpyQStXVUY2dUxORDdkWkU4YjB3Mk1LZmtqQldITjFETkJLNmRXVWZwSGJrMCt3WFl3UWFVaDhCZz09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802426989"
+    },
+    "darwin-x86_64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabG5DUXpXZGFKTnRLcGIxM0hWYkNJaUxHVy8xNlZiL2VoTVRaR04zeUgzeUNVTXRWU2NvTjdLdnZwc1Q0MHJlZzh5cDNIZXE5VmdxSHMxMWxneVQ4WUEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIxNzQ2CWZpbGU6UmVhY2hlckNNLmFwcC50YXIuZ3oJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQp3ei9Nc0tOOE5XSWpueWpRdmx2ZDNxNFVyaHpjbGpyQStXVUY2dUxORDdkWkU4YjB3Mk1LZmtqQldITjFETkJLNmRXVWZwSGJrMCt3WFl3UWFVaDhCZz09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802426989"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabHFsanIwQ1NDV2xBR0V3UTlRM3Jra0ZqcWtPU2pzaitUNXBVZDIvcEo1clJ6dnp2WHFORHR4c3dkUER3K0JETDFNNldwTFpqZVdFZDVYUGtVeHZHT0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyMDc3CWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX2FtZDY0LkFwcEltYWdlLnRhci5negl2ZXJzaW9uOjI2LjExLjEtZGV2LjExCnNwUGlTbCtQdjdDUlBqb0hieDFXQlIrTFdhNFhsN0tGa1NYdm55a214MlhJemZMV2hiQ2JHZGRHQTRnMWE3NHNiSTNmSlVoaHdXLzhGNzhSeDRQSkJRPT0K",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802437463"
+    },
+    "linux-x86_64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabHJqRUdMb1lXK01MTE5DRk9wd3dIYThnQzFQRE0xVWE4WUhnTEV3M2xIOUtSMCs5MUFQSmx0UXVVc2V0RHNTc1pJN1V3VEdEZUVBOVlGek1aalgwV3dnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyMDc3CWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX2FtZDY0LkFwcEltYWdlCXZlcnNpb246MjYuMTEuMS1kZXYuMTEKbVhXL3RscjQ3UjBVTy93Wm4xQ1hqemRPR296VU5KVUM5SGg3eXcyQUUrN2dhRWI2dWtXQW52bnpoTWJHZ0J1QStKSGw0b2pZNnRhVmJNT0Y3cTZUQnc9PQo=",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802437349"
+    },
+    "linux-x86_64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabHBmV1ZtdGVoQW5QZER0TUhGMSt4dDJZMlpVT0puaW1WY2o5b3BQa2RUSWtTanpZU3FHMTI4Y0pTa20wNGlUWVNvcDluUU1XK1lxMFRGREYxeUxOdlFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyMDc3CWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX2FtZDY0LmRlYgl2ZXJzaW9uOjI2LjExLjEtZGV2LjExCklvS2tQK1FabnZFVi9abTF2amJPVVE4eFhlTjM3TmRBVkhwNDdWNjJDU043eFJqNGZnSVZaYlZOMUc1Nyt4SG9HVVBXUEZxV2hRUDFzSVlpT0RUL0F3PT0K",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802437287"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabGtWS0V1UE5rMTdqc2xRT21MZWZvaVhPQjAvYTcyZmVKTlVzUFVtVmJqeGp2czJlNkZmS2V2S2VLZHpMSW1UdlFwTFB1VWVLTWd3bHpjbWFKa0liYndVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyNTExCWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX3g2NC1zZXR1cC5uc2lzLnppcAl2ZXJzaW9uOjI2LjExLjEtZGV2LjExCi9kZHVqc1dvSVlFMHNKNkd4S0JKSHRrME1yM0cvZ3ZTTWdlUldKeE50MDZLRDNBNHRVSVpTMmc3M3pYRUZ5MHRialp1NGxRSFcvR2FXamJySXFyZkRRPT0K",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802453844"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabHNGVDRXdTZCdDA5eXQzQUtxK0ZCbi9QeEFVaU5uakxRMkFSeTlHNnFOSmhaQ2FaVVJ6SGgzRlczMG05UVhqdDg5Um1rR2ZzSmNlclh5SldVY2d0dUFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyNTExCWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX3g2NC1zZXR1cC5leGUJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQp2UkJ3RUxpbDBkOXNMd05RZTFnOVplclUvQXIzV0VSWnRvd3JlbVJRYXhxMG1Tbkswd05mN01MZVp5QmVRdHM1aVp4am1pNGxBSGZaSmM3VHFVTjNEZz09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802453718"
+    },
+    "windows-x86_64-msi": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabGx6S0RETFhneDh4SzZoajRvckYzUldVaEdvbEpkRlZjNEg3TnRuUUlGVTFqa3BHenl1MDdNUCsvNzJCZFRwV1RKVFdreGtvbnV3T1I5YzlLYk9LV3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyNTExCWZpbGU6UmVhY2hlckNNXzI2LjExLjEtZGV2LjExX3g2NF9lbi1VUy5tc2kJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQpvUkNmRGZwcnQ1Q2hpc1ByRytCWEFzZHEwQ0tFNGtjVktoSUV3RW9Tb3ZUalpPTjBlbzMvZW14OWw5NGI0NE1pOE1JTTN2THhUWWdZWitBU2o0Q3dDQT09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802453412"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabG55K21VeldmRHhoZUxHS3oyL1hTSFlZelJWbGdna3lmWFdNYllTZ3JmdythM1dQd1ljUEc0M0JZOUZaYVhoRDh0bjJwdERQZTF3dEpMV1JwcyttaGdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyNDMyCWZpbGU6UmVhY2hlckNNLmFwcC50YXIuZ3oJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQpWUVFObHprSm5XQ0Z5NUx1WEY1cGovbkdUYjdGcjZtTnF6emdqVjJYL3prYVAxQXEwNUZ6ODEyUjhTQzE5cEphUjZnVFpIUk5WckRLSU9YU2pHTXdEZz09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802452681"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRQkpFRnpZckdabG55K21VeldmRHhoZUxHS3oyL1hTSFlZelJWbGdna3lmWFdNYllTZ3JmdythM1dQd1ljUEc0M0JZOUZaYVhoRDh0bjJwdERQZTF3dEpMV1JwcyttaGdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1ODIyNDMyCWZpbGU6UmVhY2hlckNNLmFwcC50YXIuZ3oJdmVyc2lvbjoyNi4xMS4xLWRldi4xMQpWUVFObHprSm5XQ0Z5NUx1WEY1cGovbkdUYjdGcjZtTnF6emdqVjJYL3prYVAxQXEwNUZ6ODEyUjhTQzE5cEphUjZnVFpIUk5WckRLSU9YU2pHTXdEZz09Cg==",
+      "url": "https://api.github.com/repos/rsipka/ReacherCM/releases/assets/802452681"
+    }
+  }
+}

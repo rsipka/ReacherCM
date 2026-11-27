@@ -1,0 +1,141 @@
+{
+  "name": "Reacher CM",
+  "identifier": "com.reachercm.client",
+  "subtitle": "Unsigned Reacher CM builds for LiveContainer and sideloading",
+  "description": "Unsigned iOS builds of Reacher CM, a personal fork of the Reach SSH, SFTP, RDP and VNC client, made by GitHub Actions for each release.",
+  "iconURL": "https://raw.githubusercontent.com/rsipka/ReacherCM/main/src-tauri/icons/ios/AppIcon-512@2x.png",
+  "website": "https://github.com/rsipka/ReacherCM",
+  "tintColor": "#43E6B0",
+  "nsfw": false,
+  "featuredApps": [
+    "com.reachercm.client"
+  ],
+  "apps": [
+    {
+      "name": "Reacher CM",
+      "bundleIdentifier": "com.reachercm.client",
+      "developerName": "Reacher CM",
+      "subtitle": "SSH, SFTP, RDP and VNC client",
+      "localizedDescription": "Reacher CM is a personal fork of Reach with additional features: SSH, SFTP, RDP, VNC, Telnet and serial sessions, an encrypted vault and sync. This is an early, unsigned iOS build, meant for LiveContainer or for signing yourself.",
+      "iconURL": "https://raw.githubusercontent.com/rsipka/ReacherCM/main/src-tauri/icons/ios/AppIcon-512@2x.png",
+      "tintColor": "#43E6B0",
+      "category": "developer",
+      "versions": [
+        {
+          "version": "26.11.1",
+          "buildVersion": "11",
+          "marketingVersion": "26.11.1-dev.11",
+          "date": "2026-11-27T23:46:28.853Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.11, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.10:\n\n- More preferences sync by default\n- DevOps tab in New session\n- Fewer sidebar buttons\n- Container hosts, database connections and Ansible/OpenTofu projects in the Sessions list\n- Organization vaults on iOS and Android\n- Managed Sync vault access\n- Sync location starts on the Reacher CM account\n- VeNCrypt for VNC sessions\n- DevOps workspaces open as tabs, from the Sessions list\n- Each person's own login in shared vaults\n- My default SSH key\n- Sync, Account and Backup settings reorganised\n- Keys to switch tabs\n- FTP/SFTP/SCP file sessions and the full-pane file manager on phones and tablets\n- Better on Samsung DeX\n- Notification position, history and system notifications\n- Byobu and Zellij\n- Keys no longer repeat by themselves on remote desktops\n- QR code scanning on Android phones without Google\n- Shorter tmux session name\n- Missing session log folders\n- Sync more application preferences\n- Choose which preferences sync on each device\n- Sign in to Account Sync from setup\n- iDRAC VNC on phones and tablets\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.11/ReacherCM_26.11.1-dev.11_ios_arm64_unsigned.ipa",
+          "size": 35056185,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "10",
+          "marketingVersion": "26.11.1-dev.10",
+          "date": "2026-11-25T13:36:44.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.10, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.9:\n\n- Connect without the WireGuard tunnel\n- iDRAC 9 remote console works on newer firmware\n- iDRAC remote console waits for its one-time login\n- Remote console tooltip and SSH button for server management\n- Newer session settings in bulk edit\n- iDRAC no longer shown as UniFi; server makers' logos for management controllers\n- Sessions a phone can't open stay in the list, greyed out\n- WireGuard for FTP/FTPS and Server management sessions\n- Proxmox VE sessions\n- Authenticated organization vault rotations\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.10/ReacherCM_26.11.1-dev.10_ios_arm64_unsigned.ipa",
+          "size": 34700368,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "9",
+          "marketingVersion": "26.11.1-dev.9",
+          "date": "2026-11-24T23:23:44.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.9, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.8:\n\n- Vault sync status from the bottom bar\n- Sync account in the bottom bar\n- Encrypted personal vault sync on mobile\n- SSH library updated to russh 0.65.4\n- Send keys and a pinnable full-screen bar for remote desktops\n- Remote and text console for server management sessions\n- Vault sync status by device\n- Mobile sync account pairing\n- RD Gateway for RDP sessions\n- Licence changed to GPL-3.0-or-later\n- Shared vault key rotation\n- WireGuard shown where it is used, and off when unused\n- Seamless RemoteApp windows answer clicks\n- Organization vaults\n- Server management sessions (iDRAC, iLO, Redfish)\n- Encrypted personal vault sync\n- Desktop preference sync\n- More shared folders and Kerberos login for RDP\n- Reacher CM Sync account sign-in\n- WireGuard tunnels for sessions\n- One list per dropdown on iPhone and iPad\n- File manager for RDP sessions\n- RemoteApp\n- macOS window buttons in line with the top bar\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.9/ReacherCM_26.11.1-dev.9_ios_arm64_unsigned.ipa",
+          "size": 33913206,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "8",
+          "marketingVersion": "26.11.1-dev.8",
+          "date": "2026-11-23T23:01:21.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.8, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.7:\n\n- Tray icon tooltip and menu\n- More RDP settings, like Remote Desktop Manager\n- ZMODEM in tmux tabs\n- Screenshots of a session\n- Login fields back after switching session type\n- Network tools: ping, port scan, Wake-on-LAN\n- Mute button in the top bar\n- Local TFTP, FTP, SFTP and HTTP servers\n- Network tools: ping, port scan, Wake-on-LAN\n- ZMODEM: no protocol bytes left in the terminal\n- tmux windows in a new tab from the terminal bar\n- FTP, SFTP and SCP sessions\n- Connect to another address or with another login from the session menu\n- Saved host keys no longer lost by sync\n- tmux in the terminal bar, and a session picker there\n- tmux sessions named `reachercm-…`\n- Virtual consoles open from web sessions\n- Folders for saved credentials\n- Transfer queue and easier Compare in the full-pane file manager, and Open file manager from the session menu\n- GNOME Remote Login from phones\n- Session types grouped in the session editor\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.8/ReacherCM_26.11.1-dev.8_ios_arm64_unsigned.ipa",
+          "size": 31932357,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "7",
+          "marketingVersion": "26.11.1-dev.7",
+          "date": "2026-11-21T12:27:37.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.7, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.6:\n\n- Session types grouped in the session editor\n- Right-click menus in the full-pane file manager\n- ZMODEM: buttons, folders\n- Tunnels through saved SSH sessions\n- GNOME Remote Login over RDP\n- FreeRDP on X11\n- SSH key passphrases with Windows Hello and macOS Touch ID\n- FreeRDP for saved RDP sessions\n- Forward lock key presses in RDP sessions\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.7/ReacherCM_26.11.1-dev.7_ios_arm64_unsigned.ipa",
+          "size": 31488228,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "6",
+          "marketingVersion": "26.11.1-dev.6",
+          "date": "2026-11-20T23:28:06.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.6, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.5:\n\n- Wider session editor with two columns\n- Terminal type, Backspace key and encoding for SSH sessions\n- Open sessions stand out in the session list\n- Long press a session on a phone for its menu\n- Remote desktop: held keys repeat, lock keys follow yours\n- System theme with a light and a dark theme of your choice\n- 11 colourful app themes\n- Folder icons\n- Password history\n- A different jump host for each address\n- X11 desktop sessions\n- Connect with another saved credential\n- SSH tab tooltip shows the algorithms in use\n- Session tooltips show the other addresses themselves\n- Quick command history\n- Web sessions, with sign-in\n- ZMODEM file transfer (rz/sz)\n- Compatible SSH reaches servers with 2048-bit group exchange\n- Removing a jump host sticks\n- Remote desktop keeps its size when you switch tabs\n- SPICE sessions\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.6/ReacherCM_26.11.1-dev.6_ios_arm64_unsigned.ipa",
+          "size": 31508499,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "5",
+          "marketingVersion": "26.11.1-dev.5",
+          "date": "2026-11-20T13:12:05.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.5, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.4:\n\n- WinBox 4 sessions\n- Raspberry Pi OS detected\n- Floating session windows\n- Terminals without WebGL2 work\n- Several addresses for one server\n- IronRDP updated\n- Full-pane file manager for SSH tabs\n- Configurable keyboard shortcuts\n- Session sharing works, and Start and Join are in the + menu\n- Split the view any way, and drag panes where you want them\n- Mute sounds, and a configurable terminal bell\n- Find in the terminal's right-click menu, longer scrollback, line numbers and timestamps\n- Log files named after the session\n- Smoother text selection in the terminal on Linux\n- What's new in an update\n- Highlight errors and addresses in the terminal\n- OS logos back in colour, and shown in the OS icon list\n- More in a tab's right-click menu\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.5/ReacherCM_26.11.1-dev.5_ios_arm64_unsigned.ipa",
+          "size": 30151157,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "4",
+          "marketingVersion": "26.11.1-dev.4",
+          "date": "2026-11-19T22:42:12.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.4, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.3:\n\n- Face ID on iPhone and iPad, and SSH keys unlocked with biometrics on phones\n- MikroTik and UniFi devices get their own icon\n- Server fingerprints saved with the session\n- Keys unlocked at start work outside credentials too\n- Local shell history under the computer's name\n- Longer first-run setup, and run it again from Settings\n- Old name gone from messages\n- Website, changelog and license in About\n- Update check moved to About\n- Pictures and file transfers on the RDP clipboard\n- RDP files on phones and tablets\n- See which sessions go through a jump host or proxy\n- Close from the Session ended overlay\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.4/ReacherCM_26.11.1-dev.4_ios_arm64_unsigned.ipa",
+          "size": 29653348,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "3",
+          "marketingVersion": "26.11.1-dev.3",
+          "date": "2026-11-19T14:39:35.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.3, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.2:\n\n- Pictures and file transfers on the RDP clipboard\n- Easy legacy SSH algorithms for old devices\n- Password logins to servers that only ask through keyboard-interactive\n- See which sessions go through a jump host or proxy\n- RDP to GNOME Remote Desktop\n- Put sessions in your own order\n- Clone a session\n- Show what you typed in password fields\n- Scanning a link QR code no longer crashes on Android\n- Selection cleared after a bulk edit\n- iPhone and iPad: no app zoom, app fits above the keyboard\n- No local terminal on phones and tablets\n- No passphrase box while a session connects by itself\n- Settings kept across restarts\n- Selected text keeps its font on macOS\n- Close the tab when a session ends\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.3/ReacherCM_26.11.1-dev.3_ios_arm64_unsigned.ipa",
+          "size": 29317745,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "26.11.1",
+          "buildVersion": "2",
+          "marketingVersion": "26.11.1-dev.2",
+          "date": "2026-11-19T09:27:48.000Z",
+          "localizedDescription": "Reacher CM Dev 26.11.1-dev.2, a pre-release built from the fork's main.\n\nFixes and small changes; see CHANGELOG.md.\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+          "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.2/ReacherCM_26.11.1-dev.2_ios_arm64_unsigned.ipa",
+          "size": 29196144,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "version": "26.11.1",
+      "versionDate": "2026-11-27T23:46:28.853Z",
+      "versionDescription": "Reacher CM Dev 26.11.1-dev.11, a pre-release built from the fork's main.\n\nNew since v26.11.1-dev.10:\n\n- More preferences sync by default\n- DevOps tab in New session\n- Fewer sidebar buttons\n- Container hosts, database connections and Ansible/OpenTofu projects in the Sessions list\n- Organization vaults on iOS and Android\n- Managed Sync vault access\n- Sync location starts on the Reacher CM account\n- VeNCrypt for VNC sessions\n- DevOps workspaces open as tabs, from the Sessions list\n- Each person's own login in shared vaults\n- My default SSH key\n- Sync, Account and Backup settings reorganised\n- Keys to switch tabs\n- FTP/SFTP/SCP file sessions and the full-pane file manager on phones and tablets\n- Better on Samsung DeX\n- Notification position, history and system notifications\n- Byobu and Zellij\n- Keys no longer repeat by themselves on remote desktops\n- QR code scanning on Android phones without Google\n- Shorter tmux session name\n- Missing session log folders\n- Sync more application preferences\n- Choose which preferences sync on each device\n- Sign in to Account Sync from setup\n- iDRAC VNC on phones and tablets\n\niPhone and iPad: add https://raw.githubusercontent.com/rsipka/ReacherCM/update-feed/apps.json as a source in LiveContainer to get updates.\nFull list of changes: https://github.com/rsipka/ReacherCM/blob/main/CHANGELOG.md",
+      "downloadURL": "https://github.com/rsipka/ReacherCM/releases/download/v26.11.1-dev.11/ReacherCM_26.11.1-dev.11_ios_arm64_unsigned.ipa",
+      "size": 35056185,
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSLocalNetworkUsageDescription": "Reach connects to servers on your local network over SSH, RDP and VNC when you ask it to.",
+          "NSFaceIDUsageDescription": "Face ID unlocks your vault and the SSH keys you chose to remember with it.",
+          "NSCameraUsageDescription": "The camera reads the QR code that links this device to your other one."
+        }
+      }
+    }
+  ],
+  "news": []
+}
