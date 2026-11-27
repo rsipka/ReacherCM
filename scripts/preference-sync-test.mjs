@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import en from '../src/lib/i18n/locales/en.json' with { type: 'json' };
 import {
-	DEFAULT_SKIPPED_KEYS, LEGACY_PREFERENCE_KEYS, PREFERENCE_CATALOG, decodePreferences, encodePreferences,
+	DEFAULT_SKIPPED_KEYS, DEFAULT_SYNC_KEYS, LEGACY_PREFERENCE_KEYS, PREFERENCE_CATALOG, decodePreferences, encodePreferences,
+	unavailablePreferenceKeys,
 } from '../src/lib/sync/preference-catalog.ts';
 import {
-	incomingPreferences, portablePreferences, PREFERENCE_KEYS, readPreferenceJournal,
+	incomingPreferences, portablePreferences, PREFERENCE_CATALOG_VERSION, PREFERENCE_KEYS, readPreferenceJournal,
 	reconcilePreferences, setPreferenceIncluded,
 } from '../src/lib/sync/preferences.ts';
 
 function journal(pending = {}, initialized = false) {
-	return { initialized, pending, remote: {}, skipped: [...DEFAULT_SKIPPED_KEYS], catalogVersion: 3, seed: [] };
+	return { initialized, pending, remote: {}, skipped: [...DEFAULT_SKIPPED_KEYS], catalogVersion: PREFERENCE_CATALOG_VERSION, seed: [] };
 }
 
 test('only allowlisted preferences leave the device', () => {
@@ -82,13 +83,36 @@ test('a response from a previous account cannot apply or acknowledge edits', asy
 	assert.deepEqual(state.pending, { theme: 'system' });
 });
 
-test('saved choices survive a restart and existing journals still sync every preference', () => {
+test('saved choices survive a restart and older journals adopt defaults', () => {
 	const legacy = { initialized: true, pending: { theme: 'light' }, remote: { theme: 'dark', locale: 'cs' } };
-	assert.deepEqual(readPreferenceJournal(legacy), { ...legacy, skipped: DEFAULT_SKIPPED_KEYS, catalogVersion: 3, seed: [] });
+	assert.deepEqual(readPreferenceJournal(legacy), {
+		...legacy, skipped: DEFAULT_SKIPPED_KEYS, catalogVersion: PREFERENCE_CATALOG_VERSION,
+		seed: PREFERENCE_KEYS.filter((key) => DEFAULT_SYNC_KEYS.includes(key) && !LEGACY_PREFERENCE_KEYS.includes(key)),
+	});
 	const saved = JSON.parse(JSON.stringify({ ...legacy, catalogVersion: 3, skipped: ['theme', 'theme', 'unknown'] }));
 	assert.deepEqual(readPreferenceJournal(saved), {
-		initialized: true, pending: {}, remote: { locale: 'cs' }, skipped: ['theme'], catalogVersion: 3, seed: [],
+		initialized: true, pending: {}, remote: { locale: 'cs' }, skipped: ['theme'], catalogVersion: PREFERENCE_CATALOG_VERSION, seed: [],
 	});
+});
+
+test('desktop and mobile seed only settings they use, keeping existing server values', async () => {
+	const oldDefaults = PREFERENCE_KEYS.filter((key) => !LEGACY_PREFERENCE_KEYS.includes(key) && key !== 'mobileBarShow');
+	const local = { themeLight: 'local-light', fontSize: '16', uiZoom: '1.25', minimizeToTray: 'true',
+		mobileBarShow: 'auto', mobileBarKeys: '["esc"]', sessionLogFolder: '/example' };
+	const values = { themeLight: 'saved-light', fontSize: '18', mobileBarKeys: '["tab"]', uiZoom: '1.5' };
+	for (const mobile of [false, true]) {
+		const state = readPreferenceJournal({ catalogVersion: 3, skipped: oldDefaults, initialized: true }, unavailablePreferenceKeys(mobile));
+		const outgoing = mobile ? { mobileBarShow: 'auto' } : { minimizeToTray: 'true' };
+		const latest = await reconcilePreferences(state, async (patch) => {
+			if (patch) assert.deepEqual(patch, { revision: 5, changes: outgoing });
+			return { revision: patch ? 6 : 5, values: patch ? { ...values, ...outgoing } : values,
+				supported: PREFERENCE_KEYS, conflict: false };
+		}, () => local, () => true, () => {});
+		assert.deepEqual(latest, mobile
+			? { themeLight: 'saved-light', fontSize: '18', mobileBarKeys: '["tab"]', mobileBarShow: 'auto' }
+			: { themeLight: 'saved-light', fontSize: '18', uiZoom: '1.5', minimizeToTray: 'true' });
+		assert.equal(state.skipped.includes('sessionLogFolder'), true);
+	}
 });
 
 test('a skipped preference is excluded from local edits, the first upload, and remote values', async () => {
@@ -171,6 +195,7 @@ test('the preference catalog uses localized labels and preserves typed values ac
 
 test('an old server still syncs legacy edits and keeps new selections queued for an upgrade', async () => {
 	const state = journal({ locale: 'cs', fontSize: '18' }, true);
+	state.skipped.push('fontSize');
 	setPreferenceIncluded(state, 'fontSize', true);
 	const legacyRequest = [];
 	await reconcilePreferences(state, async (patch) => {
@@ -194,6 +219,7 @@ test('an old server still syncs legacy edits and keeps new selections queued for
 
 test('first opt-in only seeds missing values and preserves a value another device uploads first', async () => {
 	const state = journal({}, true);
+	state.skipped.push('fontSize', 'compactLayout');
 	setPreferenceIncluded(state, 'fontSize', true);
 	setPreferenceIncluded(state, 'compactLayout', true);
 	const sent = [];

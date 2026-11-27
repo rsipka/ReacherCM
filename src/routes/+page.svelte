@@ -603,6 +603,7 @@
 	}
 
 	.terminal-wrapper {
+		--terminal-bar-height: 34px;
 		position: absolute;
 		inset: 0;
 		display: none;
@@ -626,8 +627,8 @@
 		inset: 0;
 	}
 
-	.bar-slot:not(.hover-only) + .pane-body {
-		top: 34px;
+	.bar-slot + .pane-body {
+		top: var(--terminal-bar-height);
 	}
 
 	/* Laid out as the page it was: a column its workspace fills. */
@@ -667,21 +668,26 @@
 	}
 
 	@media (pointer: coarse) {
-		.bar-slot:not(.hover-only) + .pane-body {
-			top: 40px;
+		.terminal-wrapper {
+			--terminal-bar-height: 40px;
 		}
 	}
 
 	/* "On hover": the bar lies over the top of the terminal, shown while the
 	   pointer is near, so the terminal keeps its full height. */
-	.bar-slot.hover-only {
-		opacity: 0;
-		transition: opacity 120ms ease;
-	}
+	@media (hover: hover) {
+		.bar-slot.hover-only {
+			opacity: 0;
+			transition: opacity 120ms ease;
+		}
+		.bar-slot.hover-only + .pane-body {
+			top: 0;
+		}
 
-	.terminal-wrapper:hover .bar-slot.hover-only,
-	.bar-slot.hover-only:focus-within {
-		opacity: 1;
+		.terminal-wrapper:hover .bar-slot.hover-only,
+		.bar-slot.hover-only:focus-within {
+			opacity: 1;
+		}
 	}
 
 	/* Split (#106): which pane has the keyboard is drawn, faintly, so typing

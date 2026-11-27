@@ -8,7 +8,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { isMobile } from '#lib/platform.js';
 	import { syncAccountErrorKey } from '#lib/sync/account.js';
-	import { PREFERENCE_CATALOG, PREFERENCE_KEYS, type PreferenceKey } from '#lib/sync/preference-catalog.js';
+	import { PREFERENCE_CATALOG, PREFERENCE_KEYS, unavailablePreferenceKeys, type PreferenceKey } from '#lib/sync/preference-catalog.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	import {
@@ -17,6 +17,7 @@
 	} from '#lib/state/preference-sync.svelte.js';
 
 	const mobile = isMobile();
+	const unavailableOnDevice = unavailablePreferenceKeys(mobile);
 	const groupLabels = {
 		general: 'settings.general',
 		appearance: 'settings.appearance',
@@ -217,7 +218,7 @@
 							<span class="setting-label">{label}</span>
 						</div>
 						<div class="setting-control">
-							{#if definition.kind === 'local' || (key === 'sessionLogFolder' && mobile)}
+							{#if definition.kind === 'local' || unavailableOnDevice.includes(key)}
 								<span class="setting-description">{t('sync_account.preference_device_only')}</span>
 							{:else}
 								<select

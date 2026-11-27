@@ -3,11 +3,11 @@ import { listen } from '@tauri-apps/api/event';
 import { isMobile } from '#lib/platform.js';
 import { clearLogFolderWarning, logFolderExists, warnAboutLogFolder } from '#lib/state/log-folder.svelte.js';
 import { getSettings, onPortableSettingChanged, applyPortableSettings } from '#lib/state/settings.svelte.js';
-import { DEFAULT_SKIPPED_KEYS, encodePreferences } from '#lib/sync/preference-catalog.js';
+import { encodePreferences, unavailablePreferenceKeys } from '#lib/sync/preference-catalog.js';
 import { defaults } from '#lib/state/settings-store.js';
 import {
 	incomingPreferences, portablePreferences, readPreferenceJournal, reconcilePreferences, setPreferenceIncluded, supportedPreferenceKeys,
-	PREFERENCE_KEYS, type PreferenceJournal, type PreferenceKey, type PreferencePatch, type PreferenceSnapshot,
+	PREFERENCE_CATALOG_VERSION, PREFERENCE_KEYS, type PreferenceJournal, type PreferenceKey, type PreferencePatch, type PreferenceSnapshot,
 } from '#lib/sync/preferences.js';
 
 export interface SyncAccount {
@@ -23,6 +23,8 @@ interface Journal extends PreferenceJournal {
 
 const STORAGE_KEY = 'reachercm-preference-sync';
 const POLL_INTERVAL = 30_000;
+const unavailableOnDevice = unavailablePreferenceKeys(isMobile());
+const defaultSkipped = readPreferenceJournal({}, unavailableOnDevice).skipped;
 let current = $state<SyncAccount | null>(null);
 let journal: Journal | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -31,7 +33,7 @@ let accountRevision = 0;
 let resync = false;
 
 export const preferenceSync = $state({
-	enabled: false, skipped: DEFAULT_SKIPPED_KEYS as readonly PreferenceKey[], supported: null as readonly string[] | null, syncing: false, error: '', online: true,
+	enabled: false, skipped: defaultSkipped, supported: null as readonly string[] | null, syncing: false, error: '', online: true,
 });
 
 export function getSyncAccount(): SyncAccount | null {
@@ -47,7 +49,7 @@ function readJournal(): Journal | null {
 		const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<Journal> | null;
 		return value && typeof value.scope === 'string'
 			// Existing journals were written only when sync was enabled.
-			? { ...readPreferenceJournal(value), scope: value.scope, enabled: value.enabled !== false }
+			? { ...readPreferenceJournal(value, unavailableOnDevice), scope: value.scope, enabled: value.enabled !== false }
 			: null;
 	} catch {
 		return null;
@@ -70,9 +72,8 @@ export function bindPreferenceAccount(account: SyncAccount | null): void {
 	clearLogFolderWarning('account');
 	const saved = readJournal();
 	journal = saved?.scope === scope(account) && account ? saved : null;
-	if (journal && isMobile()) setPreferenceIncluded(journal, 'sessionLogFolder', false);
 	preferenceSync.enabled = journal?.enabled ?? false;
-	preferenceSync.skipped = journal?.skipped ?? DEFAULT_SKIPPED_KEYS;
+	preferenceSync.skipped = journal?.skipped ?? defaultSkipped;
 	preferenceSync.supported = null;
 	preferenceSync.error = '';
 	persist();
@@ -81,11 +82,13 @@ export function bindPreferenceAccount(account: SyncAccount | null): void {
 
 export function setPreferenceSync(enabled: boolean): void {
 	if (!current || enabled === preferenceSync.enabled) return;
+	const saved = journal ? { catalogVersion: PREFERENCE_CATALOG_VERSION, skipped: journal.skipped, seed: journal.seed } : {};
 	journal = {
 		scope: scope(current), enabled,
-		...readPreferenceJournal({ catalogVersion: 3, skipped: journal?.skipped ?? DEFAULT_SKIPPED_KEYS, seed: journal?.seed }),
+		...readPreferenceJournal(saved, unavailableOnDevice),
 	};
 	preferenceSync.enabled = enabled;
+	preferenceSync.skipped = journal.skipped;
 	if (!enabled) clearLogFolderWarning('account');
 	preferenceSync.error = '';
 	persist();
@@ -93,8 +96,8 @@ export function setPreferenceSync(enabled: boolean): void {
 }
 
 export function setPreferenceSyncIncluded(key: PreferenceKey, included: boolean): void {
-	if (!current || !PREFERENCE_KEYS.includes(key) || (isMobile() && key === 'sessionLogFolder')) return;
-	journal ??= { scope: scope(current), enabled: false, ...readPreferenceJournal({}) };
+	if (!current || !PREFERENCE_KEYS.includes(key) || unavailableOnDevice.includes(key)) return;
+	journal ??= { scope: scope(current), enabled: false, ...readPreferenceJournal({}, unavailableOnDevice) };
 	setPreferenceIncluded(journal, key, included);
 	if (key === 'sessionLogFolder' && !included) clearLogFolderWarning('account');
 	preferenceSync.skipped = journal.skipped;
