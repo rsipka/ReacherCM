@@ -4,9 +4,11 @@
  *
  * A session says `off` or `attach` itself, or leaves it to its folder; the
  * nearest folder that says on or off decides, else it is off. The name is
- * the session's own, or `reachercm-` and the session's name in plain letters
- * (`reacher-` before: such a session is still attached to while it is the
- * only one there, see TmuxStart.legacy).
+ * the session's own, or `reachercm-tmux` for every session: one tmux session
+ * per server account, in which each tab is a window of its own. Before, the
+ * default was `reachercm-` and the session's name in plain letters; such a
+ * session is still attached to while it is the only one there (see
+ * TmuxStart.legacy).
  */
 
 import type { Folder, SessionConfig, TmuxSetting } from '#lib/ipc/sessions.js';
@@ -21,9 +23,10 @@ export function validTmuxName(name: string): boolean {
 	return name.length > 0 && name.length <= MAX_NAME && !name.startsWith('-') && /^[A-Za-z0-9_-]+$/.test(name);
 }
 
-const PREFIX = 'reachercm';
+/** The tmux session every session uses unless it names its own. */
+export const DEFAULT_TMUX_NAME = 'reachercm-tmux';
 /** What the default names started with before. */
-const OLD_PREFIX = 'reacher';
+const OLD_PREFIX = 'reachercm';
 
 function nameWith(prefix: string, sessionName: string): string {
 	const slug = sessionName
@@ -37,12 +40,7 @@ function nameWith(prefix: string, sessionName: string): string {
 	return slug ? `${prefix}-${slug}` : prefix;
 }
 
-/** "Web 01 (prod)" → "reachercm-web-01-prod". */
-export function defaultTmuxName(sessionName: string): string {
-	return nameWith(PREFIX, sessionName);
-}
-
-/** The default name earlier versions gave: "reacher-web-01-prod". */
+/** The default name earlier versions gave: "Web 01 (prod)" → "reachercm-web-01-prod". */
 export function legacyTmuxName(sessionName: string): string {
 	return nameWith(OLD_PREFIX, sessionName);
 }
@@ -73,7 +71,7 @@ export function tmuxFor(session: Pick<SessionConfig, 'name' | 'kind' | 'folder_i
 	if (!on) return null;
 	const name = own?.name?.trim();
 	const ownName = !!name && validTmuxName(name);
-	const start: TmuxStart = { name: ownName ? name : defaultTmuxName(session.name) };
+	const start: TmuxStart = { name: ownName ? name : DEFAULT_TMUX_NAME };
 	// The default name changed: a session started under the old one is
 	// still there to go back to (the backend picks it while it is the only one).
 	if (!ownName) start.legacy = legacyTmuxName(session.name);

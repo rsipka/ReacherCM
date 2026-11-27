@@ -54,7 +54,8 @@ pub struct TmuxStart {
     /// Turn tmux's status line off in the view.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub hide_status: bool,
-    /// The name this app gave the same session before (`reacher-…`): used
+    /// The name this app gave the same session before (`reachercm-…` from
+    /// the session's name, now `reachercm-tmux` for all): used
     /// instead of `name` while a session by it is on the server and none
     /// by `name` is, so an upgrade does not leave the old one behind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -719,7 +720,7 @@ mod tests {
 
     #[test]
     fn an_old_name_is_picked_only_when_the_server_says_so() {
-        assert_eq!(legacy_command("reachercm-w", "reacher-w"), "sh -c 'tmux has-session -t =reachercm-w 2>/dev/null || { tmux has-session -t =reacher-w 2>/dev/null && echo old; }'");
+        assert_eq!(legacy_command("reachercm-tmux", "reachercm-w"), "sh -c 'tmux has-session -t =reachercm-tmux 2>/dev/null || { tmux has-session -t =reachercm-w 2>/dev/null && echo old; }'");
         assert_eq!(pick_legacy("old\n", "new", "old"), "old");
         assert_eq!(pick_legacy("", "new", "old"), "new");
     }
