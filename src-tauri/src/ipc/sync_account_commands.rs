@@ -663,8 +663,7 @@ impl DeviceVaultPolicy {
 /// Only this authenticated response can authorize managed actions. Older
 /// servers, invalid tokens, timeouts and invalid responses leave policy unchanged.
 pub(crate) async fn managed_vault_policy() -> Option<(AccountView, DeviceVaultPolicy)> {
-    let _action = ACTION.try_lock().ok()?;
-    let mut stored = saved().ok()??;
+    let stored = saved().ok()??;
     let mut checked = POLICY_CHECK.lock().await;
     if checked.as_ref().is_some_and(|(device, time)| {
         device == &stored.account.device_id && time.elapsed() < Duration::from_secs(15)
@@ -696,8 +695,20 @@ pub(crate) async fn managed_vault_policy() -> Option<(AccountView, DeviceVaultPo
     if !policy.matches(&stored.account) {
         return None;
     }
-    if policy.state != DeviceVaultState::Active && !stored.needs_sign_in {
-        let _ = require_sign_in(&mut stored).await;
+    let current = saved().ok()??;
+    if current.account.device_id != stored.account.device_id || current.refresh != stored.refresh {
+        return None;
+    }
+    // A policy read never holds the account lock across the network. Only
+    // update the saved sign-in state if this is still the same credential.
+    if policy.state != DeviceVaultState::Active && !current.needs_sign_in {
+        if let Ok(_action) = ACTION.try_lock() {
+            if let Ok(Some(mut current)) = saved() {
+                if current.account.device_id == stored.account.device_id && current.refresh == stored.refresh {
+                    let _ = require_sign_in(&mut current).await;
+                }
+            }
+        }
     }
     Some((stored.account, policy))
 }
@@ -943,20 +954,39 @@ mod tests {
             (StatusCode::OK, r#"{"version":1,"device_id":"different","username":"member","state":"suspended","removals":[]}"#),
         ];
         for (status, body) in responses {
-            let router = Router::new().route(
-                "/api/v1/device-vault-policy",
-                get(move || async move {
-                    if body == "slow-response" {
-                        tokio::time::sleep(Duration::from_secs(4)).await;
-                    }
-                    (status, body)
-                }),
-            );
+            let entered = Arc::new(Notify::new());
+            let request_entered = entered.clone();
+            let router = Router::new()
+                .route(
+                    "/api/v1/device-vault-policy",
+                    get(move || {
+                        let request_entered = request_entered.clone();
+                        async move {
+                            if body == "slow-response" {
+                                request_entered.notify_one();
+                                tokio::time::sleep(Duration::from_secs(4)).await;
+                            }
+                            (status, body)
+                        }
+                    }),
+                )
+                .route("/normal-sync", get(|| async { StatusCode::NO_CONTENT }));
             let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
             let service = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
             seed_vault_test_account(&url, "member").await;
-            assert!(managed_vault_policy().await.is_none());
+            if body == "slow-response" {
+                let policy = tokio::spawn(managed_vault_policy());
+                tokio::time::timeout(Duration::from_secs(2), entered.notified()).await.unwrap();
+                let server = origin(&url).unwrap();
+                let response = vault_request(&server, "member", |http| {
+                    http.get(endpoint(&server, "/normal-sync"))
+                }).await.unwrap();
+                assert_eq!(response.status(), StatusCode::NO_CONTENT);
+                assert!(policy.await.unwrap().is_none());
+            } else {
+                assert!(managed_vault_policy().await.is_none());
+            }
             assert!(account_status().unwrap().is_some());
             service.abort();
         }

@@ -142,9 +142,15 @@ pub async fn sync_vaults(
     only: Option<&str>,
     timed: bool,
 ) -> (Vec<String>, Vec<(String, VaultError)>) {
+    let has_account_vaults = manager.lock().await.has_account_vaults();
+    let policy = if has_account_vaults {
+        crate::ipc::sync_account_commands::managed_vault_policy().await
+    } else {
+        None
+    };
     let _operation = SYNC_OPERATIONS.write().await;
     let mut changed = Vec::new();
-    if let Some((account, policy)) = crate::ipc::sync_account_commands::managed_vault_policy().await {
+    if let Some((account, policy)) = policy {
         changed = manager.lock().await.apply_managed_vault_policy(&account, policy).await;
     }
     let targets = match manager.lock().await.sync_targets(only) {

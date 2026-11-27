@@ -55,6 +55,17 @@ fn account_target(url: Option<&str>, user: Option<&str>) -> Option<AccountTarget
 }
 
 impl VaultManager {
+    pub(super) fn has_account_vaults(&self) -> bool {
+        account_target(
+            self.personal_sync_url.as_deref(),
+            self.personal_sync_token.as_deref(),
+        )
+        .is_some()
+            || self.user_vaults.iter().any(|entry| {
+                account_target(entry.sync_url.as_deref(), entry.sync_token.as_deref()).is_some()
+            })
+    }
+
     pub(crate) fn managed_removal_enabled(&self, account: &AccountView) -> bool {
         self.vault_policy.allow_removal.contains(&account.into())
     }
