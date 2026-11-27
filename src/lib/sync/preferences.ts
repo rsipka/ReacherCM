@@ -36,25 +36,39 @@ export interface PreferencePatch {
 	changes: Preferences;
 }
 
+export const PREFERENCE_CATALOG_VERSION = 4;
+
 export interface PreferenceJournal {
 	initialized: boolean;
 	pending: Preferences;
 	remote: Preferences;
 	skipped: PreferenceKey[];
-	catalogVersion: 3;
+	catalogVersion: typeof PREFERENCE_CATALOG_VERSION;
 	seed: PreferenceKey[];
 }
 
-export function readPreferenceJournal(value: Partial<Omit<PreferenceJournal, 'catalogVersion'>> & { catalogVersion?: number }): PreferenceJournal {
+export function readPreferenceJournal(
+	value: Partial<Omit<PreferenceJournal, 'catalogVersion'>> & { catalogVersion?: number },
+	unavailable: readonly PreferenceKey[] = [],
+): PreferenceJournal {
 	const saved = Array.isArray(value.skipped) ? value.skipped : [];
 	const savedSeed = Array.isArray(value.seed) ? value.seed : [];
-	const skipped = PREFERENCE_KEYS.filter((key) => saved.includes(key)
-		|| (value.catalogVersion !== 2 && value.catalogVersion !== 3 && DEFAULT_SKIPPED_KEYS.includes(key))
+	const legacyExpanded = value.catalogVersion === 2 || value.catalogVersion === 3;
+	const legacySkipped = PREFERENCE_KEYS.filter((key) => saved.includes(key)
 		|| (value.catalogVersion === 2 && key === 'sessionLogFolder'));
+	// Old journals recorded the whole skip list. Migrate the old default list,
+	// and preserve lists that differ because this device chose its own settings.
+	const oldDefaults = legacyExpanded && PREFERENCE_KEYS.every((key) => key === 'mobileBarShow'
+		|| legacySkipped.includes(key) === !LEGACY_PREFERENCE_KEYS.includes(key));
+	const useDefaults = oldDefaults || (!legacyExpanded && value.catalogVersion !== PREFERENCE_CATALOG_VERSION);
+	const skipped = PREFERENCE_KEYS.filter((key) => unavailable.includes(key) || (useDefaults
+		? DEFAULT_SKIPPED_KEYS.includes(key) || (!oldDefaults && legacySkipped.includes(key))
+		: legacySkipped.includes(key)));
 	return {
 		initialized: value.initialized === true,
-		catalogVersion: 3,
-		seed: PREFERENCE_KEYS.filter((key) => savedSeed.includes(key) && !skipped.includes(key)),
+		catalogVersion: PREFERENCE_CATALOG_VERSION,
+		seed: PREFERENCE_KEYS.filter((key) => !skipped.includes(key) && (savedSeed.includes(key)
+			|| (useDefaults && (value.initialized !== true || !LEGACY_PREFERENCE_KEYS.includes(key))))),
 		pending: portablePreferences(value.pending, skipped),
 		remote: portablePreferences(value.remote, skipped),
 		skipped,

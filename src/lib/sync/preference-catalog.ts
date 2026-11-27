@@ -19,7 +19,24 @@ export const PREFERENCE_CATALOG: Record<PreferenceKey, PreferenceDefinition> = c
 export const PREFERENCE_KEYS = (Object.keys(catalog) as PreferenceKey[])
 	.filter((key) => PREFERENCE_CATALOG[key].kind !== 'local');
 export const LEGACY_PREFERENCE_KEYS: readonly PreferenceKey[] = ['locale', 'theme', 'terminalCursorStyle'];
-export const DEFAULT_SKIPPED_KEYS = PREFERENCE_KEYS.filter((key) => !LEGACY_PREFERENCE_KEYS.includes(key));
+export const DEFAULT_SYNC_KEYS: readonly PreferenceKey[] = [
+	...LEGACY_PREFERENCE_KEYS,
+	'playSounds', 'muted', 'openLastSession', 'minimizeToTray',
+	'themeId', 'themeLight', 'themeDark', 'terminalThemeId', 'fontFamily', 'fontSize', 'uiZoom', 'compactLayout',
+	'terminalCursorBlink', 'terminalCursorInactive', 'terminalCursorWidth',
+	'terminalScrollback', 'terminalLineNumbers', 'terminalTimestamps',
+	'terminalHighlight', 'terminalHighlightKinds', 'terminalHighlightCustom',
+	'terminalBar', 'mobileBarShow', 'mobileBarKeys', 'terminalBellSound', 'terminalBellFlash', 'typeShellSetup',
+	'showLoginMessage', 'terminalWordSeparators', 'closeTabOnExit',
+	'tmuxNewTabWindow', 'tmuxConnectWindows', 'tmuxHideStatus',
+];
+export const DEFAULT_SKIPPED_KEYS = PREFERENCE_KEYS.filter((key) => !DEFAULT_SYNC_KEYS.includes(key));
+
+export function unavailablePreferenceKeys(mobile: boolean): readonly PreferenceKey[] {
+	return mobile
+		? ['minimizeToTray', 'uiZoom', 'reopenFloatWindows', 'sessionLogFolder']
+		: ['mobileBarShow', 'mobileBarKeys'];
+}
 
 const textEncoder = new TextEncoder();
 

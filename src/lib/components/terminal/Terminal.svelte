@@ -302,8 +302,11 @@
 	 *  font (SF Mono, then Menlo) instead. */
 	function terminalFont(family: string | undefined): string {
 		const f = family || 'monospace';
+		if (onPhone) {
+			const fallback = '"JetBrains Mono", monospace';
+			return f === 'monospace' ? fallback : cssFontFamily(f, fallback);
+		}
 		if (f !== 'monospace') return cssFontFamily(f);
-		if (onPhone) return '"JetBrains Mono", monospace';
 		return isMac() ? 'ui-monospace, Menlo, monospace' : f;
 	}
 
