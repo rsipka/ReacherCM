@@ -14,7 +14,7 @@
 
 	type Kind = 'account' | 'folder' | 'smb' | 'sftp' | 'git' | 's3' | 'turso';
 
-	let kind = $state<Kind>('folder');
+	let kind = $state<Kind>('account');
 	let folderPath = $state('');
 	let sftpHost = $state('');
 	let sftpPort = $state('22');
