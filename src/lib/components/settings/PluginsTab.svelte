@@ -17,6 +17,7 @@
 	import Toggle from '#lib/components/shared/Toggle.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
 	import RegistrySettings from './RegistrySettings.svelte';
+	import MarketplacePanel from '#lib/components/plugin/MarketplacePanel.svelte';
 	import Advanced from './Advanced.svelte';
 	import { onMount } from 'svelte';
 
@@ -250,10 +251,24 @@
 		{/if}
 	</div>
 
+	<!-- Plugins are found and added here: the sidebar's Library shows the
+	     Plugins panel only once one is installed. -->
+	<div class="section">
+		<h3 class="section-title">{t('plugin.tab_marketplace')}</h3>
+		<div class="marketplace">
+			<MarketplacePanel />
+		</div>
+	</div>
+
 	<Advanced><RegistrySettings /></Advanced>
 </div>
 
 <style>
+	.marketplace {
+		max-height: 460px;
+		overflow-y: auto;
+	}
+
 	.tab-content {
 		display: flex;
 		flex-direction: column;
