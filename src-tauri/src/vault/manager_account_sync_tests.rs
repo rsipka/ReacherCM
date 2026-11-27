@@ -321,9 +321,11 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
         signed_in: "owner",
         ..Default::default()
     }));
+    let organization = json!({"id": org, "name": "Team", "role": "owner"});
+    let listed = organization.clone();
     let router = Router::new()
         .route("/api/v1/organizations", get(move || async move {
-            Json(json!([{"id": org, "name": "Team"}]))
+            Json(vec![listed])
         }))
         .route(&vaults, get({
             let acl = acl.clone();
@@ -397,8 +399,7 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
     recipient.init_identity("recipient-password").await.unwrap();
     let account = seed_vault_test_account(&url, "owner").await;
     let organizations = VaultManager::organizations(&account).await.unwrap();
-    assert_eq!(organizations.len(), 1);
-    assert_eq!(organizations[0].id, org);
+    assert_eq!(serde_json::to_value(organizations).unwrap(), json!([organization]));
     let info = owner
         .create_organization_vault(&account, org, "Team vault")
         .await

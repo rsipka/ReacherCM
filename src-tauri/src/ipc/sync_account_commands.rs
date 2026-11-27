@@ -18,6 +18,7 @@ use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 #[cfg(desktop)]
 use sha2::{Digest, Sha256};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex, Notify};
 #[cfg(desktop)]
 use tokio::{net::TcpListener, sync::oneshot};
@@ -607,7 +608,7 @@ pub async fn sync_account_sign_out() -> Result<bool> {
 }
 
 #[tauri::command]
-pub async fn sync_account_manage(organizations: Option<bool>) -> Result<()> {
+pub async fn sync_account_manage(app: tauri::AppHandle, organizations: Option<bool>) -> Result<()> {
     let stored = saved()?.ok_or(REVOKED)?;
     let server = origin(&stored.account.server)?;
     let path = if organizations == Some(true) {
@@ -615,7 +616,7 @@ pub async fn sync_account_manage(organizations: Option<bool>) -> Result<()> {
     } else {
         "/devices"
     };
-    tauri_plugin_opener::open_url(endpoint(&server, path).as_str(), None::<&str>)
+    app.opener().open_url(endpoint(&server, path).as_str(), None::<&str>)
         .map_err(|_| "sync_account.error_browser")
 }
 
