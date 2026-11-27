@@ -5,8 +5,14 @@
 	import { getPersonalSync, setPersonalSync, testSyncBackend, type SyncProbe } from '#lib/ipc/vault.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
+	import AccountVaultLocation from './AccountVaultLocation.svelte';
+	import TursoSync from './TursoSync.svelte';
 
-	type Kind = 'folder' | 'smb' | 'sftp' | 'git' | 's3';
+	/** Sync location: where the personal vault syncs. One choice in the
+	 *  dropdown, and only that choice's settings under it. */
+	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
+
+	type Kind = 'account' | 'folder' | 'smb' | 'sftp' | 'git' | 's3' | 'turso';
 
 	let kind = $state<Kind>('folder');
 	let folderPath = $state('');
@@ -36,23 +42,57 @@
 	let s3SecretKey = $state('');
 
 	let active = $state<string | null>(null);
+	let activeKind = $derived(active ? kindOf(active) : null);
 	let probe = $state<SyncProbe | null>(null);
 	let busy = $state<'test' | 'use' | null>(null);
 
-	onMount(async () => {
+	onMount(() => {
+		void loadActive(true);
+	});
+
+	/** Read the location in use; on the first read, open its choice. */
+	async function loadActive(first = false) {
 		try {
 			const [url, token] = await getPersonalSync();
-			if (url) {
-				active = url;
-				prefill(url, token ?? '');
-			}
+			active = url;
+			if (url && first) prefill(url, token ?? '');
 		} catch {
 			// Not unlocked yet: nothing to show.
 		}
-	});
+	}
 
-	/** Fill the form from the location in use, when it is one of these. */
+	/** Which choice a sync URL belongs to. */
+	function kindOf(url: string): Kind {
+		const lower = url.toLowerCase();
+		if (url.startsWith('reachercm-sync:') || url.startsWith('reachercm-org:')) return 'account';
+		if (url.startsWith('folder:')) return 'folder';
+		if (lower.startsWith('sftp://')) return 'sftp';
+		if (lower.startsWith('smb://')) return 'smb';
+		if (/^s3(\+http)?:\/\//i.test(url)) return 's3';
+		if (url.startsWith('git:')) return 'git';
+		// libsql://, https://… : a Turso database.
+		return 'turso';
+	}
+
+	const KIND_LABEL: Record<Kind, string> = {
+		account: 'sync.kind_account',
+		folder: 'sync.kind_folder',
+		smb: 'sync.kind_smb',
+		sftp: 'sync.kind_sftp',
+		git: 'sync.kind_git',
+		s3: 'sync.kind_s3',
+		turso: 'sync.kind_turso'
+	};
+	const KINDS = Object.keys(KIND_LABEL) as Kind[];
+
+	function optionLabel(k: Kind): string {
+		const name = t(KIND_LABEL[k]);
+		return k === activeKind ? t('sync.kind_in_use', { name }) : name;
+	}
+
+	/** Fill the form from the location in use. */
 	function prefill(url: string, token: string) {
+		kind = kindOf(url);
 		if (url.startsWith('folder:')) {
 			kind = 'folder';
 			folderPath = url.slice('folder:'.length);
@@ -120,6 +160,7 @@
 
 	/** The sync URL and token for what the form says. */
 	function location(): { url: string; token: string } | null {
+		if (kind === 'account' || kind === 'turso') return null;
 		if (kind === 'folder') {
 			const path = folderPath.trim();
 			return path ? { url: `folder:${path}`, token: '' } : null;
@@ -251,12 +292,13 @@
 	}
 </script>
 
-<div class="section">
-	<h3 class="section-title">{t('sync.backend_title')}</h3>
+<div class="section location">
 	<p class="section-desc">{t('sync.backend_desc')}</p>
 
 	{#if active}
-		<p class="section-desc active">{t('sync.backend_active', { where: describe(active) })}</p>
+		<p class="section-desc active">
+			{t('sync.backend_active', { where: activeKind === 'account' ? t('sync.kind_account') : describe(active) })}
+		</p>
 	{/if}
 
 	<div class="form-field">
@@ -268,15 +310,17 @@
 			onchange={changed}
 			disabled={busy !== null}
 		>
-			<option value="folder">{t('sync.kind_folder')}</option>
-			<option value="smb">{t('sync.kind_smb')}</option>
-			<option value="sftp">{t('sync.kind_sftp')}</option>
-			<option value="git">{t('sync.kind_git')}</option>
-			<option value="s3">{t('sync.kind_s3')}</option>
+			{#each KINDS as k (k)}
+				<option value={k}>{optionLabel(k)}</option>
+			{/each}
 		</select>
 	</div>
 
-	{#if kind === 'folder'}
+	{#if kind === 'account'}
+		<AccountVaultLocation {onOpenVaultLinks} onChanged={() => void loadActive()} />
+	{:else if kind === 'turso'}
+		<TursoSync personalOnTurso={activeKind === 'turso'} onChanged={() => void loadActive()} />
+	{:else if kind === 'folder'}
 		<div class="form-field">
 			<Input
 				label={t('sync.folder_path')}
@@ -375,6 +419,7 @@
 		<p class="section-desc">{t('sync.git_hint')}</p>
 	{/if}
 
+	{#if kind !== 'account' && kind !== 'turso'}
 	{#if probe}
 		{#if probe.hostKey}
 			<div class="notice">
@@ -410,9 +455,14 @@
 		</Button>
 	</div>
 	<p class="section-desc">{t('sync.backend_note')}</p>
+	{/if}
 </div>
 
 <style>
+	.location {
+		padding: 12px 0;
+	}
+
 	.section-desc {
 		margin: 0;
 		font-size: 0.75rem;

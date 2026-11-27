@@ -16,8 +16,8 @@ export type PageId =
 	| 'remote'
 	| 'security'
 	| 'pwmanagers'
-	| 'account'
 	| 'sync'
+	| 'backup'
 	| 'ai'
 	| 'devops'
 	| 'sharing'
@@ -52,7 +52,7 @@ const ICON = {
 	monitor: 'M3 4h18v12H3zM8 20h8M12 16v4',
 	shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
 	key: 'M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4',
-	account: 'M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2 M16 7a4 4 0 11-8 0 4 4 0 018 0z',
+	archive: 'M3 4h18v4H3zM5 8v11a1 1 0 001 1h12a1 1 0 001-1V8M10 12h4',
 	sync: 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15',
 	bulb: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z',
 	server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',
@@ -69,8 +69,8 @@ export const PAGES: SettingsPage[] = [
 	{ id: 'remote', label: 'settings.rdp_section', group: 'connections', icon: ICON.monitor },
 	{ id: 'security', label: 'settings.security', group: 'data', icon: ICON.shield },
 	{ id: 'pwmanagers', label: 'settings.password_managers', group: 'data', icon: ICON.key },
-	{ id: 'account', label: 'sync_account.title', group: 'data', icon: ICON.account },
-	{ id: 'sync', label: 'settings.page_sync_backup', group: 'data', icon: ICON.sync },
+	{ id: 'sync', label: 'settings.page_sync', group: 'data', icon: ICON.sync },
+	{ id: 'backup', label: 'settings.backup', group: 'data', icon: ICON.archive },
 	{ id: 'ai', label: 'settings.page_ai_mcp', group: 'integrations', icon: ICON.bulb },
 	{ id: 'devops', label: 'settings.page_devops_plugins', group: 'integrations', icon: ICON.server },
 	{ id: 'sharing', label: 'settings.sharing', group: 'integrations', icon: ICON.share },
