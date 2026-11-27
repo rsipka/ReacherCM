@@ -13,6 +13,11 @@
 	import { sidebarHasNew, markSidebarSeen, newSince } from '#lib/state/whats-new.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { pendingSessionAction } from '#lib/state/palette.svelte.js';
+	import { getPlugins, setPlugins } from '#lib/state/plugin.svelte.js';
+	import { pluginList } from '#lib/ipc/plugin.js';
+	import { onMount } from 'svelte';
+	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { addToast } from '#lib/state/toasts.svelte.js';
 
 	type Section = 'sessions' | 'vault' | 'explorer' | 'tunnels' | 'servers' | 'network' | 'snippets' | 'recipes' | 'plugins';
 
@@ -88,6 +93,13 @@
 		} catch {}
 	}
 
+	let hasPlugins = $derived(getPlugins().length > 0);
+
+	/* Each panel the sidebar can show. The rail has fewer buttons than this:
+	   Tunnels, Servers and Network tools share one (Network), and Snippets,
+	   Recipes and Plugins another (Library), with a switch at the top of the
+	   panel between them. Nine icons were more than the rail could hold on a
+	   laptop screen, and more than anyone could tell apart. */
 	let sections = $derived<Array<{ id: Section; label: string; icon: string }>>([
 		{
 			id: 'sessions',
@@ -140,26 +152,109 @@
 			// A book: a recipe is something written down to be followed again.
 			icon: 'M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2zM9 7h7M9 11h5'
 		},
-		{
-			id: 'plugins',
-			label: t('sidebar.plugins'),
-			icon: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
-		}
+		// Only with a plugin installed: managing them (adding, the marketplace)
+		// is in Settings → Plugins; this is where their own panels show.
+		...(hasPlugins
+			? [
+					{
+						id: 'plugins' as const,
+						label: t('sidebar.plugins'),
+						icon: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+					}
+				]
+			: [])
 	]);
 
-	function handleSectionClick(sectionId: Section): void {
-		// Reaching the section is being shown it. Collapsing it again later does
-		// not bring the badge back.
-		markSidebarSeen(sectionId);
+	onMount(() => {
+		pluginList()
+			.then((list) => setPlugins(Array.isArray(list) ? list : []))
+			.catch(() => {});
+		// A plugin's notify(): shown whatever panel is open, as plugins now sit
+		// behind the Library button rather than a rail button of their own.
+		let unlisten: UnlistenFn | undefined;
+		let gone = false;
+		listen<{ pluginId: string; message: string; level?: string }>('plugin-notify', (event) => {
+			const { message, level } = event.payload;
+			addToast(message, level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info');
+		})
+			.then((fn) => (gone ? fn() : (unlisten = fn)))
+			.catch(() => {});
+		return () => {
+			gone = true;
+			unlisten?.();
+		};
+	});
 
+	type RailId = 'sessions' | 'vault' | 'explorer' | 'network' | 'library';
+	interface Rail {
+		id: RailId;
+		label: string;
+		icon: string;
+		/** The panels behind this button, in the order of its switch. */
+		members: Section[];
+	}
+
+	const RAIL_MEMBERS: Record<RailId, Section[]> = {
+		sessions: ['sessions'],
+		vault: ['vault'],
+		explorer: ['explorer'],
+		network: ['tunnels', 'servers', 'network'],
+		library: ['snippets', 'recipes', 'plugins']
+	};
+
+	let rails = $derived<Rail[]>(
+		(Object.keys(RAIL_MEMBERS) as RailId[]).map((id) => {
+			const members = RAIL_MEMBERS[id].filter((m) => sections.some((s) => s.id === m));
+			const own = sections.find((s) => s.id === id && members.length === 1);
+			return {
+				id,
+				members,
+				label: own?.label ?? (id === 'network' ? t('sidebar.network_group') : t('sidebar.library')),
+				icon:
+					own?.icon ??
+					(id === 'network'
+						? // A globe: tunnels, servers here and tools that reach out.
+							'M12 3a9 9 0 100 18 9 9 0 000-18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z'
+						: // A book: snippets, recipes and plugins are kept to use again.
+							'M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2zM9 7h7M9 11h5')
+			};
+		})
+	);
+
+	function railOf(section: Section): RailId {
+		return (Object.keys(RAIL_MEMBERS) as RailId[]).find((r) => RAIL_MEMBERS[r].includes(section)) ?? 'sessions';
+	}
+
+	/** The panel each grouped button showed last, to go back to it. */
+	let lastIn = $state<Partial<Record<RailId, Section>>>({});
+	$effect(() => {
+		lastIn[railOf(activeSection)] = activeSection;
+	});
+
+	let activeRail = $derived(rails.find((r) => r.id === railOf(activeSection)));
+
+	// A panel that went (the last plugin removed): back to the first of its group.
+	$effect(() => {
+		if (!sections.some((s) => s.id === activeSection)) activeSection = activeRail?.members[0] ?? 'sessions';
+	});
+
+	function railHasNew(rail: Rail): boolean {
+		return rail.members.some((m) => sidebarHasNew(m));
+	}
+
+	function handleRailClick(rail: Rail): void {
+		const remembered = lastIn[rail.id];
+		const target = remembered && rail.members.includes(remembered) ? remembered : rail.members[0];
 		if (collapsed) {
 			collapsed = false;
-			activeSection = sectionId;
-		} else if (activeSection === sectionId) {
+			activeSection = target;
+		} else if (railOf(activeSection) === rail.id) {
 			collapsed = true;
+			return;
 		} else {
-			activeSection = sectionId;
+			activeSection = target;
 		}
+		markSidebarSeen(target);
 	}
 
 	function toggleCollapsed(): void {
@@ -217,26 +312,26 @@
 
 <aside class="sidebar" class:collapsed class:no-transition={dragging} style:width="{collapsed ? COLLAPSED_WIDTH : sidebarWidth + RAIL_WIDTH}px">
 	<nav class="sidebar-nav">
-		{#each sections as section (section.id)}
+		{#each rails as rail (rail.id)}
 			<button
 				class="nav-btn"
-				class:active={activeSection === section.id}
-				class:has-new={sidebarHasNew(section.id)}
-				onclick={() => handleSectionClick(section.id)}
-				title={section.label}
-				aria-label={section.label}
+				class:active={activeRail?.id === rail.id}
+				class:has-new={railHasNew(rail)}
+				onclick={() => handleRailClick(rail)}
+				title={rail.label}
+				aria-label={rail.label}
 			>
 				<svg width="19" height="19" viewBox="0 0 24 24" fill="none">
 					<path
-						d={section.icon}
+						d={rail.icon}
 						stroke="currentColor"
 						stroke-width="1.8"
 						stroke-linecap="round"
 						stroke-linejoin="round"
 					/>
 				</svg>
-				{#if sidebarHasNew(section.id)}
-					<NewIndicator since={newSince({ kind: 'sidebar', section: section.id })} />
+				{#if railHasNew(rail)}
+					<NewIndicator since={newSince({ kind: 'sidebar', section: rail.members.find((m) => sidebarHasNew(m)) ?? rail.id })} />
 				{/if}
 			</button>
 		{/each}
@@ -262,8 +357,31 @@
 	     unmount on section switch, just not on collapse. -->
 	<div class="sidebar-content" class:hidden={collapsed}>
 		<div class="section-header">
-			{sections.find((s) => s.id === activeSection)?.label ?? ''}
+			{activeRail?.label ?? ''}
 		</div>
+		{#if activeRail && activeRail.members.length > 1}
+			<!-- The panels behind one rail button. -->
+			<div class="section-switch" role="tablist" aria-label={activeRail.label}>
+				{#each activeRail.members as id (id)}
+					{@const section = sections.find((x) => x.id === id)}
+					{#if section}
+						<button
+							class="switch-btn"
+							class:active={activeSection === id}
+							role="tab"
+							aria-selected={activeSection === id}
+							onclick={() => {
+								markSidebarSeen(id);
+								activeSection = id;
+							}}
+						>
+							{id === 'network' ? t('sidebar.net_tools_short') : section.label}
+							{#if sidebarHasNew(id)}<span class="switch-new" aria-hidden="true"></span>{/if}
+						</button>
+					{/if}
+				{/each}
+			</div>
+		{/if}
 		<div class="section-body">
 			{#key activeSection}
 				<div class="section-panel">
@@ -480,6 +598,60 @@
 		letter-spacing: 0.05em;
 		color: var(--color-text-secondary);
 		border-top: 1px solid var(--color-border);
+	}
+
+	/* The panels behind a grouped rail button, as a segmented switch. */
+	.section-switch {
+		display: flex;
+		gap: 2px;
+		margin: 2px 8px 6px;
+		padding: 2px;
+		border-radius: 7px;
+		background: var(--color-bg-secondary);
+	}
+
+	.switch-btn {
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		padding: 4px 6px;
+		border: none;
+		border-radius: 5px;
+		background: transparent;
+		color: var(--color-text-secondary);
+		font-family: var(--font-sans);
+		font-size: var(--text-xs, 0.75rem);
+		font-weight: 500;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		cursor: pointer;
+	}
+
+	.switch-btn:hover {
+		color: var(--color-text-primary);
+	}
+
+	.switch-btn.active {
+		background: var(--color-bg-elevated, var(--color-bg-primary));
+		color: var(--color-text-primary);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+	}
+
+	.switch-new {
+		position: absolute;
+		top: 3px;
+		right: 4px;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--color-accent);
+	}
+
+	@media (pointer: coarse) {
+		.switch-btn {
+			padding: 8px 6px;
+		}
 	}
 
 	.section-body {

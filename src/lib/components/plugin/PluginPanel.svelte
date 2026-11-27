@@ -116,7 +116,6 @@
 	}
 
 	onMount(() => {
-		let unlistenNotify: UnlistenFn | undefined;
 		let unlistenStatus: UnlistenFn | undefined;
 
 		// Silently load current plugin list without loading flash
@@ -124,13 +123,8 @@
 			.then((list) => setPlugins(list))
 			.catch(() => {});
 
-		listen<{ pluginId: string; message: string; level?: string }>('plugin-notify', (event) => {
-			const { message, level } = event.payload;
-			const toastType = level === 'error' ? 'error' : level === 'warning' ? 'warning' : 'info';
-			addToast(message, toastType);
-		}).then((fn) => {
-			unlistenNotify = fn;
-		});
+		// A plugin's own notifications are shown by the sidebar, which is
+		// always there: this panel is only open now and then.
 
 		// A plugin's hook timed out or errored — surface it and refresh the
 		// list so the row's status badge flips to Error.
@@ -146,7 +140,6 @@
 		});
 
 		return () => {
-			unlistenNotify?.();
 			unlistenStatus?.();
 		};
 	});
