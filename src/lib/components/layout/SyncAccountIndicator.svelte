@@ -101,7 +101,7 @@
 		if (restoreFocus) trigger?.focus();
 	}
 
-	function goToSettings(page: 'sync' | 'account'): void {
+	function goToSettings(page: 'sync'): void {
 		close(false);
 		openSettings(page);
 	}
@@ -217,10 +217,7 @@
 				{/if}
 			{/if}
 			<footer>
-				<button type="button" onclick={() => goToSettings('sync')}>{t('settings.page_sync_backup')}</button>
-				{#if account}
-					<button type="button" onclick={() => goToSettings('account')}>{t('sync_account.title')}</button>
-				{/if}
+				<button type="button" onclick={() => goToSettings('sync')}>{t('settings.page_sync')}</button>
 			</footer>
 		</div>
 	{/if}

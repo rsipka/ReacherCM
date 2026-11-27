@@ -43,7 +43,8 @@
 	import type { AnyImportSource } from './ImportSourcePicker.svelte';
 	import CredentialList from './CredentialList.svelte';
 	import BulkEditor from './BulkEditor.svelte';
-	import { savedCredentialList, credentialsFor, type SavedCredential } from '#lib/ipc/savedCredentials.js';
+	import { savedCredentialList, credentialsFor, personalLoginList, personalLoginSet, PERSONAL_LOGIN, type SavedCredential } from '#lib/ipc/savedCredentials.js';
+	import PersonalLoginDialog from './PersonalLoginDialog.svelte';
 	import SessionCard from './SessionCard.svelte';
 	import VaultSelector from '#lib/components/vault/VaultSelector.svelte';
 	import ContextMenuBackdrop from '#lib/components/shared/ContextMenuBackdrop.svelte';
@@ -1580,6 +1581,77 @@
 		}
 	}
 
+	// ---- Each person's own login (a shared vault's session or folder) ----
+	/** The picker's question; the connect (if any) waits on its answer. */
+	let askedPersonal = $state<{ target: string; sessionName: string; username: string; current: string | null; passwordOnly: boolean } | null>(null);
+	let personalBusy = $state(false);
+	let personalError = $state<string | undefined>();
+	let answerPersonal: ((chosen: boolean) => void) | null = null;
+
+	/** Ask which of their own logins this person uses for `target` (a
+	 *  session or folder id); true once one is chosen and saved. */
+	async function askPersonalLogin(target: string, sessionName: string, username: string, passwordOnly: boolean): Promise<boolean> {
+		answerPersonal?.(false);
+		let current: string | null = null;
+		try {
+			current = (await personalLoginList()).find((p) => p.target === target)?.credential_id ?? null;
+		} catch {
+			// Nothing chosen as far as we can tell.
+		}
+		return new Promise((resolve) => {
+			personalError = undefined;
+			askedPersonal = { target, sessionName, username, current, passwordOnly };
+			answerPersonal = resolve;
+		});
+	}
+
+	function finishPersonal(chosen: boolean): void {
+		const answer = answerPersonal;
+		answerPersonal = null;
+		askedPersonal = null;
+		personalError = undefined;
+		answer?.(chosen);
+	}
+
+	async function savePersonal(credentialId: string | null): Promise<void> {
+		if (!askedPersonal || personalBusy) return;
+		personalBusy = true;
+		try {
+			await personalLoginSet(askedPersonal.target, credentialId);
+			await loadSessions();
+			finishPersonal(credentialId !== null);
+		} catch (err) {
+			personalError = String(err);
+		} finally {
+			personalBusy = false;
+		}
+	}
+
+	/** Kinds whose login is a password only: no keys to offer. */
+	function passwordOnly(s: SessionConfig): boolean {
+		return sessionKind(s) !== 'ssh';
+	}
+
+	/** Change (or pick) this person's own login for a session that asks. */
+	function changePersonalLogin(s: SessionConfig): void {
+		const target = s.credential?.personal_target;
+		if (!target) return;
+		void askPersonalLogin(target, s.name, s.credential?.own_username ?? s.username, passwordOnly(s));
+	}
+
+	/** Before connecting a session that asks each person for their own login
+	 *  and this person has not chosen one: ask. The session as read again
+	 *  with it, or null when they cancelled. */
+	async function personalLoginFirst(session: SessionConfig): Promise<SessionConfig | null> {
+		const c = session.credential;
+		if (!c?.personal_target || !c.missing || oneOffCredential(session)) return session;
+		if (!(await askPersonalLogin(c.personal_target, session.name, c.own_username ?? session.username, passwordOnly(session)))) return null;
+		const fresh = sessions.find((s) => s.id === session.id);
+		if (!fresh) return null;
+		// Keep what this one connect changed (no tmux), take the new login.
+		return { ...session, username: fresh.username, domain: fresh.domain, auth_method: fresh.auth_method, credential: fresh.credential };
+	}
+
 	// ---- Connect with: one connect with another saved credential ---------
 	/** A session as one connect sees it with credential `c` in place of its
 	 *  own login. Never saved: openRdp and the prompt's Remember leave it be. */
@@ -1792,6 +1864,9 @@
 			return;
 		}
 		pickAddressFor = undefined;
+		const withLogin = await personalLoginFirst(session);
+		if (!withLogin) return;
+		session = withLogin;
 		if (!(await approveRefsFirst(session))) return;
 		connectAddress = address;
 		noteSessionUsed(session.id);
@@ -2852,6 +2927,11 @@
 						{t('session.connect_no_tmux')}
 					</button>
 				{/if}
+				{#if contextMenu.session.credential?.personal_target}
+					<button class="context-item" title={t('credential.personal_menu_hint')} onclick={() => { if (contextMenu?.session) changePersonalLogin(contextMenu.session); closeContextMenu(); }} type="button">
+						{t('credential.personal_menu')}
+					</button>
+				{/if}
 				{#if hasConnectChoices(contextMenu.session)}
 					{@const menuSession = contextMenu.session}
 					<button class="context-item context-sub" title={t('session.connect_to_hint')} onclick={() => openConnectPage(menuSession)} type="button">
@@ -2957,9 +3037,12 @@
 					</button>
 					<button class="context-item context-sub" onclick={() => (folderMenuPage = 'login')} type="button">
 						<span class="context-sub-label">{t('folder.login')}</span>
-						<span class="context-sub-value">{credential ? credential.name : t('credential.folder_none')}</span>
+						<span class="context-sub-value">{folder.credential_id === PERSONAL_LOGIN ? t('credential.personal_login') : credential ? credential.name : t('credential.folder_none')}</span>
 						<FaIcon icon={faChevronRight} size={9} />
 					</button>
+					{#if folder.credential_id === PERSONAL_LOGIN}
+						<button class="context-item" title={t('credential.personal_menu_hint')} onclick={() => { closeContextMenu(); void askPersonalLogin(folder.id, folder.name, '', false); }} type="button">{t('credential.personal_menu')}</button>
+					{/if}
 					<button class="context-item context-sub" onclick={() => (folderMenuPage = 'tmux')} type="button">
 						<span class="context-sub-label">tmux</span>
 						<span class="context-sub-value">{t(folder.tmux === true ? 'tmux.folder_on' : folder.tmux === false ? 'tmux.folder_off' : 'tmux.folder_inherit')}</span>
@@ -2981,6 +3064,9 @@
 							{/each}
 						{:else if folderMenuPage === 'login'}
 							<button class="context-item context-folder-item" class:context-current={!folder.credential_id} onclick={() => void setFolderCredential(folder, null)} type="button">{t('credential.folder_none')}</button>
+							{#if folder.vault_id}
+								<button class="context-item context-folder-item" class:context-current={folder.credential_id === PERSONAL_LOGIN} title={t('credential.personal_hint')} onclick={() => void setFolderCredential(folder, PERSONAL_LOGIN)} type="button">{t('credential.personal_login')}</button>
+							{/if}
 							{#each credentialsFor(savedCredentials, folder.vault_id) as c (c.id)}
 								<button class="context-item context-folder-item" class:context-current={folder.credential_id === c.id} onclick={() => void setFolderCredential(folder, c.id)} type="button">{c.name} ({c.username})</button>
 							{/each}
@@ -3183,6 +3269,16 @@
 	error={approveRefsError}
 	onallow={() => void allowAskedRefs()}
 	oncancel={() => { if (!approvingRefs) finishAsking(false); }}
+/>
+
+<PersonalLoginDialog
+	asked={askedPersonal}
+	credentials={savedCredentials}
+	busy={personalBusy}
+	error={personalError}
+	onpick={(id) => void savePersonal(id)}
+	onforget={() => void savePersonal(null)}
+	oncancel={() => { if (!personalBusy) finishPersonal(false); }}
 />
 
 {#if pickAddressFor}

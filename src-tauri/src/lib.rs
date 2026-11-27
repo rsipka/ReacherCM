@@ -91,6 +91,7 @@ use ipc::telnet_commands::*;
 use ipc::zmodem_commands::*;
 use ipc::saved_credential_commands::*;
 use ipc::credential_folder_commands::*;
+use ipc::personal_login_commands::*;
 use ipc::session_commands::*;
 use ipc::sftp_commands::*;
 use ipc::local_fs_commands::*;
@@ -755,6 +756,8 @@ pub fn run() {
             session_set_folder_icon,
             session_rename_folder,
             saved_credential_list,
+            personal_login_list,
+            personal_login_set,
             credential_keys_unlock,
             credential_keys_unlock_enabled,
             credential_keys_biometric_forget,
@@ -1388,6 +1391,8 @@ pub fn run() {
             session_set_folder_icon,
             session_rename_folder,
             saved_credential_list,
+            personal_login_list,
+            personal_login_set,
             credential_keys_unlock,
             credential_keys_unlock_enabled,
             credential_keys_biometric_forget,
