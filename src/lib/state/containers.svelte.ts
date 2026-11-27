@@ -19,3 +19,15 @@ export async function busy<T>(work: () => Promise<T>): Promise<T> {
 		inFlight -= 1;
 	}
 }
+
+let hostsVersion = $state(0);
+
+/** Bumped when a host is saved or deleted, so lists of them read again
+ *  (the Sessions list's Containers rows). */
+export function getHostsVersion(): number {
+	return hostsVersion;
+}
+
+export function hostsChanged(): void {
+	hostsVersion += 1;
+}

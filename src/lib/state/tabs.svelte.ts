@@ -116,6 +116,8 @@ export interface Tab {
 	/** A Kubernetes tab's saved cluster: one tab per cluster. Unset while the
 	 *  tab shows the cluster picker. */
 	k8sClusterId?: string;
+	/** A Containers tab's saved host: one tab per host, as for clusters. */
+	ctrHostId?: string;
 }
 
 /** An FTP tab's saved session; the backend takes the rest from it. */

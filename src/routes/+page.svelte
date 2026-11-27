@@ -461,7 +461,7 @@
 										{:else if tab.devopsTool === 'databases'}
 											<DbPage />
 										{:else if tab.devopsTool === 'containers'}
-											<ContainersPage />
+											<ContainersPage {tab} />
 										{:else if !vaultState.locked}
 											{#key vaultState.userUuid}
 												{#if tab.devopsTool === 'ansible'}<AnsiblePage />{:else}<TofuPage />{/if}

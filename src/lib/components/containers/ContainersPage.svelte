@@ -8,8 +8,11 @@
 	 * and the chosen container on the right; on a phone the container opens
 	 * full screen. Lists refresh every few seconds while the page is in view,
 	 * and not at all when it is not.
+	 *
+	 * It shows in a tab, one per host (see #lib/state/navigation): picking a
+	 * host another tab already has brings that tab forward instead.
 	 */
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import StatusPill from '#lib/components/devops/StatusPill.svelte';
 	import EnvBadge from '#lib/components/devops/EnvBadge.svelte';
 	import ConfirmAction from '#lib/components/devops/ConfirmAction.svelte';
@@ -28,6 +31,7 @@
 		ctrAct,
 		ctrRemove,
 		ctrCompose,
+		ctrClose,
 		type ContainerHost,
 		type ContainerRow,
 		type Project,
@@ -41,11 +45,34 @@
 	import { containerStatus, ago, bytes, type Status } from '#lib/devops/status.js';
 	import { openContainerShell } from '#lib/devops/shell.js';
 	import { busy } from '#lib/state/containers.svelte.js';
-	import { getActivePage } from '#lib/state/navigation.svelte.js';
+	import { otherTabShowing } from '#lib/state/navigation.svelte.js';
+	import { activateTab, type Tab } from '#lib/state/tabs.svelte.js';
+	import { hostsChanged } from '#lib/state/containers.svelte.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	type Section = 'stacks' | 'containers' | 'images' | 'volumes' | 'networks';
+
+	interface Props {
+		/** The tab it shows in; it names the tab after its host. */
+		tab?: Tab;
+	}
+
+	let { tab }: Props = $props();
+
+	let root: HTMLDivElement | undefined = $state();
+
+	/** On screen: its tab in front (or a pane of a split) and the window shown. */
+	function onScreen(): boolean {
+		return document.visibilityState === 'visible' && !!root?.isConnected && root.getClientRects().length > 0;
+	}
+
+	/** Name the tab after its host, or after the workspace with none. */
+	function nameTab(id: string): void {
+		if (!tab) return;
+		tab.ctrHostId = id || undefined;
+		tab.title = (id && hosts.find((h) => h.id === id)?.name) || t('nav.containers');
+	}
 
 	const LAST_HOST = 'reach.containers.host';
 	const REFRESH_MS = 5000;
@@ -133,7 +160,11 @@
 			connectError = String(e);
 		}
 		hostsLoaded = true;
-		if (!hostId) {
+		// The tab's own host (opened from the Sessions list) first.
+		const own = tab?.ctrHostId;
+		if (!hostId && own && hosts.some((h) => h.id === own)) {
+			void connect(own);
+		} else if (!hostId) {
 			let last = '';
 			try {
 				last = localStorage.getItem(LAST_HOST) ?? '';
@@ -141,11 +172,20 @@
 				// Storage unavailable: start from the most recently used.
 			}
 			const pick = hosts.find((h) => h.id === last) ?? hosts[0];
-			if (pick) void connect(pick.id);
+			// Not one another tab shows: this one then waits for a pick.
+			if (pick && !otherTabShowing('containers', pick.id, tab?.id)) void connect(pick.id);
 		}
 	}
 
 	async function connect(id: string): Promise<void> {
+		const other = otherTabShowing('containers', id, tab?.id);
+		if (other) {
+			activateTab(other.id);
+			return;
+		}
+		// The host this tab showed before: no other tab has it, so it goes.
+		if (opened && opened.key !== id) ctrClose(opened.key).catch(() => {});
+		nameTab(id);
 		hostId = id;
 		opened = null;
 		connectError = '';
@@ -174,6 +214,18 @@
 			if (hostId === id) connecting = false;
 		}
 	}
+
+	// A host picked for this tab from outside (the Sessions list gave it to
+	// this tab while it waited for a pick): open it.
+	$effect(() => {
+		const want = tab?.ctrHostId;
+		if (want && hostsLoaded && want !== hostId && hosts.some((h) => h.id === want)) void connect(want);
+	});
+
+	// Closing the tab closes its host's connection.
+	onDestroy(() => {
+		if (opened) ctrClose(opened.key).catch(() => {});
+	});
 
 	// ---------------------------------------------------------------------
 	// Lists
@@ -213,14 +265,14 @@
 	onMount(() => {
 		void loadHosts();
 		const timer = setInterval(() => {
-			if (document.visibilityState === 'visible' && getActivePage() === 'containers' && !confirm && !editorOpen) void refresh();
+			if (onScreen() && !confirm && !editorOpen) void refresh();
 		}, REFRESH_MS);
 		const mq = window.matchMedia('(max-width: 760px)');
 		const onMq = () => (narrow = mq.matches);
 		onMq();
 		mq.addEventListener('change', onMq);
 		const onKey = (e: KeyboardEvent) => {
-			if (getActivePage() !== 'containers') return;
+			if (!onScreen()) return;
 			const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
 			if (e.key === '/' && !typing) {
 				e.preventDefault();
@@ -365,7 +417,7 @@
 	const roTitle = $derived(readOnly ? t('env.read_only_hint') : undefined);
 </script>
 
-<div class="page" class:production>
+<div class="page" class:production bind:this={root}>
 	<!-- Where you are, always: host, engine, environment. -->
 	<header class="bar">
 		<div class="host-pick">
@@ -624,14 +676,18 @@
 	onclose={() => (editorOpen = false)}
 	onsaved={(h) => {
 		hosts = [h, ...hosts.filter((x) => x.id !== h.id)];
+		hostsChanged();
 		void connect(h.id);
 	}}
 	ondeleted={(id) => {
 		hosts = hosts.filter((h) => h.id !== id);
+		hostsChanged();
 		if (hostId === id) {
 			hostId = '';
 			opened = null;
-			if (hosts[0]) void connect(hosts[0].id);
+			nameTab('');
+			const next = hosts.find((h) => !otherTabShowing('containers', h.id, tab?.id));
+			if (next) void connect(next.id);
 		}
 	}}
 />
