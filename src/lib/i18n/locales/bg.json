@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Управление на устройства",
   "sync_account.check": "Проверка на връзката",
   "sync_account.sign_out": "Изход",
+  "sync_account.managed_removal": "Разрешаване на управлявано премахване на трезори",
+  "sync_account.managed_removal_desc": "Собствениците могат да поискат изтриване на споделен трезор от това устройство след отнемане на достъпа, включително на несинхронизираните промени.",
   "sync_account.loading": "Проверка на акаунта…",
   "sync_account.device_name": "Име на устройство",
   "sync_account.sign_in": "Вход",

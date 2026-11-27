@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Διαχείριση συσκευών",
   "sync_account.check": "Έλεγχος σύνδεσης",
   "sync_account.sign_out": "Αποσύνδεση",
+  "sync_account.managed_removal": "Να επιτρέπεται η διαχειριζόμενη διαγραφή θυρίδων",
+  "sync_account.managed_removal_desc": "Οι κάτοχοι μπορούν να ζητήσουν τη διαγραφή μιας κοινόχρηστης θυρίδας από αυτή τη συσκευή μετά την ανάκληση πρόσβασης, μαζί με τις μη συγχρονισμένες αλλαγές.",
   "sync_account.loading": "Έλεγχος λογαριασμού…",
   "sync_account.device_name": "Όνομα συσκευής",
   "sync_account.sign_in": "Σύνδεση",

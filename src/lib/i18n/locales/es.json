@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Gestionar dispositivos",
   "sync_account.check": "Comprobar conexión",
   "sync_account.sign_out": "Cerrar sesión",
+  "sync_account.managed_removal": "Permitir la eliminación administrada de bóvedas",
+  "sync_account.managed_removal_desc": "Los propietarios pueden solicitar que se elimine una bóveda compartida de este dispositivo tras revocar el acceso, incluidos los cambios sin sincronizar.",
   "sync_account.loading": "Comprobando la cuenta…",
   "sync_account.device_name": "Nombre del dispositivo",
   "sync_account.sign_in": "Iniciar sesión",

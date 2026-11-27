@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Gérer les appareils",
   "sync_account.check": "Vérifier la connexion",
   "sync_account.sign_out": "Se déconnecter",
+  "sync_account.managed_removal": "Autoriser la suppression gérée des coffres",
+  "sync_account.managed_removal_desc": "Les propriétaires peuvent demander la suppression d’un coffre partagé sur cet appareil après révocation de l’accès, y compris les modifications non synchronisées.",
   "sync_account.loading": "Vérification du compte…",
   "sync_account.device_name": "Nom de l’appareil",
   "sync_account.sign_in": "Se connecter",

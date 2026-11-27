@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Управление устройствами",
   "sync_account.check": "Проверить соединение",
   "sync_account.sign_out": "Выйти",
+  "sync_account.managed_removal": "Разрешить управляемое удаление хранилищ",
+  "sync_account.managed_removal_desc": "Владельцы могут запросить удаление общего хранилища с этого устройства после отзыва доступа, включая несинхронизированные изменения.",
   "sync_account.loading": "Проверка аккаунта…",
   "sync_account.device_name": "Имя устройства",
   "sync_account.sign_in": "Войти",

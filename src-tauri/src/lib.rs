@@ -472,6 +472,7 @@ pub fn run() {
             sync_account_sign_out,
             sync_account_manage,
             sync_account_preferences,
+            sync_account_managed_removal,
             // MCP server. Off until the user enables it; nothing here starts
             // a listener or shares a session on its own.
             mcp_start,
@@ -1107,6 +1108,7 @@ pub fn run() {
             sync_account_sign_out,
             sync_account_manage,
             sync_account_preferences,
+            sync_account_managed_removal,
             // MCP server. Off until the user enables it; nothing here starts
             // a listener or shares a session on its own.
             mcp_start,

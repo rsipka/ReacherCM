@@ -18,9 +18,17 @@ pub(super) struct SharedAccess {
     role: String,
     wrapped_key: Option<String>,
     #[serde(default)]
+    grant_id: Option<Uuid>,
+    #[serde(default)]
     key_epoch: u64,
     #[serde(default)]
     rotation_required: bool,
+}
+
+impl SharedAccess {
+    fn managed_grant(&self) -> Option<Uuid> {
+        if self.role == "owner" { None } else { self.grant_id }
+    }
 }
 
 #[derive(Serialize)]
@@ -524,7 +532,7 @@ impl VaultManager {
         };
         vault.save_organization_access("owner", None).await?;
         let report = sync_engine::sync(&sync).await?;
-        self.save_organization_vault(info.clone(), target.config(), &account.username)
+        self.save_organization_vault(info.clone(), target.config(), &account.username, None)
             .await?;
         sync_engine::report_applied(&sync, report).await;
         Ok(info)
@@ -535,6 +543,7 @@ impl VaultManager {
         info: VaultInfo,
         config: String,
         user: &str,
+        managed_grant: Option<Uuid>,
     ) -> Result<(), VaultError> {
         let before = self.user_vaults.clone();
         self.user_vaults.retain(|entry| entry.id != info.id);
@@ -544,6 +553,7 @@ impl VaultManager {
             vault_type: info.vault_type,
             sync_url: Some(config.clone()),
             sync_token: Some(user.to_owned()),
+            managed_grant,
         });
         if let Err(err) = self.save_identity_current().await {
             self.user_vaults = before;
@@ -571,6 +581,7 @@ impl VaultManager {
             .into_iter()
             .find(|entry| entry.id == id)
             .ok_or_else(|| organization_error("This account has no access to the vault"))?;
+        let managed_grant = access.managed_grant();
         if !matches!(access.role.as_str(), "owner" | "editor" | "viewer") {
             return Err(organization_error("Invalid shared vault role"));
         }
@@ -624,7 +635,7 @@ impl VaultManager {
                 .await?;
             info
         };
-        self.save_organization_vault(info.clone(), config, &account.username)
+        self.save_organization_vault(info.clone(), config, &account.username, managed_grant)
             .await?;
         let target = self
             .sync_targets(Some(&id_string))?
@@ -808,7 +819,7 @@ impl VaultManager {
             write_organization_access(&tx, &access.role, access.wrapped_key.as_deref()).await?;
             write_rotation_pending(&tx, access.rotation_required).await?;
             tx.commit().await?;
-            return Ok(());
+            return self.remember_organization_grant(id, access.managed_grant()).await;
         }
         let (master, header, _) = self
             .fetch_organization_key(target, &access, authorized)
@@ -820,7 +831,19 @@ impl VaultManager {
             .get_mut(id)
             .ok_or(VaultError::Locked)?
             .adopt_organization_key(&access, master, owner_wrap)
-            .await
+            .await?;
+        self.remember_organization_grant(id, access.managed_grant()).await
+    }
+
+    async fn remember_organization_grant(&mut self, id: &str, grant: Option<Uuid>) -> Result<(), VaultError> {
+        let Some(entry) = self.user_vaults.iter_mut().find(|entry| entry.id == id) else {
+            return Ok(());
+        };
+        if entry.managed_grant != grant {
+            entry.managed_grant = grant;
+            self.save_identity_current().await?;
+        }
+        Ok(())
     }
 
     pub(crate) async fn organization_grants(
@@ -1067,6 +1090,7 @@ impl VaultManager {
             id: target.vault_id,
             role: "owner".into(),
             wrapped_key: Some(owner_key),
+            grant_id: None,
             key_epoch: next_epoch,
             rotation_required: false,
         };
@@ -1167,6 +1191,7 @@ mod tests {
             id,
             role: "editor".into(),
             wrapped_key: Some(encoded),
+            grant_id: None,
             key_epoch: 2,
             rotation_required: false,
         };

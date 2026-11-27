@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Manage devices",
   "sync_account.check": "Check connection",
   "sync_account.sign_out": "Sign out",
+  "sync_account.managed_removal": "Allow managed vault removal",
+  "sync_account.managed_removal_desc": "Vault owners can request deletion of a revoked shared vault on this device, including unsynced edits.",
   "sync_account.loading": "Checking account…",
   "sync_account.device_name": "Device name",
   "sync_account.sign_in": "Sign in",

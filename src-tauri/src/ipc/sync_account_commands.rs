@@ -37,6 +37,7 @@ const CANCELED: &str = "sync_account.canceled";
 
 static ACTION: Mutex<()> = Mutex::const_new(());
 static CANCEL: Notify = Notify::const_new();
+static POLICY_CHECK: Mutex<Option<(String, Instant)>> = Mutex::const_new(None);
 static ACCESS: Mutex<Option<CachedAccess>> = Mutex::const_new(None);
 
 struct CachedAccess {
@@ -58,6 +59,9 @@ pub struct AccountView {
 struct StoredAccount {
     account: AccountView,
     refresh: String,
+    // Keep the last refresh token for the read-only device policy service.
+    #[serde(default)]
+    needs_sign_in: bool,
 }
 
 #[derive(Deserialize)]
@@ -386,7 +390,7 @@ async fn browser_code(server: &Url, label: &str, verifier: &str) -> Result<(Stri
 }
 
 pub(crate) fn account_status() -> Result<Option<AccountView>> {
-    Ok(saved()?.map(|account| account.account))
+    Ok(saved()?.filter(|account| !account.needs_sign_in).map(|account| account.account))
 }
 
 #[tauri::command]
@@ -398,7 +402,7 @@ pub async fn sync_account_status() -> Result<Option<AccountView>> {
 #[tauri::command]
 pub async fn sync_account_sign_in(server: String, label: String) -> Result<AccountView> {
     let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
-    if saved()?.is_some() {
+    if account_status()?.is_some() {
         return Err("sync_account.error_existing");
     }
     let server = origin(&server)?;
@@ -441,12 +445,14 @@ async fn install_account(http: &Client, server: &Url, value: Tokens) -> Result<A
     let stored = StoredAccount {
         account: account.clone(),
         refresh: value.refresh_token.clone(),
+        needs_sign_in: false,
     };
     if let Err(err) = save(&stored) {
         revoke(http, server, &stored.refresh).await;
         return Err(err);
     }
     remember_access(server, value).await;
+    crate::vault::manager::request_sync();
     Ok(account)
 }
 
@@ -479,7 +485,7 @@ pub async fn sync_account_pair(
     verification: tauri::ipc::Channel<String>,
 ) -> Result<AccountView> {
     let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
-    if saved()?.is_some() {
+    if account_status()?.is_some() {
         return Err("sync_account.error_existing");
     }
     let code = Zeroizing::new(code);
@@ -566,7 +572,7 @@ pub fn sync_account_cancel() {
 #[tauri::command]
 pub async fn sync_account_check() -> Result<AccountView> {
     let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
-    let mut stored = saved()?.ok_or(REVOKED)?;
+    let mut stored = saved()?.filter(|stored| !stored.needs_sign_in).ok_or(REVOKED)?;
     let server = origin(&stored.account.server)?;
     let http = http(&server)?;
     let fresh = refresh_access(&http, &server, &mut stored).await?;
@@ -576,7 +582,7 @@ pub async fn sync_account_check() -> Result<AccountView> {
             Ok(stored.account)
         }
         Err(REVOKED) => {
-            clear_account().await?;
+            require_sign_in(&mut stored).await?;
             Err(REVOKED)
         }
         Err(error) => Err(error),
@@ -618,6 +624,98 @@ async fn clear_account() -> Result<()> {
     forget()
 }
 
+async fn require_sign_in(stored: &mut StoredAccount) -> Result<()> {
+    *ACCESS.lock().await = None;
+    stored.needs_sign_in = true;
+    save(stored)
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DeviceVaultState {
+    Active,
+    Suspended,
+    Revoked,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ManagedVaultRemoval {
+    pub(crate) organization_id: uuid::Uuid,
+    pub(crate) vault_id: uuid::Uuid,
+    pub(crate) grant_id: uuid::Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeviceVaultPolicy {
+    version: u8,
+    device_id: String,
+    username: String,
+    pub(crate) state: DeviceVaultState,
+    pub(crate) removals: Vec<ManagedVaultRemoval>,
+}
+
+impl DeviceVaultPolicy {
+    fn matches(&self, account: &AccountView) -> bool {
+        self.version == 1 && self.device_id == account.device_id && self.username == account.username
+    }
+}
+
+/// Only this authenticated response can authorize managed actions. Older
+/// servers, invalid tokens, timeouts and invalid responses leave policy unchanged.
+pub(crate) async fn managed_vault_policy() -> Option<(AccountView, DeviceVaultPolicy)> {
+    let _action = ACTION.try_lock().ok()?;
+    let mut stored = saved().ok()??;
+    let mut checked = POLICY_CHECK.lock().await;
+    if checked.as_ref().is_some_and(|(device, time)| {
+        device == &stored.account.device_id && time.elapsed() < Duration::from_secs(15)
+    }) {
+        return None;
+    }
+    *checked = Some((stored.account.device_id.clone(), Instant::now()));
+    drop(checked);
+    let server = origin(&stored.account.server).ok()?;
+    let http = http(&server).ok()?;
+    let mut response = http
+        .get(endpoint(&server, "/api/v1/device-vault-policy"))
+        .timeout(Duration::from_secs(3))
+        .bearer_auth(&stored.refresh)
+        .send()
+        .await
+        .ok()?;
+    if response.status() != StatusCode::OK {
+        return None;
+    }
+    let mut body = Vec::new();
+    while let Some(part) = response.chunk().await.ok()? {
+        if body.len() + part.len() > 512 * 1024 {
+            return None;
+        }
+        body.extend_from_slice(&part);
+    }
+    let policy = serde_json::from_slice::<DeviceVaultPolicy>(&body).ok()?;
+    if !policy.matches(&stored.account) {
+        return None;
+    }
+    if policy.state != DeviceVaultState::Active && !stored.needs_sign_in {
+        let _ = require_sign_in(&mut stored).await;
+    }
+    Some((stored.account, policy))
+}
+
+#[tauri::command]
+pub async fn sync_account_managed_removal(
+    enabled: Option<bool>,
+    state: tauri::State<'_, crate::state::AppState>,
+) -> std::result::Result<bool, String> {
+    let account = account_status()?.ok_or(REVOKED)?;
+    let mut manager = state.vault_manager.lock().await;
+    if let Some(enabled) = enabled {
+        manager.set_managed_removal(&account, enabled).await.map_err(|e| e.to_string())?;
+        crate::vault::manager::request_sync();
+    }
+    Ok(manager.managed_removal_enabled(&account))
+}
+
 async fn refresh_access(
     client: &Client,
     server: &Url,
@@ -636,7 +734,7 @@ async fn refresh_access(
     {
         Ok(tokens) => tokens,
         Err(REVOKED) => {
-            clear_account().await?;
+            require_sign_in(stored).await?;
             return Err(REVOKED);
         }
         Err(err) => return Err(err),
@@ -727,7 +825,7 @@ async fn account_request(
     request: impl Fn(&Client, &Url) -> reqwest::RequestBuilder,
 ) -> Result<Response> {
     let _action = ACTION.try_lock().map_err(|_| "sync_account.busy")?;
-    let mut stored = saved()?.ok_or(REVOKED)?;
+    let mut stored = saved()?.filter(|stored| !stored.needs_sign_in).ok_or(REVOKED)?;
     if !matches(&stored.account) {
         return Err(REVOKED);
     }
@@ -762,7 +860,7 @@ async fn account_request(
                         .await;
                 continue;
             }
-            clear_account().await?;
+            require_sign_in(&mut stored).await?;
             return Err(REVOKED);
         }
         return Ok(response);
@@ -803,6 +901,7 @@ pub(crate) async fn seed_vault_test_tokens(
     save(&StoredAccount {
         account: account.clone(),
         refresh: refresh_token.clone(),
+        needs_sign_in: false,
     })
     .unwrap();
     remember_access(
@@ -830,6 +929,39 @@ mod tls_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(desktop)]
+    #[tokio::test]
+    async fn managed_policy_ignores_unavailable_and_invalid_responses() {
+        let _account = VAULT_TEST_ACCOUNT.lock().await;
+        let responses = [
+            (StatusCode::NOT_FOUND, "{}"),
+            (StatusCode::UNAUTHORIZED, "{}"),
+            (StatusCode::SERVICE_UNAVAILABLE, "{}"),
+            (StatusCode::OK, "{"),
+            (StatusCode::OK, "slow-response"),
+            (StatusCode::OK, r#"{"version":1,"device_id":"different","username":"member","state":"suspended","removals":[]}"#),
+        ];
+        for (status, body) in responses {
+            let router = Router::new().route(
+                "/api/v1/device-vault-policy",
+                get(move || async move {
+                    if body == "slow-response" {
+                        tokio::time::sleep(Duration::from_secs(4)).await;
+                    }
+                    (status, body)
+                }),
+            );
+            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let service = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            seed_vault_test_account(&url, "member").await;
+            assert!(managed_vault_policy().await.is_none());
+            assert!(account_status().unwrap().is_some());
+            service.abort();
+        }
+        clear_vault_test_account().await;
+    }
 
     #[test]
     fn sync_origins_require_https_or_loopback() {

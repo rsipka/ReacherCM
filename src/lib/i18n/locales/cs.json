@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Spravovat zařízení",
   "sync_account.check": "Ověřit připojení",
   "sync_account.sign_out": "Odhlásit se",
+  "sync_account.managed_removal": "Povolit spravované odebrání trezoru",
+  "sync_account.managed_removal_desc": "Vlastníci mohou na tomto zařízení požádat o smazání sdíleného trezoru po odebrání přístupu, včetně nesynchronizovaných změn.",
   "sync_account.loading": "Kontrola účtu…",
   "sync_account.device_name": "Název zařízení",
   "sync_account.sign_in": "Přihlásit se",

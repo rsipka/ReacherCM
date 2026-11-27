@@ -143,11 +143,14 @@ pub async fn sync_vaults(
     timed: bool,
 ) -> (Vec<String>, Vec<(String, VaultError)>) {
     let _operation = SYNC_OPERATIONS.write().await;
+    let mut changed = Vec::new();
+    if let Some((account, policy)) = crate::ipc::sync_account_commands::managed_vault_policy().await {
+        changed = manager.lock().await.apply_managed_vault_policy(&account, policy).await;
+    }
     let targets = match manager.lock().await.sync_targets(only) {
         Ok(t) => t,
-        Err(e) => return (Vec::new(), vec![(only.unwrap_or_default().to_string(), e)]),
+        Err(e) => return (changed, vec![(only.unwrap_or_default().to_string(), e)]),
     };
-    let mut changed = Vec::new();
     let mut failed = Vec::new();
     for target in targets {
         if timed && !sync_engine::due(&target).await {
@@ -427,6 +430,8 @@ pub(crate) struct StoredVaultRef {
     pub(crate) vault_type: String,
     pub(crate) sync_url: Option<String>,
     pub(crate) sync_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) managed_grant: Option<uuid::Uuid>,
 }
 
 /// Whether two sync URLs name the same database. The same Turso database
@@ -533,6 +538,8 @@ pub struct VaultManager {
     /// User-created vaults (shared, private) - for reopening after restart
     user_vaults: Vec<StoredVaultRef>,
 
+    vault_policy: managed_access::VaultPolicyState,
+
     /// Locked by the user, or by auto-lock, rather than never opened. While
     /// set, the silent keychain unlock is refused: opening again takes the
     /// user's own act (their password, the unlock button, or biometrics).
@@ -548,6 +555,7 @@ impl VaultManager {
             vault_names: HashMap::new(),
             kek: None,
             identity: None,
+            vault_policy: managed_access::VaultPolicyState::load(&app_dir),
             app_dir,
             user_uuid: None,
             identity_public_key: None,
@@ -1433,7 +1441,7 @@ impl VaultManager {
             const UNIFIED_VAULT_NAME: &str = "__personal__";
 
             // Check if we already have the unified vault open
-            if let Some(vault_id) = self.vault_names.get(UNIFIED_VAULT_NAME).cloned() {
+            if let Some(vault_id) = self.vault_names.get(UNIFIED_VAULT_NAME).filter(|id| self.vaults.contains_key(*id)).cloned() {
                 tracing::info!(
                     "Unified vault {} already open, mapping all internal vaults",
                     vault_id
@@ -1450,7 +1458,10 @@ impl VaultManager {
             }
 
             // Check if we have a stored vault ID for the unified vault
-            let mut vault_id = self.internal_vault_ids.get(UNIFIED_VAULT_NAME).cloned();
+            let account_target = sync_url.as_deref().zip(sync_token.as_deref())
+                .and_then(|(url, user)| crate::vault::sync_account_store::AccountTarget::parse(url, user).ok());
+            let mut vault_id = self.internal_vault_ids.get(UNIFIED_VAULT_NAME).cloned()
+                .or_else(|| account_target.as_ref().map(|target| target.vault_id.to_string()));
             tracing::info!("Stored unified vault ID: {:?}", vault_id);
 
             if let Some(ref id) = vault_id {
@@ -1465,15 +1476,14 @@ impl VaultManager {
                             info.id,
                             info.secret_count
                         );
-                        match self.unlock_vault(id).await {
-                            Ok(_) => {
-                                tracing::info!("Unified vault unlocked successfully");
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to unlock unified vault: {}", e);
-                                return Err(e);
-                            }
+                        if !self.vaults.get(id).is_some_and(|vault| self.account_vault_suspended(vault)) {
+                            self.unlock_vault(id).await?;
                         }
+                    }
+                    Err(e) if account_target.is_some() => {
+                        // A failed account sync must not replace the configured
+                        // personal vault or remap local data to a new identity.
+                        tracing::warn!("Could not open the configured personal Sync vault: {}", e);
                     }
                     Err(e) => {
                         tracing::warn!(
@@ -1940,6 +1950,7 @@ impl VaultManager {
                 vault_type: vault_type_str.clone(),
                 sync_url: sync_url.map(|s| s.to_string()),
                 sync_token: sync_token.map(|s| s.to_string()),
+                managed_grant: None,
             });
             // Persist to disk
             if let Err(e) = self.save_identity_current().await {
@@ -2022,7 +2033,11 @@ impl VaultManager {
                 backend: backend.into(),
                 format: state(sync_engine::STATE_FORMAT).await,
                 last_sync: state(sync_engine::STATE_LAST_SYNC).await.and_then(|v| v.parse().ok()),
-                last_error: state(sync_engine::STATE_LAST_ERROR).await,
+                last_error: if self.account_vault_suspended(vault) {
+                    Some(managed_access::SUSPENDED.into())
+                } else {
+                    state(sync_engine::STATE_LAST_ERROR).await
+                },
                 conflicts: state(sync_engine::STATE_CONFLICTS).await.and_then(|v| v.parse().ok()).unwrap_or(0),
                 pending: sync_local::dirty_count(&conn).await.unwrap_or(0),
             });
@@ -2130,8 +2145,11 @@ impl VaultManager {
         if !has_header {
             match &sync_config {
                 Some(config) => {
-                    let _ = std::fs::remove_file(&db_path);
                     let backend = sync_engine::Backend::parse(&config.sync_url, &config.auth_token, &self.app_dir)?;
+                    if matches!(&backend, sync_engine::Backend::Account(_)) && db_path.exists() {
+                        return Err(VaultError::SyncError("The local Sync vault has no header. The local file was preserved.".into()));
+                    }
+                    let _ = std::fs::remove_file(&db_path);
                     Self::bootstrap_synced(&db_path, &backend).await?;
                 }
                 None => return Err(VaultError::NotFound(vault_id.to_string())),
@@ -2229,6 +2247,9 @@ impl VaultManager {
     }
 
     async fn unlock_vault_keys(&mut self, vault_id: &str) -> Result<(), VaultError> {
+        if self.vaults.get(vault_id).is_some_and(|vault| self.account_vault_suspended(vault)) {
+            return Err(VaultError::AccessDenied(managed_access::SUSPENDED.into()));
+        }
         let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
         let identity = self.identity.as_ref().ok_or(VaultError::Locked)?;
         let my_uuid = self.user_uuid.clone().ok_or(VaultError::IdentityNotInitialized)?;
@@ -2443,6 +2464,11 @@ impl VaultManager {
                     sync_local::state(&conn, sync_engine::STATE_LAST_ERROR).await.ok().flatten().map(|e| describe_db_error(&e)),
                 ),
                 (sync_error, _, _) => (None, sync_error),
+            };
+            let sync_error = if self.account_vault_suspended(vault) {
+                Some(managed_access::SUSPENDED.into())
+            } else {
+                sync_error
             };
             vaults.push(VaultInfo {
                 id: vault_id.clone(),
@@ -2937,6 +2963,7 @@ impl VaultManager {
             vault_type: vault_info.vault_type.clone(),
             sync_url: Some(sync_url.to_string()),
             sync_token: Some(token.to_string()),
+            managed_grant: None,
         });
 
         // Persist to identity file
@@ -3547,6 +3574,7 @@ impl VaultManager {
                     vault_type: v.vault_type.clone(),
                     sync_url: v.sync_url.clone(),
                     sync_token: v.sync_token.clone(),
+                    managed_grant: None,
                 })
                 .collect()
         } else {
@@ -3560,6 +3588,7 @@ impl VaultManager {
                     vault_type: v.vault_type.clone(),
                     sync_url: None,
                     sync_token: None,
+                    managed_grant: None,
                 })
                 .collect()
         };
@@ -3582,7 +3611,7 @@ impl VaultManager {
         };
         let user_vaults: Vec<StoredVaultRef> = user_vaults
             .into_iter()
-            .map(|v| StoredVaultRef { sync_token: None, ..v })
+            .map(|v| StoredVaultRef { sync_token: None, managed_grant: None, ..v })
             .collect();
         let stored = StoredIdentity {
             user_uuid: bundle.identity.user_uuid.clone(),
@@ -3976,6 +4005,8 @@ pub mod device_link;
 mod device_link_tests;
 
 #[cfg(desktop)]
+#[path = "manager_managed_access.rs"]
+mod managed_access;
 #[path = "manager_account_sync.rs"]
 mod account_sync;
 

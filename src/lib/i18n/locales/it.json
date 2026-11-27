@@ -4202,6 +4202,8 @@
   "sync_account.manage": "Gestisci dispositivi",
   "sync_account.check": "Verifica connessione",
   "sync_account.sign_out": "Esci",
+  "sync_account.managed_removal": "Consenti la rimozione gestita delle casseforti",
+  "sync_account.managed_removal_desc": "I proprietari possono richiedere la rimozione di una cassaforte condivisa da questo dispositivo dopo la revoca dell’accesso, incluse le modifiche non sincronizzate.",
   "sync_account.loading": "Verifica dell’account…",
   "sync_account.device_name": "Nome del dispositivo",
   "sync_account.sign_in": "Accedi",
