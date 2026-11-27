@@ -24,11 +24,12 @@ const first = wizardSteps({ rerun: false });
 const again = wizardSteps({ rerun: true });
 check(
 	'first run asks everything, in order',
-	same(first, ['personalize', 'sessions', 'logging', 'security', 'plugins', 'storage', 'account', 'complete']),
+	same(first, ['personalize', 'sessions', 'logging', 'security', 'plugins', 'account', 'complete']),
 	JSON.stringify(first)
 );
-check('run again offers account sync and leaves out plugins and storage', same(again, ['personalize', 'sessions', 'logging', 'security', 'account', 'complete']), JSON.stringify(again));
+check('run again offers account sync and leaves out plugins', same(again, ['personalize', 'sessions', 'logging', 'security', 'account', 'complete']), JSON.stringify(again));
 check('both end on the summary', first.at(-1) === 'complete' && again.at(-1) === 'complete');
+check('no Turso storage step', !first.includes('storage') && !again.includes('storage'));
 check('no step twice', new Set(first).size === first.length);
 check('Skip goes to the summary', first[skipTarget(first)] === 'complete' && again[skipTarget(again)] === 'complete');
 

@@ -8,7 +8,7 @@
 	interface Props {
 		onComplete: () => void;
 		onBack: () => void;
-		/** Opened again from Settings: no storage step was shown. */
+		/** Opened again from Settings. */
 		rerun?: boolean;
 	}
 
@@ -16,14 +16,12 @@
 
 	const settings = getSettings();
 	const mobile = isMobile();
-	let hasTurso = $derived(!!settings.pendingTursoOrg);
-	let storageLabel = $derived(hasTurso ? t('setup.cloud_sync') : t('setup.local_only'));
 	let account = $derived(getSyncAccount());
 
 	const LOG_LABEL = { off: 'settings.log_off', printable: 'settings.log_printable', all: 'settings.log_all' } as const;
 	const HISTORY_LABEL = { off: 'history.mode_off', commands: 'history.mode_commands', output: 'history.mode_output' } as const;
 
-	/** What the new steps chose, beside language and storage. */
+	/** What the new steps chose, beside language. */
 	let rows = $derived(
 		[
 			{ label: t('settings.language'), value: settings.locale === 'en' ? 'English' : settings.locale, show: true },
@@ -49,11 +47,6 @@
 				label: t('settings.check_updates'),
 				value: t(settings.checkForUpdates ? 'setup.updates_auto' : 'setup.updates_manual'),
 				show: true
-			},
-			{
-				label: t('setup.storage_title'),
-				value: storageLabel + (hasTurso ? ` (${settings.pendingTursoOrg})` : ''),
-				show: !rerun
 			},
 			{
 				label: t('setup.account_title'),
