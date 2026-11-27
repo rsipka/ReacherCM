@@ -157,6 +157,8 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 		case 'ssh_key_list':
 		case 'pwmanager_status':
 		case 'db_list':
+		case 'wireguard_list':
+		case 'ansible_engines':
 		case 'ctr_containers':
 		case 'ctr_projects':
 		case 'ansible_list_files':
@@ -295,6 +297,30 @@ try {
 	check('its cluster connection closes', await until(async () => calls.some((c) => c.cmd === 'k8s_close' && c.args.key === 'c1')));
 	await sleep(1500);
 	check('the other cluster stays open', !calls.some((c) => c.cmd === 'k8s_close' && c.args.key === 'c2'), JSON.stringify(calls.filter((c) => c.cmd.startsWith('k8s_open') || c.cmd === 'k8s_close').map((c) => c.cmd + ':' + (c.args.clusterId ?? c.args.key))));
+
+	console.log('\nnew session');
+	const openNew = async () => {
+		await page.keyboard.press('Control+Shift+N');
+		return until(async () => (await page.locator('.category-tab', { hasText: 'DevOps' }).count()) === 1);
+	};
+	check('New session has a DevOps tab', await openNew());
+	await page.locator('.category-tab', { hasText: 'DevOps' }).click();
+	const offers = (await page.locator('.devops-new-title').allInnerTexts()).map((x) => x.trim());
+	check('it offers each tool', ['Ansible project', 'OpenTofu project', 'Database connection', 'Container host', 'Kubernetes cluster'].every((n) => offers.includes(n)), JSON.stringify(offers));
+	check('with no Save button', (await page.locator('button', { hasText: 'Save session' }).count()) === 0);
+	await shot('new-session', false);
+	const k8sTabs = (await tabTitles()).length;
+	await page.locator('.devops-new-item', { hasText: 'Kubernetes cluster' }).click();
+	check('Kubernetes cluster opens the add-cluster editor', await until(async () => (await page.getByText('Add cluster', { exact: true }).count()) > 0));
+	check('in a new Kubernetes tab, not over a cluster tab', (await tabTitles()).length === k8sTabs + 1 && (await activeTitle()) === 'Kubernetes', JSON.stringify(await tabTitles()));
+	await page.keyboard.press('Escape');
+	await sleep(300);
+	await openNew();
+	await page.locator('.category-tab', { hasText: 'DevOps' }).click();
+	await page.locator('.devops-new-item', { hasText: 'Database connection' }).click();
+	check('Database connection opens the new-connection editor in the Databases tab', await until(async () => (await page.getByText('New connection', { exact: true }).count()) > 0) && (await activeTitle()) === 'Databases');
+	await page.keyboard.press('Escape');
+	await sleep(300);
 
 	console.log('\ntool switched off');
 	await page.evaluate(async () => {
