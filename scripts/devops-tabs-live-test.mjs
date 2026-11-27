@@ -1,10 +1,12 @@
 /**
  * DevOps workspaces as tabs, in a browser page with a stand-in for Tauri:
- * the Sessions list's DevOps group lists the switched-on tools and each
- * saved Kubernetes cluster; a cluster opens its own tab, named after it, a
- * second pick of it brings that tab forward, another cluster opens a tab of
- * its own, closing a cluster's tab closes its connection, and switching a
- * tool off closes its tabs. There is no page switcher in the tab bar.
+ * the Sessions list's DevOps group lists the switched-on tools and what each
+ * holds. A cluster or container host opens its own tab, named after it, a
+ * second pick of it brings that tab forward, another one opens a tab of its
+ * own, and closing one's tab closes its connection. A database connection
+ * connects in the Databases tab; an Ansible project opens in the Ansible tab.
+ * A workspace that fails stays inside its tab, and switching a tool off
+ * closes its tabs. There is no page switcher in the tab bar.
  *
  * Needs Playwright's Chromium; skips cleanly without it. SHOT_DIR=<dir>
  * saves screenshots.
@@ -112,10 +114,27 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 			return false;
 		case 'session_list':
 			return SESSIONS;
-		// Left broken on purpose: the Databases workspace fails on it, which
+		// Left broken on purpose: the OpenTofu workspace fails on it, which
 		// must stay inside its own tab.
-		case 'db_list_connections':
+		case 'tofu_list_projects':
 			return null;
+		case 'toolchain_check':
+			return { installed: true, version: '1.8.0', path: '/usr/bin/x', warning: null, localUnsupported: false, wsl: false };
+		case 'db_list_connections':
+			return [{ id: 'd1', name: 'pg-main', engine: 'postgres', host: '10.0.0.7', port: 5432, username: 'app', database: 'app', route: { kind: 'direct' }, tls: 'prefer', hasPassword: true }];
+		case 'db_connect':
+			return { engine: 'postgres', databases: ['app'], defaultDatabase: 'app', server: { version: '16.4', currentDatabase: 'app', currentUser: 'app' } };
+		case 'ctr_hosts':
+			return [
+				{ id: 'h1', name: 'docker-01', route: { kind: 'direct' }, engine: 'docker', environment: 'none', readOnly: false },
+				{ id: 'h2', name: 'docker-02', route: { kind: 'direct' }, engine: 'docker', environment: 'staging', readOnly: false }
+			];
+		case 'ctr_open':
+			return { key: args.hostId, info: { engine: 'docker', version: '27.1', os: 'linux' }, readOnly: false };
+		case 'ansible_list_projects':
+			return [{ id: 'a1', name: 'site', path: '/home/user/site', description: '', createdAt: '', lastOpenedAt: '' }];
+		case 'ansible_open_project':
+			return { id: args.projectId, name: 'site', path: '/home/user/site', description: '', createdAt: '', lastOpenedAt: '' };
 		case 'k8s_clusters':
 			return CLUSTERS;
 		case 'k8s_open':
@@ -138,7 +157,9 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 		case 'ssh_key_list':
 		case 'pwmanager_status':
 		case 'db_list':
-		case 'container_hosts':
+		case 'ctr_containers':
+		case 'ctr_projects':
+		case 'ansible_list_files':
 		case 'k8s_pods':
 		case 'k8s_workloads':
 		case 'k8s_events':
@@ -210,35 +231,63 @@ try {
 	check('a DevOps group under the sessions', await until(async () => (await group().count()) === 1));
 	const rows = (await group().locator('.row').allInnerTexts()).map((x) => x.trim().replace(/\s+/g, ' '));
 	check('every tool switched on is listed', ['Ansible', 'OpenTofu', 'Databases', 'Containers', 'Kubernetes'].every((n) => rows.some((r) => r.startsWith(n))), JSON.stringify(rows));
-	check('each saved cluster is a row', await until(async () => (await group().locator('.row.cluster').count()) === 2));
+	const items = (tool) => group().locator(`.row.item[data-tool=${tool}]`);
+	check('each saved cluster is a row', await until(async () => (await items('kubernetes').count()) === 2));
+	check('each container host is a row', await until(async () => (await items('containers').count()) === 2));
+	check('each database connection is a row', await until(async () => (await items('databases').count()) === 1));
+	check('each Ansible project is a row', await until(async () => (await items('ansible').count()) === 1));
 	check('no page switcher in the tab bar', (await page.locator('.page-switcher, .page-btn').count()) === 0);
 	await shot('sessions', { x: 0, y: 0, width: 640, height: 520 });
 
 	console.log('\na cluster opens its own tab');
-	await group().locator('.row.cluster', { hasText: 'prod' }).click();
+	await items('kubernetes').filter({ hasText: 'prod' }).click();
 	check('a tab named after the cluster', await until(async () => (await activeTitle()) === 'prod'), JSON.stringify(await tabTitles()));
 	check('it connects that cluster', await until(async () => last('k8s_open')?.args.clusterId === 'c1'));
 	check('the workspace shows in the tab', await until(async () => (await page.locator('.terminal-wrapper.active .devops-body').count()) === 1));
 	await shot('prod', false);
 
-	await group().locator('.row.cluster', { hasText: 'staging' }).click();
+	await items('kubernetes').filter({ hasText: 'staging' }).click();
 	check('another cluster opens another tab', await until(async () => (await activeTitle()) === 'staging'));
 	check('and connects it', await until(async () => last('k8s_open')?.args.clusterId === 'c2'));
 	const opens = count('k8s_open');
-	await group().locator('.row.cluster', { hasText: 'prod' }).click();
+	await items('kubernetes').filter({ hasText: 'prod' }).click();
 	check('picking an open cluster brings its tab forward', await until(async () => (await activeTitle()) === 'prod'));
 	check('without a second tab', (await tabTitles()).filter((x) => x === 'prod').length === 1, JSON.stringify(await tabTitles()));
 	check('or a second connect', count('k8s_open') === opens);
-	check('the open clusters are tinted in the list', (await group().locator('.row.cluster.open').count()) === 2);
+	check('the open clusters are tinted in the list', (await group().locator('.row.item.open[data-tool=kubernetes]').count()) === 2);
 
-	console.log('\nother tools');
+	console.log('\ncontainer hosts');
+	await items('containers').filter({ hasText: 'docker-01' }).click();
+	check('a host opens its own tab, named after it', await until(async () => (await activeTitle()) === 'docker-01'));
+	check('it connects that host', await until(async () => last('ctr_open')?.args.hostId === 'h1'));
+	await items('containers').filter({ hasText: 'docker-02' }).click();
+	check('another host, another tab', await until(async () => (await activeTitle()) === 'docker-02') && last('ctr_open')?.args.hostId === 'h2');
+	const ctrOpens = count('ctr_open');
+	await items('containers').filter({ hasText: 'docker-01' }).click();
+	check('picking an open host brings its tab forward', await until(async () => (await activeTitle()) === 'docker-01') && count('ctr_open') === ctrOpens);
+	await page.locator('.tabbar [role=tab]', { hasText: 'docker-02' }).locator('.tab-close').click();
+	check('closing a host tab closes its connection', await until(async () => calls.some((c) => c.cmd === 'ctr_close' && c.args.key === 'h2')));
+	check('only that one', !calls.some((c) => c.cmd === 'ctr_close' && c.args.key === 'h1'));
+
+	console.log('\ndatabases');
+	await items('databases').filter({ hasText: 'pg-main' }).click();
+	check('a connection opens the Databases tab', await until(async () => (await activeTitle()) === 'Databases'));
+	check('and connects it', await until(async () => last('db_connect')?.args.id === 'd1'));
+	check('it is marked open in the list', await until(async () => (await group().locator('.row.item.open[data-tool=databases]').count()) === 1));
 	await row('Databases').click();
-	check('Databases opens in a tab', await until(async () => (await activeTitle()) === 'Databases'));
-	await row('Databases').click();
-	check('once', (await tabTitles()).filter((x) => x === 'Databases').length === 1);
-	check('a workspace that fails says so in its tab', await until(async () => (await page.locator('.terminal-wrapper.active .devops-failed').count()) === 1));
-	check('and the cluster tabs live on', !calls.some((c) => c.cmd === 'k8s_close'));
+	check('one Databases tab', (await tabTitles()).filter((x) => x === 'Databases').length === 1);
 	await shot('tabs', { x: 0, y: 0, width: 1280, height: 120 });
+
+	console.log('\nprojects');
+	await items('ansible').filter({ hasText: 'site' }).click();
+	check('a project opens the Ansible tab', await until(async () => (await activeTitle()) === 'Ansible'));
+	check('with that project', await until(async () => last('ansible_open_project')?.args.projectId === 'a1'));
+
+	console.log('\na workspace that fails');
+	await row('OpenTofu').click();
+	check('says so in its tab', await until(async () => (await page.locator('.terminal-wrapper.active .devops-failed').count()) === 1));
+	check('and the other tabs live on', !calls.some((c) => c.cmd === 'k8s_close') && (await tabTitles()).includes('prod'));
+	check('and the Sessions list too', (await group().count()) === 1);
 
 	console.log('\nclosing');
 	await page.locator('.tabbar [role=tab]', { hasText: 'prod' }).locator('.tab-close').click();
