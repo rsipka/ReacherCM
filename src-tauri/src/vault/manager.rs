@@ -4010,9 +4010,10 @@ pub mod device_link;
 #[path = "manager_device_link_tests.rs"]
 mod device_link_tests;
 
-#[cfg(desktop)]
 #[path = "manager_managed_access.rs"]
 mod managed_access;
+
+#[cfg(desktop)]
 #[path = "manager_account_sync.rs"]
 mod account_sync;
 
