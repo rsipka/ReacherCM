@@ -3,6 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import type { SshOptions, TerminalOptions, X11Desktop } from './sessions';
 import type { SecretRef } from './pwmanager';
 
+/** The multiplexer on the server: tmux, Byobu (tmux with its own config)
+ *  or Zellij (attach only: no views, windows or status option). */
+export type TmuxTool = 'tmux' | 'byobu' | 'zellij';
+
 /** What a connect asks of tmux on the server (see #lib/terminal/tmux). */
 export interface TmuxStart {
   /** The tmux session to attach to, or create (a new one, when asking). */
@@ -22,6 +26,8 @@ export interface TmuxStart {
   /** The name earlier versions gave the same session: attached to instead
    *  while only it is on the server (see sshTmuxChosen). */
   legacy?: string;
+  /** Unset: tmux. */
+  tool?: TmuxTool;
 }
 
 /** One window of a tab's tmux session. */
@@ -49,8 +55,10 @@ export interface TmuxListed {
   name: string;
   windows: number;
   attached: number;
-  /** Last activity, Unix seconds. */
+  /** Last activity, Unix seconds; 0: not known (Zellij). */
   activity: number;
+  /** A Zellij session that ended; attaching restores it. */
+  exited?: boolean;
 }
 
 export interface JumpHostConnectParams {
@@ -243,8 +251,8 @@ export async function sshTmuxChosen(id: string): Promise<string | null | undefin
 }
 
 /** The server's tmux sessions, on a tab's connection. */
-export async function sshTmuxList(connectionId: string): Promise<TmuxListed[]> {
-  return invoke<TmuxListed[]>('ssh_tmux_list', { connectionId });
+export async function sshTmuxList(connectionId: string, tool?: TmuxTool): Promise<TmuxListed[]> {
+  return invoke<TmuxListed[]>('ssh_tmux_list', { connectionId, tool: tool ?? null });
 }
 
 /** The tmux start script, for a WSL tab to run with `wsl.exe -e sh -c`. */
@@ -264,8 +272,8 @@ export async function sshTmuxWindow(connectionId: string, start: TmuxStart, op: 
 }
 
 /** End a tab's tmux session for good, with the ones other tabs joined it as. */
-export async function sshTmuxKill(connectionId: string, name: string): Promise<void> {
-  return invoke('ssh_tmux_kill', { connectionId, name });
+export async function sshTmuxKill(connectionId: string, name: string, tool?: TmuxTool): Promise<void> {
+  return invoke('ssh_tmux_kill', { connectionId, name, tool: tool ?? null });
 }
 
 export async function sshSend(connectionId: string, data: number[]): Promise<void> {

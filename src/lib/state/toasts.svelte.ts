@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core';
 import { isMac, isMobile, isWebKit } from '#lib/platform.js';
 import { getSettings } from '#lib/state/settings.svelte.js';
+import { recordNotification } from '#lib/state/notification-history.svelte.js';
+import { routeToast } from '#lib/state/notify-rules.js';
+import { windowSeen } from '#lib/terminal/bell.js';
+import { APP_NAME } from '#lib/brand.js';
 
 export type ToastType = 'info' | 'success' | 'warning' | 'error';
 
@@ -46,6 +50,18 @@ function playSound(): void {
 	}
 }
 
+/** The toast as a system notification (Settings > General > System
+ *  notifications). Permission was asked when the setting was turned on. */
+async function notifySystem(message: string): Promise<void> {
+	try {
+		const n = await import('@tauri-apps/plugin-notification');
+		if (!(await n.isPermissionGranted())) return;
+		n.sendNotification({ title: APP_NAME, body: message });
+	} catch {
+		// Notifications not available
+	}
+}
+
 export function getToasts(): Toast[] {
 	return toasts;
 }
@@ -59,9 +75,17 @@ export function addToast(
 	const id = crypto.randomUUID();
 
 	const toast: Toast = { id, message, type, duration, dismissing: false, action };
-	toasts.push(toast);
+	recordNotification(message, type);
 
-	playSound();
+	const route = routeToast(getSettings().systemNotifications, windowSeen(), !!action);
+	if (route.system) void notifySystem(message);
+	// Sent to the system only: the system shows and sounds it, so nothing
+	// here. The toast is still returned, for a caller that dismisses it.
+	if (!route.inApp) return toast;
+
+	toasts.push(toast);
+	// The system plays its own sound for its notification.
+	if (!route.system) playSound();
 
 	if (duration > 0) {
 		const timer = setTimeout(() => {

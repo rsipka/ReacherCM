@@ -128,10 +128,18 @@
 		];
 	}
 
+	/** How the last press was made: a right click on a phone or tablet comes
+	 *  from a mouse (Samsung DeX), where the long-press handles don't. */
+	let lastPointer = '';
+	function onpointerdown(e: PointerEvent): void {
+		lastPointer = e.pointerType;
+	}
+
 	async function oncontextmenu(e: MouseEvent): Promise<void> {
 		// A component opened its own menu, or the platform's long-press
-		// handles text on a phone.
-		if (e.defaultPrevented || isMobile()) return;
+		// handles text on a phone; a mouse there gets this menu, as on a desktop.
+		const pointer = (e as PointerEvent).pointerType || lastPointer;
+		if (e.defaultPrevented || (isMobile() && pointer !== 'mouse')) return;
 		if (import.meta.env.DEV && e.shiftKey) return;
 		e.preventDefault();
 		menu = null;
@@ -159,7 +167,7 @@
 	}
 </script>
 
-<svelte:window {oncontextmenu} />
+<svelte:window {oncontextmenu} onpointerdowncapture={onpointerdown} />
 
 {#if menu}
 	<DbMenu x={menu.x} y={menu.y} items={menu.items} onclose={() => (menu = null)} />

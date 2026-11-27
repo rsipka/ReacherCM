@@ -77,6 +77,9 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'general', label: 'settings.minimize_to_tray', desc: 'settings.tray_desc', desktopOnly: true },
 	{ page: 'general', label: 'settings.start_with_system', desc: 'settings.system_startup_desc', desktopOnly: true },
 	{ page: 'general', label: 'settings.play_sounds', desc: 'settings.play_sounds_desc', words: 'sound mute chime notification audio beep quiet' },
+	{ page: 'general', label: 'settings.toast_position', desc: 'settings.toast_position_desc', words: 'notification toast popup corner position place bottom top left right' },
+	{ page: 'general', label: 'settings.notification_history', desc: 'settings.notification_history_desc', words: 'notification toast history bell log missed' },
+	{ page: 'general', label: 'settings.system_notifications', desc: 'settings.system_notifications_desc', words: 'notification toast system os desktop native background' },
 	{ page: 'general', label: 'settings.rerun_setup', desc: 'settings.rerun_setup_desc', words: 'wizard first run onboarding welcome' },
 	{ page: 'about', label: 'settings.check_updates', desc: 'settings.check_updates_desc', words: 'update version' },
 	{ page: 'terminal', label: 'settings.file_editor', desc: 'settings.file_editor_desc', words: 'editor vim nano emacs code codium vscode sublime f4', desktopOnly: true },
@@ -142,6 +145,7 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'sessions', label: 'settings.x11_server', words: 'x11 xming vcxsrv display forwarding', desktopOnly: true },
 	{ page: 'devops', label: 'settings.devops', words: 'ansible opentofu terraform databases containers docker kubernetes' },
 	{ page: 'terminal', label: 'phonekeys.title', words: 'extra keys keyboard ctrl alt esc f1 function keys', phoneOnly: true },
+	{ page: 'terminal', label: 'phonekeys.show', words: 'extra keys bar hardware keyboard dex bluetooth hide', phoneOnly: true },
 	{ page: 'about', label: 'settings.version', words: 'version release' },
 ];
 

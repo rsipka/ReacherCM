@@ -142,9 +142,20 @@
 	 * ended (the server logged the user off, say) the backend refuses it, and
 	 * every mouse move would otherwise be an unhandled rejection.
 	 */
-	function sendInput(input: Promise<unknown>): void {
-		input.catch(() => {});
+	function sendInput(input: () => Promise<unknown>): Promise<void> {
+		// One at a time, in order. Each IPC call runs as its own task on the
+		// backend, so two sent together can arrive the other way round: a key
+		// up overtaking its key down leaves the key held there, and a server
+		// that repeats held keys itself (GNOME Remote Desktop) then types it
+		// over and over until the next key comes.
+		const sent = inputQueue.then(input).then(
+			() => {},
+			() => {},
+		);
+		inputQueue = sent;
+		return sent;
 	}
+	let inputQueue: Promise<void> = Promise.resolve();
 
 	/** Press or release a key named by its position (`KeyboardEvent.code`). */
 	async function pressCode(code: string, down: boolean): Promise<void> {
@@ -419,7 +430,7 @@
 
 	function pickCombo(combo: KeyCombo): void {
 		keysOpen = false;
-		if (phase === 'connected') sendInput(sendCombo(combo.codes));
+		if (phase === 'connected') sendInput(() => sendCombo(combo.codes));
 		canvas?.focus();
 		showBar();
 	}
@@ -733,7 +744,7 @@
 			if (!pendingMove || phase !== 'connected') return;
 			const { x, y } = pendingMove;
 			pendingMove = null;
-			sendInput(remote.mouse(x, y, 'move'));
+			sendInput(() => remote.mouse(x, y, 'move'));
 		});
 	}
 
@@ -748,7 +759,7 @@
 		// that one. Bring this one to the front there first.
 		if (action === 'down') activateRemote();
 		e.preventDefault();
-		sendInput(remote.mouse(p.x, p.y, action, e.button));
+		sendInput(() => remote.mouse(p.x, p.y, action, e.button));
 	}
 
 	function onWheel(e: WheelEvent): void {
@@ -759,7 +770,7 @@
 		// A browser notch is deltaY ≈ +100 downwards; an RDP notch is 120 and
 		// positive means towards the user. One notch per event keeps trackpads
 		// from firing a flood of tiny steps.
-		sendInput(remote.mouse(p.x, p.y, 'wheel', 0, e.deltaY < 0 ? 120 : -120));
+		sendInput(() => remote.mouse(p.x, p.y, 'wheel', 0, e.deltaY < 0 ? 120 : -120));
 	}
 
 	/* --- phone ------------------------------------------------------------- */
@@ -782,8 +793,13 @@
 	 *  each time it changes, so letters appear on the remote as they are typed. */
 	let composed = '';
 
+	async function pressTap(code: string): Promise<void> {
+		await pressCode(code, true);
+		await pressCode(code, false);
+	}
+
 	function tapKey(code: string): void {
-		sendInput(pressCode(code, true).then(() => pressCode(code, false)));
+		sendInput(() => pressTap(code));
 	}
 
 	/** Hold Ctrl, Alt and Win as the sticky bar keys say, around `send`. */
@@ -811,10 +827,10 @@
 			}
 			const code = codeFor(ch);
 			if ((barCtrl || barAlt) && code) {
-				sendInput(withModifiers(async () => tapKey(code)));
+				sendInput(() => withModifiers(() => pressTap(code)));
 				continue;
 			}
-			sendInput(typeChar(ch.codePointAt(0) ?? 0));
+			sendInput(() => typeChar(ch.codePointAt(0) ?? 0));
 		}
 	}
 
@@ -873,7 +889,7 @@
 	function onBarKey(key: BarKey): void {
 		if (phase !== 'connected') return;
 		if (typeof key === 'object' && 'fn' in key) {
-			sendInput(withModifiers(async () => tapKey(`F${key.fn}`)));
+			sendInput(() => withModifiers(() => pressTap(`F${key.fn}`)));
 			return;
 		}
 		if (typeof key === 'object') {
@@ -883,11 +899,11 @@
 		if (key === 'ctrl-alt-del') {
 			barCtrl = true;
 			barAlt = true;
-			sendInput(withModifiers(async () => tapKey('Delete')));
+			sendInput(() => withModifiers(() => pressTap('Delete')));
 			return;
 		}
 		if (key === 'win') {
-			sendInput(withModifiers(async () => tapKey('MetaLeft')));
+			sendInput(() => withModifiers(() => pressTap('MetaLeft')));
 			return;
 		}
 		// Text size is the terminal's; this bar does not offer it.
@@ -896,7 +912,7 @@
 			esc: 'Escape', tab: 'Tab', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
 			home: 'Home', end: 'End', pgup: 'PageUp', pgdn: 'PageDown', del: 'Delete'
 		}[key];
-		if (code) sendInput(withModifiers(async () => tapKey(code)));
+		if (code) sendInput(() => withModifiers(() => pressTap(code)));
 	}
 
 	/** A long press is the right button, as on every touch screen. */
@@ -905,7 +921,7 @@
 		if (!onPhone || phase !== 'connected') return;
 		const p = remotePoint(e);
 		if (!p) return;
-		sendInput(remote.mouse(p.x, p.y, 'down', 2).then(() => remote.mouse(p.x, p.y, 'up', 2)));
+		sendInput(() => remote.mouse(p.x, p.y, 'down', 2).then(() => remote.mouse(p.x, p.y, 'up', 2)));
 	}
 
 	/* --- keyboard ---------------------------------------------------------- */
@@ -984,7 +1000,7 @@
 		if (!locks) return;
 		if (!force && sentLocks && sentLocks.caps === locks.caps && sentLocks.num === locks.num && sentLocks.scroll === locks.scroll) return;
 		sentLocks = locks;
-		sendInput(rdpSyncLocks(id, locks.caps, locks.num, locks.scroll));
+		sendInput(() => rdpSyncLocks(id, locks.caps, locks.num, locks.scroll));
 	}
 	const unlistenLocks = onLocksChange(() => {
 		if (!forwardLockKeys) {
@@ -1001,8 +1017,8 @@
 	});
 
 	function sendLockKey(input: () => Promise<void>): void {
-		// Keep rapid presses and releases in order across asynchronous IPC.
-		const pending = (lockKeyInput ? lockKeyInput.then(input) : input()).catch(() => {});
+		// In order with the other keys, like all input.
+		const pending = sendInput(input);
 		lockKeyInput = pending;
 		void pending.then(() => {
 			if (lockKeyInput !== pending) return;
@@ -1044,7 +1060,7 @@
 			const fake = heldKeysyms.get('ControlLeft');
 			if (fake !== undefined && e.timeStamp - ctrlDownAt < 50) {
 				heldKeysyms.delete('ControlLeft');
-				sendInput(vncKey(id, fake, false));
+				sendInput(() => vncKey(id, fake, false));
 			}
 			return;
 		}
@@ -1053,7 +1069,7 @@
 		e.preventDefault();
 		if (e.code === 'ControlLeft') ctrlDownAt = e.timeStamp;
 		heldKeysyms.set(e.code, keysym);
-		sendInput(vncKey(id, keysym, true));
+		sendInput(() => vncKey(id, keysym, true));
 	}
 
 	function onVncKeyUp(e: KeyboardEvent): void {
@@ -1061,7 +1077,7 @@
 		if (keysym === undefined) return;
 		e.preventDefault();
 		heldKeysyms.delete(e.code);
-		sendInput(vncKey(id, keysym, false));
+		sendInput(() => vncKey(id, keysym, false));
 	}
 
 	function onKeyDown(e: KeyboardEvent): void {
@@ -1092,14 +1108,14 @@
 		if (entry) {
 			e.preventDefault();
 			held.add(e.code);
-			sendInput(remote.key(entry[0], entry[1], false));
+			sendInput(() => remote.key(entry[0], entry[1], false));
 			return;
 		}
 		// No position for this key here (a dead-key result, an IME commit):
 		// send what it produced.
 		if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
 			e.preventDefault();
-			sendInput(typeChar(e.key.charCodeAt(0)));
+			sendInput(() => typeChar(e.key.charCodeAt(0)));
 		}
 	}
 
@@ -1117,18 +1133,18 @@
 		if (!entry) return;
 		e.preventDefault();
 		held.delete(e.code);
-		sendInput(remote.key(entry[0], entry[1], true));
+		sendInput(() => remote.key(entry[0], entry[1], true));
 	}
 
 	function releaseAll(): void {
 		for (const code of held) {
 			const entry = SCANCODES[code];
-			if (entry) sendInput(remote.key(entry[0], entry[1], true));
+			if (entry) sendInput(() => remote.key(entry[0], entry[1], true));
 		}
 		held.clear();
 		for (const code of heldLocks) sendLockKey(() => pressCode(code, false));
 		heldLocks.clear();
-		for (const keysym of heldKeysyms.values()) sendInput(vncKey(id, keysym, false));
+		for (const keysym of heldKeysyms.values()) sendInput(() => vncKey(id, keysym, false));
 		heldKeysyms.clear();
 	}
 
@@ -1209,7 +1225,7 @@
 	function activateRemote(): void {
 		// Menus and tooltips are left alone: activating one there closes it.
 		if (railView === undefined || !viewRect || viewRect.active || !viewRect.listed) return;
-		sendInput(rdpRailCommand(id, railView, 'activate'));
+		sendInput(() => rdpRailCommand(id, railView, 'activate'));
 	}
 
 	async function mountView(): Promise<void> {
@@ -1243,7 +1259,7 @@
 		unregisterCapture = registerCapture(id, () => (phase === 'connected' && canvas?.width ? canvas : null));
 		// A seamless window's view shares the session's tab; the desktop pane registers.
 		if (railView === undefined) {
-			unregisterKeys = registerSendKeys(id, { ready: () => phase === 'connected', send: (codes) => sendInput(sendCombo(codes)) });
+			unregisterKeys = registerSendKeys(id, { ready: () => phase === 'connected', send: (codes) => sendInput(() => sendCombo(codes)) });
 		}
 		if (seamless) monitor = await currentMonitor().catch(() => null);
 		const size = fitSize();
@@ -1364,7 +1380,7 @@
 			// The size the desktop already has is not a resize. Asking for
 			// it anyway leaves a request the server never answers.
 			if (s.width === canvas.width && s.height === canvas.height) return;
-			sendInput(remote.resize(s.width, s.height));
+			sendInput(() => remote.resize(s.width, s.height));
 		}
 	}
 

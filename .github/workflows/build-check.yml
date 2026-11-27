@@ -412,11 +412,11 @@ jobs:
           cp src-tauri/android/MainActivity.kt src-tauri/gen/android/app/src/main/java/com/reachercm/client/MainActivity.kt
           # R8 keep rules for the QR code scanner's ML Kit.
           cat src-tauri/android/proguard-rules.pro >> src-tauri/gen/android/app/proguard-rules.pro
-          # The file manager's phone side: shared storage by file path needs
-          # "All files access" (Android 11+) or the storage permission (older;
-          # Android 10 also needs the legacy storage switch).
-          sed -i 's#<application#<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />\n    <application android:requestLegacyExternalStorage="true"#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
-          grep -q MANAGE_EXTERNAL_STORAGE src-tauri/gen/android/app/src/main/AndroidManifest.xml
+          # ML Kit's bundled barcode model instead of the Play Services one, so
+          # the QR scanner works on phones without Google Play Services.
+          cat src-tauri/android/no-gms.gradle.kts >> src-tauri/gen/android/app/build.gradle.kts
+          # Sessions stay open when DeX starts or the window changes screen; DeX window size.
+          node src-tauri/android/patch-manifest.mjs
 
       - name: Make a throwaway signing key
         run: keytool -genkeypair -keystore "$RUNNER_TEMP/check.keystore" -alias reach -keyalg RSA -keysize 2048 -validity 1 -storepass checkcheck -keypass checkcheck -dname "CN=Build check"
@@ -472,6 +472,13 @@ jobs:
           conf=$(find src-tauri/gen/android/app/build/outputs/mapping -name configuration.txt | head -1)
           if [ -z "$conf" ]; then echo "::warning::No R8 configuration.txt to check."; exit 0; fi
           grep -q 'implements com.google.firebase.components.ComponentRegistrar' "$conf"
+
+      - name: The QR scanner needs no Google Play Services
+        # The bundled barcode model and its native library are in each APK.
+        run: |
+          for apk in $(cat /tmp/apks); do
+            unzip -l "$apk" | grep -q 'libbarhopper' || { echo "::error::$apk has no bundled barcode model."; exit 1; }
+          done
 
   # The one check to require in branch protection: it always runs, passes
   # when every job above passed or was skipped, and fails otherwise.
