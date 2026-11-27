@@ -8,16 +8,23 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { isMobile } from '#lib/platform.js';
 	import { syncAccountErrorKey } from '#lib/sync/account.js';
+	import { PREFERENCE_KEYS, type PreferenceKey } from '#lib/sync/preferences.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
 	import {
-		bindPreferenceAccount, getSyncAccount, preferenceSync, setPreferenceSync, syncPreferences, type SyncAccount
+		bindPreferenceAccount, getSyncAccount, preferenceSync, setPreferenceSync, setPreferenceSyncIncluded,
+		syncPreferences, type SyncAccount
 	} from '#lib/state/preference-sync.svelte.js';
 
 	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
 
 	const mobile = isMobile();
+	const preferenceLabels: Record<PreferenceKey, string> = {
+		theme: 'sync_account.base_theme',
+		locale: 'settings.language',
+		terminalCursorStyle: 'cursor.style',
+	};
 	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
@@ -173,7 +180,26 @@
 					onchange={setPreferenceSync} />
 			</div>
 		</div>
-		{#if preferenceSync.enabled}
+		{#each PREFERENCE_KEYS as key (key)}
+			<div class="setting-row">
+				<div class="setting-info">
+					<span class="setting-label">{t(preferenceLabels[key])}</span>
+				</div>
+				<div class="setting-control">
+					<select
+						class="preference-mode"
+						aria-label={t(preferenceLabels[key])}
+						value={preferenceSync.skipped.includes(key) ? 'local' : 'sync'}
+						disabled={action !== null}
+						onchange={(event) => setPreferenceSyncIncluded(key, event.currentTarget.value === 'sync')}
+					>
+						<option value="sync">{t('sync_account.preference_sync')}</option>
+						<option value="local">{t('sync_account.preference_keep_local')}</option>
+					</select>
+				</div>
+			</div>
+		{/each}
+		{#if preferenceSync.enabled && preferenceSync.skipped.length < PREFERENCE_KEYS.length}
 			<div class="setting-row">
 				<div class="setting-info">
 					{#if preferenceSync.syncing}<span class="setting-description" role="status">{t('sync_account.syncing')}</span>{/if}
@@ -247,6 +273,16 @@
 	.footer-actions { padding: 8px 0; }
 	.server-address { overflow-wrap: anywhere; }
 	.wrap-control :global(button) { white-space: normal; }
+	.preference-mode {
+		padding: 7px 10px;
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-btn);
+		background: var(--color-bg-primary);
+		color: var(--color-text-primary);
+		font: inherit;
+		font-size: 0.8125rem;
+	}
+	.preference-mode:focus-visible { outline: 1px solid var(--color-accent); }
 	.feedback { margin: 0; padding: 9px 0; color: var(--color-text-secondary); font-size: 0.8125rem; }
 	.error, .setting-description.error { color: var(--color-danger); }
 	.confirmation {

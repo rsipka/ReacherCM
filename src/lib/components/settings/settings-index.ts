@@ -29,6 +29,7 @@ export interface IndexedRow {
 
 export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'account', label: 'sync_account.server', words: 'self hosted sign in login devices pair QR' },
+	{ page: 'account', label: 'sync_account.sync_preferences', desc: 'sync_account.sync_preferences_desc', words: 'keep local skip device' },
 	{ page: 'ai', label: 'ai_settings.enable', desc: 'ai_settings.enable_desc', words: 'llm openrouter assistant' },
 	{ page: 'ai', label: 'ai_settings.api_key', desc: 'ai_settings.api_key_desc' },
 	{ page: 'ai', label: 'ai_settings.model_browser' },
