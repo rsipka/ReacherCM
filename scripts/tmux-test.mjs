@@ -7,7 +7,7 @@
 
 import {
 	validTmuxName,
-	defaultTmuxName, legacyTmuxName,
+	DEFAULT_TMUX_NAME, legacyTmuxName,
 	folderTmux,
 	tmuxFor,
 	autoReconnectDelay,
@@ -31,12 +31,12 @@ const section = (s) => console.log(`\n${s}`);
 section('names');
 check('plain names pass', validTmuxName('reacher-web_01'));
 check('spaces, quotes, colons and dots fail', ['a b', "a'b", 'a:b', 'a.b', '', '-x', 'x'.repeat(65)].every((n) => !validTmuxName(n)));
-check('a session name becomes a tmux name', defaultTmuxName('Web 01 (prod)') === 'reachercm-web-01-prod', defaultTmuxName('Web 01 (prod)'));
-check('accents are dropped', defaultTmuxName('Účetní server') === 'reachercm-ucetni-server', defaultTmuxName('Účetní server'));
-check('nothing usable left: plain reachercm', defaultTmuxName('—') === 'reachercm');
-check('the old name keeps the old prefix', legacyTmuxName('Web 01 (prod)') === 'reacher-web-01-prod', legacyTmuxName('Web 01 (prod)'));
-check('long names stay within 64', defaultTmuxName('x'.repeat(100)).length === 64 && legacyTmuxName('x'.repeat(100)).length === 64);
-check('a long name stays valid', validTmuxName(defaultTmuxName('x '.repeat(80))));
+check('the default name is reachercm-tmux', DEFAULT_TMUX_NAME === 'reachercm-tmux' && validTmuxName(DEFAULT_TMUX_NAME));
+check('the old name came from the session name', legacyTmuxName('Web 01 (prod)') === 'reachercm-web-01-prod', legacyTmuxName('Web 01 (prod)'));
+check('accents are dropped', legacyTmuxName('Účetní server') === 'reachercm-ucetni-server', legacyTmuxName('Účetní server'));
+check('nothing usable left: plain reachercm', legacyTmuxName('—') === 'reachercm');
+check('long names stay within 64', legacyTmuxName('x'.repeat(100)).length === 64);
+check('a long name stays valid', validTmuxName(legacyTmuxName('x '.repeat(80))));
 
 section('folders');
 const folders = [
@@ -52,12 +52,12 @@ check('a folder loop ends', folderTmux('loop', folders) === null);
 section('sessions');
 const s = (over) => ({ name: 'Web', kind: 'ssh', folder_id: null, tmux: null, ...over });
 check('off by default', tmuxFor(s({}), folders) === null);
-check('attach on the session', tmuxFor(s({ tmux: { mode: 'attach' } }), folders)?.name === 'reachercm-web');
-check('with the old default name as legacy', tmuxFor(s({ tmux: { mode: 'attach' } }), folders)?.legacy === 'reacher-web');
+check('attach on the session', tmuxFor(s({ tmux: { mode: 'attach' } }), folders)?.name === 'reachercm-tmux');
+check('with the old default name as legacy', tmuxFor(s({ tmux: { mode: 'attach' } }), folders)?.legacy === 'reachercm-web');
 check('an own name has no legacy', tmuxFor(s({ tmux: { mode: 'attach', name: 'main' } }), folders)?.legacy === undefined);
 check('its own name', tmuxFor(s({ tmux: { mode: 'attach', name: 'main' } }), folders)?.name === 'main');
-check('a bad own name falls back to the default', tmuxFor(s({ tmux: { mode: 'attach', name: 'a b' } }), folders)?.name === 'reachercm-web');
-check('the folder turns it on', tmuxFor(s({ folder_id: 'mid' }), folders)?.name === 'reachercm-web');
+check('a bad own name falls back to the default', tmuxFor(s({ tmux: { mode: 'attach', name: 'a b' } }), folders)?.name === 'reachercm-tmux');
+check('the folder turns it on', tmuxFor(s({ folder_id: 'mid' }), folders)?.name === 'reachercm-tmux');
 check('inherit keeps a name of its own', tmuxFor(s({ folder_id: 'mid', tmux: { mode: 'inherit', name: 'x' } }), folders)?.name === 'x');
 check('off on the session beats the folder', tmuxFor(s({ folder_id: 'mid', tmux: { mode: 'off' } }), folders) === null);
 check('a mode from a newer version follows the folder', tmuxFor(s({ folder_id: 'off', tmux: { mode: 'pick-later' } }), folders) === null);
