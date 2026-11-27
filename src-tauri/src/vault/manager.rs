@@ -1476,7 +1476,7 @@ impl VaultManager {
                             info.id,
                             info.secret_count
                         );
-                        if !self.vaults.get(id).is_some_and(|vault| self.account_vault_suspended(vault)) {
+                        if !self.vaults.get(id).is_some_and(|vault| self.account_vault_suspended(id, vault)) {
                             self.unlock_vault(id).await?;
                         }
                     }
@@ -2033,7 +2033,7 @@ impl VaultManager {
                 backend: backend.into(),
                 format: state(sync_engine::STATE_FORMAT).await,
                 last_sync: state(sync_engine::STATE_LAST_SYNC).await.and_then(|v| v.parse().ok()),
-                last_error: if self.account_vault_suspended(vault) {
+                last_error: if self.account_vault_suspended(id, vault) {
                     Some(managed_access::SUSPENDED.into())
                 } else {
                     state(sync_engine::STATE_LAST_ERROR).await
@@ -2247,7 +2247,7 @@ impl VaultManager {
     }
 
     async fn unlock_vault_keys(&mut self, vault_id: &str) -> Result<(), VaultError> {
-        if self.vaults.get(vault_id).is_some_and(|vault| self.account_vault_suspended(vault)) {
+        if self.vaults.get(vault_id).is_some_and(|vault| self.account_vault_suspended(vault_id, vault)) {
             return Err(VaultError::AccessDenied(managed_access::SUSPENDED.into()));
         }
         let kek = self.kek.as_ref().ok_or(VaultError::Locked)?;
@@ -2465,7 +2465,7 @@ impl VaultManager {
                 ),
                 (sync_error, _, _) => (None, sync_error),
             };
-            let sync_error = if self.account_vault_suspended(vault) {
+            let sync_error = if self.account_vault_suspended(vault_id, vault) {
                 Some(managed_access::SUSPENDED.into())
             } else {
                 sync_error

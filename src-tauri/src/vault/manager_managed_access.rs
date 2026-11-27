@@ -75,15 +75,33 @@ impl VaultManager {
         Ok(())
     }
 
-    pub(super) fn account_vault_suspended(&self, vault: &VaultConnection) -> bool {
-        account_target(vault.sync_url.as_deref(), vault.auth_token.as_deref()).is_some_and(
-            |target| {
-                self.vault_policy
-                    .suspended
-                    .iter()
-                    .any(|scope| scope.matches(&target))
-            },
-        )
+    fn policy_target(&self, id: &str, vault: &VaultConnection) -> Option<AccountTarget> {
+        if vault.sync_url.is_some() {
+            return account_target(vault.sync_url.as_deref(), vault.auth_token.as_deref());
+        }
+        if let Some(entry) = self.user_vaults.iter().find(|entry| entry.id == id) {
+            return account_target(entry.sync_url.as_deref(), entry.sync_token.as_deref());
+        }
+        if self
+            .internal_vault_ids
+            .get("__personal__")
+            .is_some_and(|value| value == id)
+        {
+            return account_target(
+                self.personal_sync_url.as_deref(),
+                self.personal_sync_token.as_deref(),
+            );
+        }
+        None
+    }
+
+    pub(super) fn account_vault_suspended(&self, id: &str, vault: &VaultConnection) -> bool {
+        self.policy_target(id, vault).is_some_and(|target| {
+            self.vault_policy
+                .suspended
+                .iter()
+                .any(|scope| scope.matches(&target))
+        })
     }
 
     pub(super) async fn apply_managed_vault_policy(
@@ -101,13 +119,19 @@ impl VaultManager {
                 if let Err(error) = self.vault_policy.save(&self.app_dir).await {
                     tracing::warn!(%error, "Could not persist Sync vault suspension");
                 }
-                for (id, vault) in &mut self.vaults {
-                    if account_target(vault.sync_url.as_deref(), vault.auth_token.as_deref())
-                        .is_some_and(|target| scope.matches(&target))
-                        && vault.master_dek.take().is_some()
-                    {
-                        changed.push(id.clone());
-                    }
+                changed = self
+                    .vaults
+                    .iter()
+                    .filter(|(id, vault)| {
+                        vault.master_dek.is_some()
+                            && self
+                                .policy_target(id, vault)
+                                .is_some_and(|target| scope.matches(&target))
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in &changed {
+                    self.lock_vault(id);
                 }
             }
             DeviceVaultState::Active => {
@@ -150,12 +174,9 @@ impl VaultManager {
                         let ids: Vec<_> = self
                             .vaults
                             .iter()
-                            .filter(|(_, vault)| {
-                                account_target(
-                                    vault.sync_url.as_deref(),
-                                    vault.auth_token.as_deref(),
-                                )
-                                .is_some_and(|target| scope.matches(&target))
+                            .filter(|(id, vault)| {
+                                self.policy_target(id, vault)
+                                    .is_some_and(|target| scope.matches(&target))
                             })
                             .map(|(id, _)| id.clone())
                             .collect();
@@ -392,6 +413,14 @@ mod tests {
             .apply_managed_vault_policy(&account, policy("revoked", json!([])))
             .await
             .is_empty());
+        assert!(matches!(
+            reopened.unlock_vault_keys(&synced).await,
+            Err(VaultError::AccessDenied(_))
+        ));
+
+        // A generic open can omit sync settings. The persisted reference
+        // still binds this local file to the suspended account.
+        reopened.vaults.get_mut(&synced).unwrap().sync_url = None;
         assert!(matches!(
             reopened.unlock_vault_keys(&synced).await,
             Err(VaultError::AccessDenied(_))
