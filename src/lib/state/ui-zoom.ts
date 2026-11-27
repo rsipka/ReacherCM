@@ -34,5 +34,4 @@ export function stepUiZoom(direction: 1 | -1 | 0): void {
 	if (direction === -1) next = [...UI_ZOOM_STEPS].reverse().find((z) => z < current - 0.001) ?? current;
 	if (next === current) return;
 	updateSetting('uiZoom', next);
-	applyUiZoom();
 }

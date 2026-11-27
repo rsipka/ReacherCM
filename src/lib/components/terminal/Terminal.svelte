@@ -23,7 +23,8 @@
 	import { noteLineEntered } from '#lib/state/explorer.svelte.js';
 	import { registerBufferReader, unregisterBufferReader } from '#lib/state/terminal-buffer.svelte.js';
 	import { terminalPalette } from '#lib/state/terminal-themes.svelte.js';
-	import { getSettings, updateSetting, sessionLogConfig } from '#lib/state/settings.svelte.js';
+	import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
+	import { validatedSessionLogConfig } from '#lib/state/log-folder.svelte.js';
 	import { historyStart, type HistoryMode } from '#lib/ipc/history.js';
 	import { setTabHistory, openHistoryPanel, openCommandPicker } from '#lib/state/history.svelte.js';
 	import { countPasteLines, shouldWarnOnPaste } from '#lib/terminal/paste.js';
@@ -131,9 +132,9 @@
 				secrets,
 				patterns: s.historyPatterns.split('\n').map((p) => p.trim()).filter(Boolean),
 				// SSH writes its own file log, asked for at connect.
-				log: ssh ? null : sessionLogConfig(sessionName ?? '')
+				log: ssh ? null : await validatedSessionLogConfig(sessionName ?? '')
 			});
-			setTabHistory(ptyId, stream, status, ssh && sessionLogConfig() !== null);
+			setTabHistory(ptyId, stream, status, ssh && !!sshConnectParams?.sessionLog);
 		} catch (e) {
 			console.warn('Session history:', e);
 		}

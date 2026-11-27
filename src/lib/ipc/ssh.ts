@@ -173,6 +173,10 @@ export async function sessionLogDefaultDir(): Promise<string> {
   return invoke<string>('session_log_default_dir');
 }
 
+export function sessionLogFolderExists(folder: string): Promise<boolean> {
+  return invoke<boolean>('session_log_folder_exists', { folder });
+}
+
 /** A terminal's file log, while it is writing or paused. */
 export interface SessionLogStatus {
   path: string;

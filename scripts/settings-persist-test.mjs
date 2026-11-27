@@ -143,6 +143,8 @@ check('missing ones are defaults', old.terminalCursorStyle === defaults.terminal
 check('an older install counts as set up', old.setupComplete === true);
 check('an older install keeps Ansible and OpenTofu', same(old.devopsTools, ['ansible', 'tofu']));
 check('an empty theme id is no theme', readStoredSettings({ themeId: '' }).themeId === undefined);
+const stockTheme = readStoredSettings({ theme: 'dark', themeId: 'reach-light' });
+check('an older built-in theme choice becomes its base mode', stockTheme.themeId === undefined && stockTheme.theme === 'light');
 check('WinBox starts without sharing passwords', old.winboxPassword === 'none');
 check('WinBox keeps saved command-line login', restart({ ...defaults, winboxPassword: 'argument' }).winboxPassword === 'argument');
 
