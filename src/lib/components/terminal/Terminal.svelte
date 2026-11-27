@@ -51,6 +51,7 @@
 	import Modal from '#lib/components/shared/Modal.svelte';
 	import { openSettings, matchesAction, actionLabel } from '#lib/state/shortcuts.svelte.js';
 	import MobileKeyBar, { type BarKey } from '#lib/components/shared/MobileKeyBar.svelte';
+	import { hasHardwareKeyboard } from '#lib/device.svelte.js';
 	import ZmodemBar from './ZmodemBar.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
 	import DbMenu, { type MenuItem } from '#lib/components/db/DbMenu.svelte';
@@ -282,6 +283,10 @@
 
 	// A phone: the extra-keys bar, and the sticky Ctrl and Alt it holds.
 	const onPhone = isMobile();
+	/** The bar, unless a hardware keyboard makes it pointless (Samsung DeX). */
+	let showKeyBar = $derived(
+		onPhone && (getSettings().mobileBarShow === 'always' || (getSettings().mobileBarShow === 'auto' && !hasHardwareKeyboard()))
+	);
 	let barCtrl = $state(false);
 	let barAlt = $state(false);
 
@@ -1843,7 +1848,7 @@
 		{/if}
 		<div bind:this={containerEl} class="terminal-container" class:bell-flash={flashing}></div>
 	</div>
-	{#if onPhone && !disconnected}
+	{#if showKeyBar && !disconnected}
 		<MobileKeyBar bind:ctrl={barCtrl} bind:alt={barAlt} zoom onkey={onBarKey} />
 	{/if}
 	{#if remote}

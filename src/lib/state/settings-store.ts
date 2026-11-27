@@ -64,6 +64,9 @@ export interface Settings {
 	/** The extra-keys bar above a phone's keyboard, in order (see
 	 *  #lib/terminal/bar-keys); null is the built-in set. */
 	mobileBarKeys: string[] | null;
+	/** When the extra-keys bar shows on a phone or tablet: auto hides it while
+	 *  a hardware keyboard is attached (Samsung DeX, Bluetooth). */
+	mobileBarShow: 'auto' | 'always' | 'never';
 	/** Sessions in the list open on a double click; a single click only
 	 *  focuses the row. Off: one click connects, as before. */
 	doubleClickToOpen: boolean;
@@ -290,6 +293,7 @@ export const defaults: Settings = {
 	compactLayout: false,
 	terminalBar: 'always',
 	mobileBarKeys: null,
+	mobileBarShow: 'auto',
 	doubleClickToOpen: false,
 	showUnsupportedSessions: true,
 	closeTabOnExit: false,
@@ -403,6 +407,7 @@ export function readStoredSettings(parsed: Partial<Settings>): Settings {
 	settings.mobileBarKeys = Array.isArray(parsed.mobileBarKeys)
 		? parsed.mobileBarKeys.filter((k: unknown): k is string => typeof k === 'string')
 		: null;
+	settings.mobileBarShow = parsed.mobileBarShow === 'always' || parsed.mobileBarShow === 'never' ? parsed.mobileBarShow : defaults.mobileBarShow;
 	settings.terminalBar = parsed.terminalBar === 'hover' || parsed.terminalBar === 'hidden' ? parsed.terminalBar : defaults.terminalBar;
 	settings.doubleClickToOpen = parsed.doubleClickToOpen ?? defaults.doubleClickToOpen;
 	settings.showUnsupportedSessions = parsed.showUnsupportedSessions !== false;

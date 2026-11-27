@@ -145,6 +145,7 @@ export const SETTINGS_INDEX: IndexedRow[] = [
 	{ page: 'sessions', label: 'settings.x11_server', words: 'x11 xming vcxsrv display forwarding', desktopOnly: true },
 	{ page: 'devops', label: 'settings.devops', words: 'ansible opentofu terraform databases containers docker kubernetes' },
 	{ page: 'terminal', label: 'phonekeys.title', words: 'extra keys keyboard ctrl alt esc f1 function keys', phoneOnly: true },
+	{ page: 'terminal', label: 'phonekeys.show', words: 'extra keys bar hardware keyboard dex bluetooth hide', phoneOnly: true },
 	{ page: 'about', label: 'settings.version', words: 'version release' },
 ];
 

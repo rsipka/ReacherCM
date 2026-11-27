@@ -38,6 +38,7 @@
 	import { installSelectMenus } from '#lib/utils/selectMenu.js';
 	import { installTooltips } from '#lib/utils/tooltip.js';
 	import { initScreenEdges } from '#lib/edges.js';
+	import { initDevice } from '#lib/device.svelte.js';
 	import { initKeyboardViewport } from '#lib/keyboard-viewport.js';
 	import { onMount } from 'svelte';
 	import { checkConfiguredLogFolder } from '#lib/state/log-folder.svelte.js';
@@ -133,6 +134,8 @@
 		const stopTooltips = installTooltips();
 		// Android's status bar, navigation bar and camera cutout, for --safe-*.
 		initScreenEdges();
+		// Android: a hardware keyboard, and Samsung DeX.
+		initDevice();
 		// iOS: the app fits above the on-screen keyboard instead of scrolling up.
 		const stopKeyboardViewport = initKeyboardViewport();
 		startupUpdateCheck();
