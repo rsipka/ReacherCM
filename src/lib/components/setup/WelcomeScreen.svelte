@@ -4,7 +4,6 @@
 	import LoggingStep from './LoggingStep.svelte';
 	import SecurityStep from './SecurityStep.svelte';
 	import PluginsStep from './PluginsStep.svelte';
-	import TursoStep from './TursoStep.svelte';
 	import AccountStep from './AccountStep.svelte';
 	import CompleteStep from './CompleteStep.svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
@@ -79,8 +78,6 @@
 				<SecurityStep onNext={next} onBack={back} />
 			{:else if step === 'plugins'}
 				<PluginsStep onNext={next} onBack={back} />
-			{:else if step === 'storage'}
-				<TursoStep onNext={next} onBack={back} />
 			{:else if step === 'account'}
 				<AccountStep onNext={next} onBack={back} bind:busy={accountBusy} />
 			{:else if step === 'complete'}

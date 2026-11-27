@@ -10,14 +10,11 @@
 	import { syncAccountErrorKey } from '#lib/sync/account.js';
 	import { PREFERENCE_CATALOG, PREFERENCE_KEYS, type PreferenceKey } from '#lib/sync/preference-catalog.js';
 	import { t } from '#lib/state/i18n.svelte.js';
-	import { refreshVaults } from '#lib/state/vault.svelte.js';
 
 	import {
 		bindPreferenceAccount, getSyncAccount, preferenceSync, setPreferenceSync, setPreferenceSyncIncluded,
 		syncPreferences, type SyncAccount
 	} from '#lib/state/preference-sync.svelte.js';
-
-	let { onOpenVaultLinks }: { onOpenVaultLinks: () => void } = $props();
 
 	const mobile = isMobile();
 	const groupLabels = {
@@ -38,12 +35,9 @@
 	let account = $derived(getSyncAccount());
 	let server = $state('');
 	let label = $state('');
-	let vaultSync = $state(false);
 	let managedRemoval = $state(false);
 	let managedRemovalBusy = $state(false);
-	let confirmVaultSync = $state(false);
-	let vaultError = $state('');
-	let action = $state<'load' | 'check' | 'sign-out' | 'vault' | null>('load');
+	let action = $state<'load' | 'check' | 'sign-out' | null>('load');
 	let error = $state('');
 	let message = $state('');
 
@@ -90,7 +84,6 @@
 			bindPreferenceAccount(saved);
 			if (saved) {
 				server = saved.server;
-				vaultSync = await invoke<boolean>('vault_account_sync_enabled');
 			}
 		} catch (cause) {
 			error = syncAccountErrorKey(cause);
@@ -99,18 +92,10 @@
 		}
 	}
 
-	async function loadVaultSync(): Promise<void> {
-		action = 'load';
+	/** Signed in: clear what the sign-in form said before. */
+	function signedIn(): void {
 		error = '';
 		message = '';
-		vaultSync = false;
-		try {
-			vaultSync = await invoke<boolean>('vault_account_sync_enabled');
-		} catch (cause) {
-			error = syncAccountErrorKey(cause);
-		} finally {
-			action = null;
-		}
 	}
 
 	async function check(): Promise<void> {
@@ -137,27 +122,9 @@
 		try {
 			const revoked = await invoke<boolean>('sync_account_sign_out');
 			bindPreferenceAccount(null);
-			confirmVaultSync = false;
-			vaultError = '';
 			if (!revoked) message = 'sync_account.signed_out_locally';
 		} catch (cause) {
 			error = syncAccountErrorKey(cause);
-		} finally {
-			action = null;
-		}
-	}
-
-	async function enableVaultSync(): Promise<void> {
-		action = 'vault';
-		confirmVaultSync = false;
-		vaultError = '';
-		try {
-			await invoke('vault_enable_account_sync');
-			vaultSync = true;
-			await refreshVaults();
-			window.dispatchEvent(new CustomEvent('reach:sessions-changed'));
-		} catch (cause) {
-			vaultError = cause instanceof Error ? cause.message : String(cause);
 		} finally {
 			action = null;
 		}
@@ -286,47 +253,6 @@
 		{/if}
 	</SettingsCard>
 
-	<SettingsCard title={t('sync_account.personal_vault_title')}>
-		<div class="setting-row">
-			<div class="setting-info">
-				<span class="setting-label">{t('sync.sync_status')}</span>
-				<span class="setting-description" role="status">
-					{#if vaultSync}
-						{t('sync_account.vault_enabled')}
-					{:else if action === 'vault'}
-						{t('sync_account.vault_moving')}
-					{:else if mobile}
-						{t('sync_account.mobile_vault_link_help')}
-					{:else}
-						{t('sync_account.personal_vault_desc')}
-					{/if}
-				</span>
-			</div>
-			<div class="setting-control wrap-control">
-				{#if vaultSync}
-					<span class="enabled">{t('sync.enabled')}</span>
-				{:else if mobile}
-					<Button variant="secondary" size="sm" disabled={action !== null} onclick={onOpenVaultLinks}>{t('sync.join_device')}</Button>
-				{:else if action !== 'vault'}
-					<Button variant="secondary" size="sm" disabled={action !== null}
-						ariaExpanded={confirmVaultSync} onclick={() => confirmVaultSync = !confirmVaultSync}>
-						{t('sync_account.vault_enable')}
-					</Button>
-				{/if}
-			</div>
-		</div>
-		{#if confirmVaultSync}
-			<div class="confirmation">
-				<p class="setting-description">{t('sync_account.vault_confirm')}</p>
-				<div class="actions">
-					<Button variant="ghost" size="sm" onclick={() => confirmVaultSync = false}>{t('common.cancel')}</Button>
-					<Button size="sm" disabled={action !== null} onclick={enableVaultSync}>{t('common.confirm')}</Button>
-				</div>
-			</div>
-		{/if}
-		{#if vaultError}<p class="feedback error" role="alert">{t(vaultError)}</p>{/if}
-	</SettingsCard>
-
 	{#if !mobile}
 		{#key account.server + '/' + account.username}
 			<OrganizationVaults />
@@ -336,16 +262,14 @@
 	<SettingsCard><p class="feedback" role="status">{t('sync_account.loading')}</p></SettingsCard>
 {:else}
 	<SettingsCard title={t(mobile ? 'sync_account.pair_start' : 'sync_account.sign_in')}>
-		<AccountSignIn {mobile} bind:server bind:label initialError={error} initialMessage={message} onSignedIn={loadVaultSync} />
+		<AccountSignIn {mobile} bind:server bind:label initialError={error} initialMessage={message} onSignedIn={signedIn} />
 	</SettingsCard>
 {/if}
 
 <style>
-	.confirmation p { margin: 0; }
-	.actions, .footer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+	.footer-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 	.footer-actions { padding: 8px 0; }
 	.server-address { overflow-wrap: anywhere; }
-	.wrap-control :global(button) { white-space: normal; }
 	.preference-group {
 		border-bottom: 1px solid var(--color-border);
 		padding-inline: 4px;
@@ -370,19 +294,4 @@
 	.preference-mode:focus-visible { outline: 1px solid var(--color-accent); }
 	.feedback { margin: 0; padding: 9px 0; color: var(--color-text-secondary); font-size: 0.8125rem; }
 	.error, .setting-description.error { color: var(--color-danger); }
-	.confirmation {
-		display: grid;
-		gap: 10px;
-		margin-bottom: 12px;
-		padding: 12px;
-		border-radius: var(--radius-card, 8px);
-		background: var(--color-bg-elevated);
-	}
-	.enabled {
-		padding: 3px 8px;
-		border-radius: var(--radius-sm, 4px);
-		background: color-mix(in srgb, var(--color-success) 12%, transparent);
-		color: var(--color-success);
-		font-size: 0.75rem;
-	}
 </style>

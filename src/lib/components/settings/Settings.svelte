@@ -5,7 +5,10 @@
 	import GeneralTab from './GeneralTab.svelte';
 	import AppearanceTab from './AppearanceTab.svelte';
 	import SecurityTab from './SecurityTab.svelte';
-	import SyncTab from './SyncTab.svelte';
+	import SyncBackendSection from './SyncBackendSection.svelte';
+	import SyncStatusSection from './SyncStatusSection.svelte';
+	import DeviceLinkSection from './DeviceLinkSection.svelte';
+	import BackupKeySection from './BackupKeySection.svelte';
 	import AccountTab from './AccountTab.svelte';
 	import BackupTab from './BackupTab.svelte';
 	import AITab from './AITab.svelte';
@@ -257,11 +260,16 @@
 		<SettingsCard><SecurityTab /></SettingsCard>
 	{:else if id === 'pwmanagers'}
 		<PasswordManagersTab />
-	{:else if id === 'account'}
-		<AccountTab onOpenVaultLinks={() => void goTo('sync.join_device')} />
 	{:else if id === 'sync'}
-		<SyncTab />
+		<AccountTab />
+		<SettingsCard title={t('sync.backend_title')}>
+			<SyncBackendSection onOpenVaultLinks={() => void goTo('sync.join_device')} />
+		</SettingsCard>
+		<SettingsCard title={t('sync.this_device')}><DeviceLinkSection /></SettingsCard>
+		<SettingsCard title={t('sync.status_title')}><SyncStatusSection /></SettingsCard>
+	{:else if id === 'backup'}
 		<SettingsCard title={t('settings.backup')}><BackupTab /></SettingsCard>
+		<SettingsCard title={t('sync.backup_key_title')}><BackupKeySection /></SettingsCard>
 	{:else if id === 'ai'}
 		<SettingsCard title={t('settings.ai')}><AITab /></SettingsCard>
 		<SettingsCard title={t('settings.mcp')}><McpTab /></SettingsCard>

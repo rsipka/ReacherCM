@@ -7,6 +7,9 @@
 	 *
 	 * The visible list refreshes every few seconds, only while the page is
 	 * on screen and nothing is being edited.
+	 *
+	 * It shows in a tab, one per cluster (see #lib/state/navigation): picking
+	 * a cluster another tab already has brings that tab forward instead.
 	 */
 	import { onDestroy, onMount } from 'svelte';
 	import FaIcon from '#lib/components/shared/FaIcon.svelte';
@@ -45,6 +48,9 @@
 	import { k8sClose, k8sClusters, k8sNamespaces, k8sOpen, type ClusterView, type EventRow, type OpenedCluster } from '#lib/ipc/k8s.js';
 	import { sessionList } from '#lib/ipc/sessions.js';
 	import { t } from '#lib/state/i18n.svelte.js';
+	import { activateTab, type Tab } from '#lib/state/tabs.svelte.js';
+	import { devopsTabs } from '#lib/state/navigation.svelte.js';
+	import { clustersChanged } from '#lib/state/k8s.svelte.js';
 	import { NAV, loadLast, saveLast, selId, type Ctx, type Selection, type View } from './model';
 
 	const ICONS: Record<View, IconDefinition> = {
@@ -81,6 +87,25 @@
 		Node: 'nodes',
 		Namespace: 'namespaces'
 	};
+
+	interface Props {
+		/** The tab it shows in; it names the tab after its cluster. */
+		tab?: Tab;
+	}
+
+	let { tab }: Props = $props();
+
+	/** Another Kubernetes tab already showing this cluster. */
+	function otherTabWith(id: string): Tab | undefined {
+		return devopsTabs('kubernetes').find((x) => x.id !== tab?.id && x.k8sClusterId === id);
+	}
+
+	/** Name the tab after its cluster, or after the workspace with none. */
+	function nameTab(id: string): void {
+		if (!tab) return;
+		tab.k8sClusterId = id || undefined;
+		tab.title = (id && clusters.find((c) => c.id === id)?.name) || t('nav.kubernetes');
+	}
 
 	const ADD = '__add__';
 	const REFRESH_MS = 5000;
@@ -141,6 +166,13 @@
 		return () => mq.removeEventListener('change', onMq);
 	});
 
+	// A cluster picked for this tab from outside (the Sessions list gave it to
+	// this tab while it waited for a pick): open it.
+	$effect(() => {
+		const want = tab?.k8sClusterId;
+		if (want && clustersLoaded && want !== clusterId && clusters.some((c) => c.id === want)) connect(want);
+	});
+
 	onDestroy(() => {
 		if (opened) k8sClose(opened.key).catch(() => {});
 	});
@@ -153,14 +185,25 @@
 			clustersError = String(e);
 		}
 		clustersLoaded = true;
-		if (pickFirst && !clusterId && clusters.length) {
+		// The tab's own cluster (opened from the Sessions list) first.
+		const own = tab?.k8sClusterId;
+		if (pickFirst && !clusterId && own && clusters.some((c) => c.id === own)) {
+			connect(own);
+		} else if (pickFirst && !clusterId && clusters.length) {
 			const last = loadLast();
 			const pick = clusters.find((c) => c.id === last?.cluster) ?? [...clusters].sort((a, b) => b.lastUsedAt - a.lastUsedAt)[0];
-			connect(pick.id);
+			// Not one another tab shows: this one then waits for a pick.
+			if (!otherTabWith(pick.id)) connect(pick.id);
 		}
 	}
 
 	async function connect(id: string): Promise<void> {
+		const other = otherTabWith(id);
+		if (other) {
+			activateTab(other.id);
+			return;
+		}
+		nameTab(id);
 		const mine = ++connectSeq;
 		if (opened && opened.key !== id) k8sClose(opened.key).catch(() => {});
 		clusterId = id;
@@ -246,6 +289,7 @@
 	}
 
 	function onSaved(c: ClusterView): void {
+		clustersChanged();
 		loadClusters().then(() => connect(c.id));
 	}
 
@@ -255,7 +299,9 @@
 			opened = null;
 			clusterId = '';
 			selection = null;
+			nameTab('');
 		}
+		clustersChanged();
 		loadClusters(true);
 	}
 

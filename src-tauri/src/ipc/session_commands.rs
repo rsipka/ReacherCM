@@ -34,7 +34,7 @@ pub async fn session_list(state: State<'_, AppState>) -> Result<Vec<SessionConfi
                     use secrecy::ExposeSecret;
                     if let Ok(json) = String::from_utf8(plaintext.expose_secret().clone()) {
                         if let Ok(mut session) = serde_json::from_str::<SessionConfig>(&json) {
-                            creds::fill(&mut session, None, &logins.folders, &logins.creds);
+                            creds::fill(&mut session, None, &logins.folders, &logins.creds, &logins.choices);
                             sessions.push(session);
                         }
                     }
@@ -65,7 +65,7 @@ pub async fn session_list(state: State<'_, AppState>) -> Result<Vec<SessionConfi
                                 if let Ok(mut session) = serde_json::from_str::<SessionConfig>(&json) {
                                     // Ensure vault_id is set correctly
                                     session.vault_id = Some(vault_info.id.clone());
-                                    creds::fill(&mut session, Some(&vault_info.id), &logins.folders, &logins.creds);
+                                    creds::fill(&mut session, Some(&vault_info.id), &logins.folders, &logins.creds, &logins.choices);
                                     tracing::info!("session_list: loaded session: {}", session.name);
                                     sessions.push(session);
                                 }
@@ -591,7 +591,7 @@ async fn read_session_filled(
     let mut session = read_session(manager, &loc.vault_id, &loc.secret_id).await?;
     let logins = creds::logins(manager).await;
     let vault = creds::vault_of(manager, &loc.vault_id);
-    let own = creds::fill(&mut session, vault.as_deref(), &logins.folders, &logins.creds);
+    let own = creds::fill(&mut session, vault.as_deref(), &logins.folders, &logins.creds, &logins.choices);
     Ok((session, own))
 }
 
@@ -783,6 +783,7 @@ pub async fn session_create(
     telnet: Option<crate::telnet::protocol::TelnetOptions>,
     serial: Option<crate::serial::options::SerialOptions>,
     spice: Option<crate::spice::SpiceOptions>,
+    vnc: Option<crate::vnc::VncOptions>,
     notes: Option<String>,
     custom_fields: Option<Vec<crate::state::CustomField>>,
     terminal_theme: Option<String>,
@@ -914,6 +915,14 @@ pub async fn session_create(
                 b
             })
             .filter(|b| !b.is_empty()),
+        // Its encryption as the editor sent it; certificates likewise.
+        vnc: vnc
+            .filter(|_| kind == crate::state::SessionKind::Vnc)
+            .map(|mut v| {
+                v.certs.clear();
+                v
+            })
+            .filter(|v| !v.is_empty()),
         // Its realm and token as the editor sent them; certificates likewise.
         proxmox: proxmox
             .filter(|_| kind == crate::state::SessionKind::Proxmox)
@@ -935,7 +944,7 @@ pub async fn session_create(
     if session.folder_id.is_some() {
         check_folder_vault(&read_folders(&manager).await?, session.folder_id.as_deref(), vault.as_deref())?;
     }
-    let own = creds::fill_for_save(&mut session, vault.as_deref(), &logins.folders, &logins.creds, None);
+    let own = creds::fill_for_save(&mut session, vault.as_deref(), &logins.folders, &logins.creds, &logins.choices, None);
 
     seal_approvals(&manager, &mut session, None).await;
     let json = serde_json::to_string(&to_store(&session, own)).map_err(|e| e.to_string())?;
@@ -1029,7 +1038,7 @@ async fn prepare_update(
         Ok(mut s) => {
             past = (pwh::typed_password(&s.auth_method).map(str::to_string), s.password_history.take());
             let own = creds::SessionLogins::all(&s);
-            let replaced = creds::fill(&mut s, vault.as_deref(), &logins.folders, &logins.creds);
+            let replaced = creds::fill(&mut s, vault.as_deref(), &logins.folders, &logins.creds, &logins.choices);
             let filled = creds::SessionLogins::all(&s).only(&replaced);
             open_approvals(manager, &mut s).await;
             (Some(s), Some((own, filled)))
@@ -1084,6 +1093,15 @@ async fn prepare_update(
     } else {
         None
     };
+    // A VNC session's encryption is the editor's, its certificates the
+    // stored ones (see `vnc_session_cert_trust`).
+    session.vnc = if session.kind == crate::state::SessionKind::Vnc {
+        let mut v = session.vnc.take().unwrap_or_default();
+        v.certs = stored.as_ref().and_then(|s| s.vnc.as_ref()).map(|v| v.certs.clone()).unwrap_or_default();
+        Some(v).filter(|v| !v.is_empty())
+    } else {
+        None
+    };
     // A Proxmox session's realm and token are the editor's, its
     // certificates the stored ones (see `proxmox_session_cert_trust`).
     session.proxmox = if session.kind == crate::state::SessionKind::Proxmox {
@@ -1101,6 +1119,7 @@ async fn prepare_update(
         vault.as_deref(),
         &logins.folders,
         &logins.creds,
+        &logins.choices,
         before.as_ref().map(|(own, filled)| (own, filled)),
     );
     seal_approvals(manager, &mut session, stored.as_ref()).await;
@@ -2747,7 +2766,7 @@ mod approval_tests {
     /// A stored record as `who` reads it, with the credential filled in.
     fn read_filled(stored: &SessionConfig, c: &crate::state::SavedCredential, key: &[u8; 32], who: &str) -> (SessionConfig, creds::SessionLogins) {
         let mut s: SessionConfig = serde_json::from_str(&serde_json::to_string(stored).unwrap()).unwrap();
-        let own = creds::fill(&mut s, None, &[], std::slice::from_ref(c));
+        let own = creds::fill(&mut s, None, &[], std::slice::from_ref(c), &Default::default());
         open_for(Some(key), Some(who), &mut s, None);
         (s, own)
     }

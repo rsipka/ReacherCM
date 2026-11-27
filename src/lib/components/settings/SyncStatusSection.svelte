@@ -49,8 +49,7 @@
 	}
 </script>
 
-<div class="section">
-	<h3 class="section-title">{t('sync.status_title')}</h3>
+<div class="section status">
 	<p class="section-desc">{t('sync.status_desc')}</p>
 
 	{#if statuses.length === 0}
@@ -138,6 +137,10 @@
 </div>
 
 <style>
+	.status {
+		padding: 12px 0;
+	}
+
 	.section-desc {
 		margin: 0;
 		font-size: 0.75rem;

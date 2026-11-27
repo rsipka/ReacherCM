@@ -808,7 +808,7 @@ async fn edit_one(
     let vault = creds::vault_of(manager, &loc.vault_id);
     let skipped = apply_patch(&mut session, patch, |s| {
         let mut probe = s.clone();
-        creds::fill(&mut probe, vault.as_deref(), &logins.folders, &logins.creds);
+        creds::fill(&mut probe, vault.as_deref(), &logins.folders, &logins.creds, &logins.choices);
         probe.credential.is_some_and(|c| !c.missing)
     });
     let after = serde_json::to_value(&session).map_err(|e| fail(&name, e.to_string()))?;

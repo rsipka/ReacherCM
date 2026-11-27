@@ -12,7 +12,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
-import { getActivePage, setActivePage, type Page } from '#lib/state/navigation.svelte.js';
+import { closeDevopsTabs, type Page } from '#lib/state/navigation.svelte.js';
 import { isCommandRunning as isAnsibleRunning } from '#lib/state/ansible.svelte.js';
 import { isCommandRunning as isTofuRunning } from '#lib/state/tofu.svelte.js';
 import { isAnyBusy as isDbBusy } from '#lib/state/db.svelte.js';
@@ -32,7 +32,12 @@ export interface DevopsTool {
 	description: () => string;
 	/** A run in progress. The switch waits for it rather than cutting it off. */
 	isBusy: () => boolean;
+	/** 24×24 stroked icon path, for its tabs and its rows in the Sessions list. */
+	icon: string;
 }
+
+/** The terminal's icon, beside the workspaces' (the command palette's page list). */
+export const TERMINAL_ICON = 'M4 17l6-5-6-5M12 19h8';
 
 export const DEVOPS_TOOLS: DevopsTool[] = [
 	{
@@ -41,7 +46,8 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 		binary: 'ansible',
 		label: () => t('nav.ansible'),
 		description: () => t('devops.ansible_desc'),
-		isBusy: isAnsibleRunning
+		isBusy: isAnsibleRunning,
+		icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM8.5 16.5 12 7l3.5 9.5M9.6 13.5h4.8'
 	},
 	{
 		id: 'tofu',
@@ -49,7 +55,8 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 		binary: 'tofu',
 		label: () => t('nav.tofu'),
 		description: () => t('devops.tofu_desc'),
-		isBusy: isTofuRunning
+		isBusy: isTofuRunning,
+		icon: 'M12 2.5l8.2 4.75v9.5L12 21.5l-8.2-4.75v-9.5z'
 	},
 	{
 		id: 'databases',
@@ -57,7 +64,8 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 		binary: '',
 		label: () => t('nav.databases'),
 		description: () => t('devops.databases_desc'),
-		isBusy: isDbBusy
+		isBusy: isDbBusy,
+		icon: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'
 	},
 	{
 		id: 'containers',
@@ -65,7 +73,8 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 		binary: '',
 		label: () => t('nav.containers'),
 		description: () => t('devops.containers_desc'),
-		isBusy: isContainersBusy
+		isBusy: isContainersBusy,
+		icon: 'M3 7.5 12 3l9 4.5v9L12 21l-9-4.5zM3 7.5 12 12l9-4.5M12 12v9'
 	},
 	{
 		id: 'kubernetes',
@@ -73,7 +82,8 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 		binary: '',
 		label: () => t('nav.kubernetes'),
 		description: () => t('devops.kubernetes_desc'),
-		isBusy: isK8sBusy
+		isBusy: isK8sBusy,
+		icon: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v3M12 14v3M7 12h3M14 12h3M8.5 8.5l2 2M13.5 13.5l2 2M15.5 8.5l-2 2M10.5 13.5l-2 2'
 	}
 ];
 
@@ -96,7 +106,7 @@ export async function setDevopsEnabled(id: DevopsToolId, enabled: boolean): Prom
 
 	const others = getSettings().devopsTools.filter((d) => d !== id);
 	updateSetting('devopsTools', enabled ? [...others, id] : others);
-	if (!enabled && getActivePage() === tool.page) setActivePage('terminal');
+	if (!enabled) closeDevopsTabs(tool.page);
 	await pushToBackend(id, enabled);
 	return true;
 }

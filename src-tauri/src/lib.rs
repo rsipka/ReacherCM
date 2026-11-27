@@ -91,6 +91,7 @@ use ipc::telnet_commands::*;
 use ipc::zmodem_commands::*;
 use ipc::saved_credential_commands::*;
 use ipc::credential_folder_commands::*;
+use ipc::personal_login_commands::*;
 use ipc::session_commands::*;
 use ipc::sftp_commands::*;
 use ipc::local_fs_commands::*;
@@ -660,6 +661,7 @@ pub fn run() {
             ftp_connect,
             ftp_disconnect,
             ftp_session_cert_trust,
+            vnc_session_cert_trust,
             bmc_connect,
             bmc_disconnect,
             bmc_session_cert_trust,
@@ -756,6 +758,8 @@ pub fn run() {
             session_set_folder_icon,
             session_rename_folder,
             saved_credential_list,
+            personal_login_list,
+            personal_login_set,
             credential_keys_unlock,
             credential_keys_unlock_enabled,
             credential_keys_biometric_forget,
@@ -1296,6 +1300,7 @@ pub fn run() {
             ftp_connect,
             ftp_disconnect,
             ftp_session_cert_trust,
+            vnc_session_cert_trust,
             // The phone's own files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
@@ -1390,6 +1395,8 @@ pub fn run() {
             session_set_folder_icon,
             session_rename_folder,
             saved_credential_list,
+            personal_login_list,
+            personal_login_set,
             credential_keys_unlock,
             credential_keys_unlock_enabled,
             credential_keys_biometric_forget,

@@ -10,12 +10,18 @@
 	The picker defaults to whichever the session already has, and to the
 	imported list when there is anything in it — that is the choice that keeps
 	working everywhere.
+
+	"My default key" names no key at all: whoever connects signs in with the
+	imported key they picked in Settings > Security. That is the one to use in
+	a shared vault, where each member has their own key.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { sshKeyList, sshKeyDelete, type StoredKeyInfo } from '#lib/ipc/sshkeys.js';
+	import { DEFAULT_KEY, DEFAULT_KEY_SETTING } from '#lib/ipc/savedCredentials.js';
+	import { get as getSetting } from '#lib/ipc/settings.js';
 	import KeyPathInput from './KeyPathInput.svelte';
 	import SshKeyImport from './SshKeyImport.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
@@ -43,11 +49,14 @@
 	 * init would read an empty id and show the file field for a session that
 	 * plainly uses an imported key.
 	 */
-	let chosen = $state<'imported' | 'file' | null>(null);
+	let chosen = $state<'imported' | 'file' | 'default' | null>(null);
 
 	let mode = $derived(
-		chosen ?? (keyId ? 'imported' : path.trim() ? 'file' : keys.length > 0 ? 'imported' : 'file')
+		chosen ?? (keyId === DEFAULT_KEY ? 'default' : keyId ? 'imported' : path.trim() ? 'file' : keys.length > 0 ? 'imported' : 'file')
 	);
+
+	/** The imported key this person picked as their default, if any. */
+	let defaultKeyId = $state('');
 
 	onMount(load);
 
@@ -58,16 +67,28 @@
 			// A locked vault simply means no imported keys to offer.
 			keys = [];
 		}
+		try {
+			defaultKeyId = (await getSetting(DEFAULT_KEY_SETTING)) ?? '';
+		} catch {
+			defaultKeyId = '';
+		}
 		loaded = true;
 	}
 
-	function choose(next: 'imported' | 'file'): void {
+	function choose(next: 'imported' | 'file' | 'default'): void {
 		chosen = next;
-		// Only one of the two can be in force, or the backend would have to
+		// Only one of them can be in force, or the backend would have to
 		// guess which the user meant.
-		if (next === 'imported') path = '';
-		else keyId = '';
+		if (next === 'default') {
+			path = '';
+			keyId = DEFAULT_KEY;
+		} else if (next === 'imported') {
+			path = '';
+			if (keyId === DEFAULT_KEY) keyId = '';
+		} else keyId = '';
 	}
+
+	let defaultKey = $derived(keys.find((k) => k.id === defaultKeyId));
 
 	/**
 	 * Imported keys are hidden from the vault panel like every other internal
@@ -119,7 +140,7 @@
 	 * showing an empty picker, which would look like nothing was ever chosen
 	 * and would drop the reference on the next save.
 	 */
-	let missing = $derived(loaded && !!keyId && !selected);
+	let missing = $derived(loaded && !!keyId && keyId !== DEFAULT_KEY && !selected);
 </script>
 
 <div class="key-picker">
@@ -142,9 +163,25 @@
 		>
 			{t('session.key_source_file')}
 		</button>
+		<button
+			type="button"
+			class="mode-btn"
+			class:active={mode === 'default'}
+			{disabled}
+			onclick={() => choose('default')}
+		>
+			{t('session.key_source_default')}
+		</button>
 	</div>
 
-	{#if mode === 'imported'}
+	{#if mode === 'default'}
+		<p class="empty">{t('session.key_default_hint')}</p>
+		{#if loaded}
+			<p class={defaultKey ? 'empty' : 'warn'}>
+				{defaultKey ? t('session.key_default_yours', { name: defaultKey.name }) : t('session.key_default_none')}
+			</p>
+		{/if}
+	{:else if mode === 'imported'}
 		{#if loaded && keys.length === 0 && !keyId}
 			<p class="empty">{t('session.key_none_imported')}</p>
 		{:else}
