@@ -49,7 +49,7 @@
 	import { sessionList } from '#lib/ipc/sessions.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { activateTab, type Tab } from '#lib/state/tabs.svelte.js';
-	import { devopsTabs } from '#lib/state/navigation.svelte.js';
+	import { otherTabShowing } from '#lib/state/navigation.svelte.js';
 	import { clustersChanged } from '#lib/state/k8s.svelte.js';
 	import { NAV, loadLast, saveLast, selId, type Ctx, type Selection, type View } from './model';
 
@@ -97,7 +97,7 @@
 
 	/** Another Kubernetes tab already showing this cluster. */
 	function otherTabWith(id: string): Tab | undefined {
-		return devopsTabs('kubernetes').find((x) => x.id !== tab?.id && x.k8sClusterId === id);
+		return otherTabShowing('kubernetes', id, tab?.id);
 	}
 
 	/** Name the tab after its cluster, or after the workspace with none. */

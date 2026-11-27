@@ -46,28 +46,49 @@ export function devopsTabs(tool: DevopsTabTool): Tab[] {
 	return getTabs().filter((x) => x.type === 'devops' && x.devopsTool === tool);
 }
 
+/** The workspaces with a tab per thing they show (a cluster, a host). */
+export type TargetTool = 'kubernetes' | 'containers';
+
+/** What a tab of such a workspace shows, if it has picked one. */
+export function tabTarget(tab: Tab): string | undefined {
+	return tab.devopsTool === 'kubernetes' ? tab.k8sClusterId : tab.devopsTool === 'containers' ? tab.ctrHostId : undefined;
+}
+
+/** Give a tab its cluster or host (unset: back to the picker). */
+export function setTabTarget(tab: Tab, id: string | undefined): void {
+	if (tab.devopsTool === 'kubernetes') tab.k8sClusterId = id;
+	else if (tab.devopsTool === 'containers') tab.ctrHostId = id;
+}
+
+/** Another tab of the same workspace already showing `id`. */
+export function otherTabShowing(tool: TargetTool, id: string, self?: string): Tab | undefined {
+	return devopsTabs(tool).find((x) => x.id !== self && tabTarget(x) === id);
+}
+
 /**
- * Open a workspace in a tab, or bring its open tab forward. Kubernetes has a
- * tab per cluster: with `clusterId`, that cluster's tab (made if none is
- * open); without, any Kubernetes tab, the one in front of the others first.
- * The other workspaces have one tab each, as their state is the app's.
+ * Open a workspace in a tab, or bring its open tab forward. Kubernetes and
+ * Containers have a tab per cluster or host: with `targetId`, that one's tab
+ * (made if none is open, or a tab still at its picker takes it); without, any
+ * of their tabs. The other workspaces have one tab each, as their state is
+ * the app's.
  */
-export function openDevopsTab(tool: DevopsTabTool, clusterId?: string, clusterName?: string): Tab {
+export function openDevopsTab(tool: DevopsTabTool, targetId?: string, targetName?: string): Tab {
 	const open = devopsTabs(tool);
-	const existing = tool === 'kubernetes' && clusterId ? (open.find((x) => x.k8sClusterId === clusterId) ?? open.find((x) => !x.k8sClusterId)) : open[0];
+	const perTarget = tool === 'kubernetes' || tool === 'containers';
+	const existing = perTarget && targetId ? (open.find((x) => tabTarget(x) === targetId) ?? open.find((x) => !tabTarget(x))) : open[0];
 	if (existing) {
-		if (clusterId && !existing.k8sClusterId) {
-			existing.k8sClusterId = clusterId;
-			if (clusterName) existing.title = clusterName;
+		if (targetId && perTarget && !tabTarget(existing)) {
+			setTabTarget(existing, targetId);
+			if (targetName) existing.title = targetName;
 		}
 		activateTab(existing.id);
 		return existing;
 	}
-	const made = createTab('devops', clusterName ?? t(`nav.${tool}`));
+	const made = createTab('devops', (perTarget && targetName) || t(`nav.${tool}`));
 	// The list holds its own (reactive) copy: set the fields on that one.
 	const tab = getTabs().find((x) => x.id === made.id) ?? made;
 	tab.devopsTool = tool;
-	if (clusterId) tab.k8sClusterId = clusterId;
+	if (perTarget && targetId) setTabTarget(tab, targetId);
 	return tab;
 }
 
