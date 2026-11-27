@@ -660,6 +660,7 @@ pub fn run() {
             ftp_connect,
             ftp_disconnect,
             ftp_session_cert_trust,
+            vnc_session_cert_trust,
             bmc_connect,
             bmc_disconnect,
             bmc_session_cert_trust,
@@ -1297,6 +1298,7 @@ pub fn run() {
             ftp_connect,
             ftp_disconnect,
             ftp_session_cert_trust,
+            vnc_session_cert_trust,
             // The phone's own files, for the full-pane file manager
             local_list_dir,
             local_mkdir,

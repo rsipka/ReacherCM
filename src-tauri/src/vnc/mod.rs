@@ -32,6 +32,7 @@ use crate::db::conn::Forward;
 use crate::rdp::{Cursor, Flow, RdpStatus, Screen};
 
 mod apple;
+mod vencrypt;
 
 /// What the webview sends to open a desktop.
 #[derive(Debug, Clone, Deserialize)]
@@ -66,11 +67,58 @@ pub struct VncConnectParams {
     /// negotiated inside RFB).
     #[serde(default)]
     pub tls: bool,
-    /// Certificate fingerprints trusted for `tls` besides those the system
-    /// trusts: the saved session's own, filled in by `vnc_connect`.
+    /// VeNCrypt: TLS negotiated inside RFB (security type 19), as QEMU,
+    /// libvirt, TigerVNC and wayvnc offer it; see [`vencrypt`]. Required
+    /// when set: a server without it is refused rather than used unencrypted.
+    #[serde(default)]
+    pub vencrypt: bool,
+    /// Certificate fingerprints trusted for `tls` or `vencrypt` besides
+    /// those the system trusts: the saved session's own, filled in by
+    /// `vnc_connect`.
     #[serde(skip)]
     pub tls_trusted: Vec<String>,
+    /// The trusted certificates are the VNC session's own, so a refused one
+    /// can be trusted from the desktop's tab ([`UNTRUSTED_CERT`]); otherwise
+    /// they are a server management session's, trusted there.
+    #[serde(skip)]
+    pub own_certs: bool,
 }
+
+/// A VNC session's own options: its encryption and the certificates it
+/// trusts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VncOptions {
+    /// `vencrypt` (TLS negotiated inside RFB), `tls` (TLS from the first
+    /// byte, as an iDRAC with SSL encryption on) or unset: none (through
+    /// an SSH session, if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encryption: Option<String>,
+    /// SHA-256 fingerprints (`AB:CD:..`) of certificates this session
+    /// trusts although the system does not. Changed only by answering the
+    /// prompt; an editor's save keeps the stored ones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub certs: Vec<String>,
+}
+
+impl VncOptions {
+    pub fn is_empty(&self) -> bool {
+        self.encryption.is_none() && self.certs.is_empty()
+    }
+
+    /// The encryption as the connect wants it: `(tls, vencrypt)`.
+    pub fn modes(&self) -> (bool, bool) {
+        match self.encryption.as_deref() {
+            Some("tls") => (true, false),
+            Some("vencrypt") => (false, true),
+            _ => (false, false),
+        }
+    }
+}
+
+/// The start of a connect error for a certificate the session does not
+/// trust yet, followed by its SHA-256 fingerprint: the desktop's tab offers
+/// to trust it (`vnc_session_cert_trust`) and connects again.
+pub const UNTRUSTED_CERT: &str = "VNC_UNTRUSTED_CERT:";
 
 /// How a desktop is reached.
 pub enum Way {
@@ -142,6 +190,7 @@ struct Open {
 #[serde(rename_all = "camelCase")]
 pub struct Security {
     /// `tls` (the whole connection, as an iDRAC with SSL encryption on),
+    /// `vencrypt` (TLS negotiated inside RFB),
     /// `ssh` (through a saved SSH session), `proxmox` (inside the Proxmox
     /// session's HTTPS connection) or `none`.
     pub kind: &'static str,
@@ -167,6 +216,11 @@ impl Security {
         let cipher = conn.negotiated_cipher_suite().map(|c| format!("{:?}", c.suite()));
         let bits = cipher.as_deref().and_then(cipher_bits);
         Self { kind: "tls", protocol, cipher, bits }
+    }
+
+    /// VeNCrypt: TLS like [`Security::tls`], started inside RFB.
+    fn vencrypt(conn: &rustls::ClientConnection) -> Self {
+        Self { kind: "vencrypt", ..Self::tls(conn) }
     }
 }
 
@@ -300,7 +354,18 @@ async fn session(
     let opening = async {
         match link {
             Some(l) => Ok((start(l, &params.password).await?, Security::plain("proxmox"))),
-            None if params.tls => open_tls(&host, port, &params.host, &params.tls_trusted, &login).await,
+            None if params.tls => open_tls(&host, port, &params.host, &params.tls_trusted, params.own_certs, &login).await,
+            None if params.vencrypt => {
+                let tcp = connect_tcp(&host, port).await?;
+                let tls = crate::ftp::tls::Tls::new(&params.host, &params.tls_trusted)?;
+                let (stream, prelude, protected) = vencrypt::negotiate(tcp, &tls, &params.username, &params.password)
+                    .await
+                    .map_err(|e| match e {
+                        vencrypt::Error::Untrusted(fp) => refused(&fp, params.own_certs),
+                        vencrypt::Error::Other(m) => m,
+                    })?;
+                Ok((start(apple::Shim::new(stream, prelude), &params.password).await?, protected))
+            }
             None => Ok((open(&host, port, &login).await?, Security::plain(if via_ssh { "ssh" } else { "none" }))),
         }
     };
@@ -338,32 +403,52 @@ fn is_loopback(host: &str) -> bool {
         || host.trim_matches(['[', ']']).parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
-/// TCP, the RFB handshake and the login. A Mac's login is done before vnc-rs
-/// is handed the stream; see [`apple`].
-async fn open(host: &str, port: u16, login: &apple::Login<'_>) -> Result<VncClient, String> {
-    let mut tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("Could not reach {host}:{port}: {e}"))?;
+async fn connect_tcp(host: &str, port: u16) -> Result<TcpStream, String> {
+    let tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("Could not reach {host}:{port}: {e}"))?;
     // Input is many small messages; Nagle would hold each one back. macOS
     // also wants each login message to arrive in one piece.
     let _ = tcp.set_nodelay(true);
+    Ok(tcp)
+}
+
+/// TCP, the RFB handshake and the login. A Mac's login is done before vnc-rs
+/// is handed the stream; see [`apple`].
+async fn open(host: &str, port: u16, login: &apple::Login<'_>) -> Result<VncClient, String> {
+    let mut tcp = connect_tcp(host, port).await?;
     let prelude = apple::negotiate(&mut tcp, login).await?;
     start(apple::Shim::new(tcp, prelude), login.password).await
+}
+
+/// What a certificate nobody trusts yet comes back as: for a VNC session,
+/// [`UNTRUSTED_CERT`] so its tab can offer to trust it; for a server
+/// management session's VNC server, where to trust it.
+fn refused(fp: &str, own: bool) -> String {
+    if own {
+        format!("{UNTRUSTED_CERT}{fp}")
+    } else {
+        format!("The server's certificate is not trusted (SHA-256 {fp}). Connect its server management tab and trust the certificate there, then try again.")
+    }
 }
 
 /// As [`open`], inside TLS: an iDRAC's VNC server with SSL encryption on.
 /// `name` is the server's own name for its certificate (`host` may be a
 /// local forward); a certificate the system does not trust must be one the
 /// session trusts.
-async fn open_tls(host: &str, port: u16, name: &str, trusted: &[String], login: &apple::Login<'_>) -> Result<(VncClient, Security), String> {
-    let tcp = TcpStream::connect((host, port)).await.map_err(|e| format!("Could not reach {host}:{port}: {e}"))?;
-    let _ = tcp.set_nodelay(true);
+async fn open_tls(
+    host: &str,
+    port: u16,
+    name: &str,
+    trusted: &[String],
+    own_certs: bool,
+    login: &apple::Login<'_>,
+) -> Result<(VncClient, Security), String> {
+    let tcp = connect_tcp(host, port).await?;
     let tls = crate::ftp::tls::Tls::new(name, trusted)?;
     let mut stream = match tls.connector.connect(tls.name.clone(), tcp).await {
         Ok(s) => s,
         Err(e) => {
             return Err(match tls.refused() {
-                Some(fp) => format!(
-                    "The server's certificate is not trusted (SHA-256 {fp}). Connect its server management tab and trust the certificate there, then try again."
-                ),
+                Some(fp) => refused(&fp, own_certs),
                 None => format!("TLS to {name}:{port} failed: {e}. Is SSL encryption on for this VNC server?"),
             });
         }
@@ -410,9 +495,9 @@ fn login_error(e: vnc::VncError) -> String {
         vnc::VncError::WrongPassword => "Wrong VNC password".to_string(),
         vnc::VncError::NoPassword => "This server asks for a VNC password".to_string(),
         // A Mac without a user name in the session, RealVNC's encryption,
-        // VeNCrypt.
+        // VeNCrypt with encryption off in the session.
         vnc::VncError::General(m) if m.contains("not been implemented") => {
-            "This server only offers a login Reacher CM does not support yet. For a Mac, enter its macOS user name in the session.".to_string()
+            "This server only offers a login Reacher CM does not support yet. For a Mac, enter its macOS user name in the session; for a server that wants TLS (VeNCrypt), choose it under Encryption in the session.".to_string()
         }
         other => other.to_string(),
     }

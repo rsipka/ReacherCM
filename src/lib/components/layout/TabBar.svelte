@@ -172,8 +172,8 @@
 			.catch(() => (vncSecurityByTab[id] = null));
 	}
 	function vncSecurityLine(s: VncSecurity): string {
-		if (s.kind === 'tls') {
-			const cipher = [s.protocol, s.cipher, s.bits ? t('tabs.vnc_bits', { bits: s.bits }) : null].filter(Boolean).join(', ');
+		if (s.kind === 'tls' || s.kind === 'vencrypt') {
+			const cipher = [s.kind === 'vencrypt' ? 'VeNCrypt' : null, s.protocol, s.cipher, s.bits ? t('tabs.vnc_bits', { bits: s.bits }) : null].filter(Boolean).join(', ');
 			return t('tabs.vnc_tls', { cipher });
 		}
 		return s.kind === 'ssh' ? t('tabs.vnc_ssh') : s.kind === 'proxmox' ? t('tabs.vnc_proxmox') : t('tabs.vnc_plain');
