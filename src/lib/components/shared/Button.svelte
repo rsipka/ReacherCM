@@ -6,6 +6,7 @@
 		size?: 'sm' | 'md' | 'lg';
 		type?: 'button' | 'submit' | 'reset';
 		disabled?: boolean;
+		ariaExpanded?: boolean;
 		children: Snippet;
 		onclick?: (e: MouseEvent) => void;
 	}
@@ -15,6 +16,7 @@
 		size = 'md',
 		type = 'button',
 		disabled = false,
+		ariaExpanded,
 		children,
 		onclick
 	}: Props = $props();
@@ -30,6 +32,7 @@
 	{type}
 	class="btn btn-{variant} {sizeClasses[size]}"
 	{disabled}
+	aria-expanded={ariaExpanded}
 	{onclick}
 >
 	{@render children()}

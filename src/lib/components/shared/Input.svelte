@@ -1,10 +1,11 @@
 <script lang="ts">
+	import type { HTMLInputAttributes } from 'svelte/elements';
 	import RevealButton from './RevealButton.svelte';
 
-	interface Props {
+	interface Props extends Pick<HTMLInputAttributes, 'required' | 'maxlength' | 'autocomplete' | 'spellcheck' | 'autocapitalize'> {
 		label?: string;
 		value?: string;
-		type?: 'text' | 'password' | 'number';
+		type?: 'text' | 'password' | 'number' | 'url';
 		placeholder?: string;
 		disabled?: boolean;
 		oninput?: (e: Event & { currentTarget: HTMLInputElement }) => void;
@@ -16,6 +17,11 @@
 		type = 'text',
 		placeholder = '',
 		disabled = false,
+		required = false,
+		maxlength,
+		autocomplete,
+		spellcheck,
+		autocapitalize,
 		oninput
 	}: Props = $props();
 
@@ -43,6 +49,11 @@
 		type={isPassword && shown ? 'text' : type}
 		placeholder={label && !focused ? '' : placeholder}
 		{disabled}
+		{required}
+		{maxlength}
+		{autocomplete}
+		{spellcheck}
+		{autocapitalize}
 		bind:value
 		{oninput}
 		onfocus={() => (focused = true)}
