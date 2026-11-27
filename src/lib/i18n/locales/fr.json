@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "Sessions tmux sur ce serveur",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "Un nouvel onglet ouvre une fenêtre tmux",
-  "settings.tmux_new_tab_desc": "Sur un onglet tmux, Ctrl+T et le bouton + ouvrent une nouvelle fenêtre tmux dans un nouvel onglet. Désactivé : un terminal local, comme sur les autres onglets.",
+  "settings.tmux_new_tab_desc": "Sur un onglet tmux, Ctrl+Shift+T et le bouton + ouvrent une nouvelle fenêtre tmux dans un nouvel onglet. Désactivé : un terminal local, comme sur les autres onglets.",
   "settings.tmux_connect_windows": "Fenêtres ouvertes à la connexion",
   "settings.tmux_connect_windows_desc": "Se connecter à une session tmux ouvre la dernière fenêtre utilisée, ou chaque fenêtre dans son propre onglet.",
   "settings.tmux_windows_last": "La dernière utilisée",

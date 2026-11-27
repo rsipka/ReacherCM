@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "tmux сесии на този сървър",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "Новият раздел отваря прозорец на tmux",
-  "settings.tmux_new_tab_desc": "В раздел с tmux Ctrl+T и бутонът + отварят нов прозорец на tmux в нов раздел. Изключено: локален терминал, както в другите раздели.",
+  "settings.tmux_new_tab_desc": "В раздел с tmux Ctrl+Shift+T и бутонът + отварят нов прозорец на tmux в нов раздел. Изключено: локален терминал, както в другите раздели.",
   "settings.tmux_connect_windows": "Прозорци, отваряни при свързване",
   "settings.tmux_connect_windows_desc": "Свързването към сесия tmux отваря последно използвания прозорец или всеки прозорец в отделен раздел.",
   "settings.tmux_windows_last": "Последно използвания",

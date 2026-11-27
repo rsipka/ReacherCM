@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "Συνεδρίες tmux σε αυτόν τον διακομιστή",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "Η νέα καρτέλα ανοίγει παράθυρο tmux",
-  "settings.tmux_new_tab_desc": "Σε καρτέλα tmux, το Ctrl+T και το κουμπί + ανοίγουν νέο παράθυρο tmux σε νέα καρτέλα. Ανενεργό: τοπικό τερματικό, όπως στις άλλες καρτέλες.",
+  "settings.tmux_new_tab_desc": "Σε καρτέλα tmux, το Ctrl+Shift+T και το κουμπί + ανοίγουν νέο παράθυρο tmux σε νέα καρτέλα. Ανενεργό: τοπικό τερματικό, όπως στις άλλες καρτέλες.",
   "settings.tmux_connect_windows": "Παράθυρα που ανοίγουν κατά τη σύνδεση",
   "settings.tmux_connect_windows_desc": "Η σύνδεση σε συνεδρία tmux ανοίγει το τελευταίο παράθυρο που χρησιμοποιήθηκε ή κάθε παράθυρο σε δική του καρτέλα.",
   "settings.tmux_windows_last": "Το τελευταίο που χρησιμοποιήθηκε",

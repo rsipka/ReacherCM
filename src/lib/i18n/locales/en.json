@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "tmux sessions on this server",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "New tab opens a tmux window",
-  "settings.tmux_new_tab_desc": "On a tmux tab, Ctrl+T and the + button open a new tmux window in a new tab. Off: a local terminal, as on other tabs.",
+  "settings.tmux_new_tab_desc": "On a tmux tab, Ctrl+Shift+T and the + button open a new tmux window in a new tab. Off: a local terminal, as on other tabs.",
   "settings.tmux_connect_windows": "Windows to open on connect",
   "settings.tmux_connect_windows_desc": "Connecting to a tmux session opens the window used last, or every window in a tab of its own.",
   "settings.tmux_windows_last": "The last used",

@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "此服务器上的 tmux 会话",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "新标签页打开 tmux 窗口",
-  "settings.tmux_new_tab_desc": "在 tmux 标签页上，Ctrl+T 和 + 按钮会在新标签页中打开一个新的 tmux 窗口。关闭时：与其他标签页一样打开本地终端。",
+  "settings.tmux_new_tab_desc": "在 tmux 标签页上，Ctrl+Shift+T 和 + 按钮会在新标签页中打开一个新的 tmux 窗口。关闭时：与其他标签页一样打开本地终端。",
   "settings.tmux_connect_windows": "连接时打开的窗口",
   "settings.tmux_connect_windows_desc": "连接到 tmux 会话时，打开上次使用的窗口，或为每个窗口各开一个标签页。",
   "settings.tmux_windows_last": "上次使用的",

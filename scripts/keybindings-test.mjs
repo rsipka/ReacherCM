@@ -62,16 +62,18 @@ check('Ctrl+1 on a Czech layout (types +)', chordFromEvent(ev('+', 'Digit1', { c
 check('previously used tab', keyMap({}, false).get('Mod+Shift+L') === 'tab.last');
 check('no Alt+digit taken from shells', ![...keyMap({}, false).keys()].some((k) => /^Alt\+[0-9]$/.test(k)));
 check('Ctrl+PgUp/PgDn left to the terminal', !keyMap({}, false).has('Mod+PageUp') && !keyMap({}, false).has('Mod+PageDown'));
-check('key map finds new tab', keyMap({}, false).get('Mod+T') === 'tab.new');
+check('key map finds new tab', keyMap({}, false).get('Mod+Shift+T') === 'tab.new' && keyMap({}, true).get('Mod+T') === 'tab.new');
+check('Ctrl+T and Ctrl+N left to the terminal off a Mac', !keyMap({}, false).has('Mod+T') && !keyMap({}, false).has('Mod+N'));
+check('new session and Quick Connect', keyMap({}, false).get('Mod+Shift+N') === 'session.new' && keyMap({}, false).get('Mod+Shift+Q') === 'session.quickConnect');
 check('zoom in has three keys', keysFor('zoom.in', {}, false).length === 3);
 
 section('changing keys');
 let o = assignKey({}, 'tab.new', 'Mod+Alt+T', false);
-check('a second key is added', same(keysFor('tab.new', o, false), ['Mod+T', 'Mod+Alt+T']));
+check('a second key is added', same(keysFor('tab.new', o, false), ['Mod+Shift+T', 'Mod+Alt+T']));
 check('no longer default', !isDefault('tab.new', o, false));
-o = replaceKey({}, 'tab.new', 'Mod+T', 'Mod+Alt+T', false);
+o = replaceKey({}, 'tab.new', 'Mod+Shift+T', 'Mod+Alt+T', false);
 check('replace swaps one key', same(keysFor('tab.new', o, false), ['Mod+Alt+T']));
-check('the old key starts nothing', keyMap(o, false).get('Mod+T') === undefined);
+check('the old key starts nothing', keyMap(o, false).get('Mod+Shift+T') === undefined);
 check('the new key starts it', keyMap(o, false).get('Mod+Alt+T') === 'tab.new');
 check('conflict found', conflictFor('Mod+Shift+P', o, false, 'tab.new') === 'app.palette');
 check('own key is no conflict', conflictFor('Mod+Alt+T', o, false, 'tab.new') === null);
@@ -84,7 +86,7 @@ check('removing the last key leaves none', same(o, { 'app.aiPanel': [] }));
 check('an action with no key is not in the map', ![...keyMap(o, false).values()].includes('app.aiPanel'));
 o = resetAction(o, 'app.aiPanel', false);
 check('reset brings the default back', same(o, {}) && isDefault('app.aiPanel', o, false));
-o = replaceKey({}, 'tab.new', 'Mod+T', 'Mod+T', false);
+o = replaceKey({}, 'tab.new', 'Mod+Shift+T', 'Mod+Shift+T', false);
 check('setting a default back stores nothing', same(o, {}));
 
 section('what may be a shortcut');

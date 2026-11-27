@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "Sesiones tmux en este servidor",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "Una pestaña nueva abre una ventana tmux",
-  "settings.tmux_new_tab_desc": "En una pestaña tmux, Ctrl+T y el botón + abren una nueva ventana tmux en una pestaña nueva. Desactivado: un terminal local, como en las demás pestañas.",
+  "settings.tmux_new_tab_desc": "En una pestaña tmux, Ctrl+Shift+T y el botón + abren una nueva ventana tmux en una pestaña nueva. Desactivado: un terminal local, como en las demás pestañas.",
   "settings.tmux_connect_windows": "Ventanas que se abren al conectar",
   "settings.tmux_connect_windows_desc": "Conectar a una sesión tmux abre la última ventana usada, o cada ventana en su propia pestaña.",
   "settings.tmux_windows_last": "La última usada",

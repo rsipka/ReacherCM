@@ -3723,7 +3723,7 @@
   "tmux.bar_sessions": "Sessioni tmux su questo server",
   "settings.tmux_section": "tmux",
   "settings.tmux_new_tab": "La nuova scheda apre una finestra tmux",
-  "settings.tmux_new_tab_desc": "In una scheda tmux, Ctrl+T e il pulsante + aprono una nuova finestra tmux in una nuova scheda. Disattivato: un terminale locale, come nelle altre schede.",
+  "settings.tmux_new_tab_desc": "In una scheda tmux, Ctrl+Shift+T e il pulsante + aprono una nuova finestra tmux in una nuova scheda. Disattivato: un terminale locale, come nelle altre schede.",
   "settings.tmux_connect_windows": "Finestre da aprire alla connessione",
   "settings.tmux_connect_windows_desc": "La connessione a una sessione tmux apre l'ultima finestra usata, oppure ogni finestra in una scheda propria.",
   "settings.tmux_windows_last": "L'ultima usata",

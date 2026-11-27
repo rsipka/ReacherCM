@@ -72,7 +72,11 @@ export const GROUP_LABELS: Record<ActionGroup, string> = {
 };
 
 export const ACTIONS: ActionDef[] = [
-	{ id: 'tab.new', group: 'tabs', label: 'shortcuts.tab_new', defaults: ['Mod+T'] },
+	// Ctrl+Shift for new tabs and sessions, as in GNOME Terminal and Windows
+	// Terminal: plain Ctrl+T and Ctrl+N belong to programs in the terminal
+	// (Midnight Commander's tag, Zellij's Tab and Resize modes, the shell).
+	// A terminal cannot tell Ctrl+Shift+T from Ctrl+T, so nothing is lost.
+	{ id: 'tab.new', group: 'tabs', label: 'shortcuts.tab_new', defaults: ['Mod+Shift+T'], macDefaults: ['Mod+T'] },
 	{ id: 'tab.close', group: 'tabs', label: 'shortcuts.tab_close', defaults: ['Mod+Shift+W'] },
 	// Ctrl+Tab sends a plain Tab to a terminal anyway. Cmd+Alt+arrows as in
 	// Chrome on a Mac. Not Ctrl+PgUp/PgDn by default: Midnight Commander and
@@ -88,8 +92,8 @@ export const ACTIONS: ActionDef[] = [
 		(n): ActionDef => ({ id: `tab.go${n}`, group: 'tabs', label: 'shortcuts.tab_go', labelParams: { n }, defaults: [`Mod+${n}`] })
 	),
 	{ id: 'tab.goLast', group: 'tabs', label: 'shortcuts.tab_go_last', defaults: ['Mod+9'] },
-	{ id: 'session.new', group: 'tabs', label: 'shortcuts.session_new', defaults: ['Mod+N'] },
-	{ id: 'session.quickConnect', group: 'tabs', label: 'shortcuts.session_quick', defaults: ['Mod+Shift+N'] },
+	{ id: 'session.new', group: 'tabs', label: 'shortcuts.session_new', defaults: ['Mod+Shift+N'], macDefaults: ['Mod+N'] },
+	{ id: 'session.quickConnect', group: 'tabs', label: 'shortcuts.session_quick', defaults: ['Mod+Shift+Q'], macDefaults: ['Mod+Shift+N'] },
 	{ id: 'app.palette', group: 'app', label: 'shortcuts.palette', defaults: ['Mod+Shift+P'] },
 	{ id: 'app.settings', group: 'app', label: 'shortcuts.settings', defaults: ['Mod+,'] },
 	{ id: 'app.aiPanel', group: 'app', label: 'shortcuts.ai_panel', defaults: ['Mod+Shift+A'] },
