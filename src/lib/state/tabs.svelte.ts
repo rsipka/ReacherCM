@@ -274,6 +274,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 	};
 
 	tabs.push(tab);
+	noteFront(id);
 	return tab;
 }
 
@@ -377,6 +378,26 @@ export function activateTab(id: string): void {
 	for (const tab of tabs) {
 		tab.active = tab.id === id;
 	}
+	noteFront(id);
+}
+
+/** Tab ids, the one brought to the front most recently first, for the
+ *  last-used tab key. Not state: nothing on screen shows it. */
+let recent: string[] = [];
+
+function noteFront(id: string): void {
+	recent = [id, ...recent.filter((x) => x !== id && tabs.some((t) => t.id === x))].slice(0, 50);
+}
+
+/** The open tab that was in front before the one in front now. */
+export function lastUsedTab(): Tab | undefined {
+	const front = activeTab?.id;
+	for (const id of recent) {
+		if (id === front) continue;
+		const tab = tabs.find((t) => t.id === id);
+		if (tab) return tab;
+	}
+	return undefined;
 }
 
 export function updateTabTitle(id: string, title: string): void {
