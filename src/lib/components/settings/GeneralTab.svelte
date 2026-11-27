@@ -26,6 +26,8 @@
 	import type { EditorInfo } from '#lib/ipc/localfs.js';
 	import { winboxFind, type WinboxPasswordMode } from '#lib/ipc/winbox.js';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { clearHistory } from '#lib/state/notification-history.svelte.js';
+	import type { SystemNotifyMode, ToastPosition } from '#lib/state/notify-rules.js';
 
 	/** Which slice of these rows to show: Settings arranges them by topic,
 	 *  so one tab file feeds several pages (see settings-pages.ts). */
@@ -137,6 +139,38 @@
 		updateSetting('terminalBellNotify', checked);
 	}
 
+	let toastPositionOptions = $derived([
+		{ label: t('settings.toast_position_top_center'), value: 'top-center' },
+		{ label: t('settings.toast_position_top_left'), value: 'top-left' },
+		{ label: t('settings.toast_position_top_right'), value: 'top-right' },
+		{ label: t('settings.toast_position_bottom_left'), value: 'bottom-left' },
+		{ label: t('settings.toast_position_bottom_center'), value: 'bottom-center' },
+		{ label: t('settings.toast_position_bottom_right'), value: 'bottom-right' }
+	]);
+
+	let systemNotifyOptions = $derived([
+		{ label: t('settings.system_notifications_off'), value: 'off' },
+		{ label: t('settings.system_notifications_background'), value: 'background' },
+		{ label: t('settings.system_notifications_always'), value: 'always' }
+	]);
+
+	/** Off empties the history too: nothing is kept that cannot be seen. */
+	function onHistoryChange(checked: boolean) {
+		updateSetting('notificationHistory', checked);
+		if (!checked) clearHistory();
+	}
+
+	/** As the bell's notifications: permission first; refused, it stays off. */
+	async function onSystemNotificationsChange(value: string) {
+		const mode = value as SystemNotifyMode;
+		if (mode !== 'off' && !(await allowNotifications())) {
+			updateSetting('systemNotifications', 'off');
+			addToast(t('settings.bell_notify_denied'), 'warning', 6000);
+			return;
+		}
+		updateSetting('systemNotifications', mode);
+	}
+
 	function onCheckForUpdatesChange(checked: boolean) {
 		updateSetting('checkForUpdates', checked);
 	}
@@ -237,6 +271,49 @@
 				checked={settings.playSounds}
 				label={t('settings.play_sounds')}
 				onchange={(v) => updateSetting('playSounds', v)}
+			/>
+		</div>
+	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
+			<span class="setting-label">{t('settings.toast_position')}</span>
+			<span class="setting-description">{t('settings.toast_position_desc')}</span>
+		</div>
+		<div class="setting-control">
+			<Dropdown
+				options={toastPositionOptions}
+				selected={settings.toastPosition}
+				onchange={(v) => updateSetting('toastPosition', v as ToastPosition)}
+			/>
+		</div>
+	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
+			<span class="setting-label">{t('settings.notification_history')}</span>
+			<span class="setting-description">{t('settings.notification_history_desc')}</span>
+		</div>
+		<div class="setting-control">
+			<Toggle
+				hideLabel
+				checked={settings.notificationHistory}
+				label={t('settings.notification_history')}
+				onchange={onHistoryChange}
+			/>
+		</div>
+	</div>
+
+	<div class="setting-row">
+		<div class="setting-info">
+			<span class="setting-label">{t('settings.system_notifications')}</span>
+			<span class="setting-description">{t('settings.system_notifications_desc')}</span>
+		</div>
+		<div class="setting-control">
+			<Dropdown
+				options={systemNotifyOptions}
+				selected={settings.systemNotifications}
+				onchange={(v) => void onSystemNotificationsChange(v)}
 			/>
 		</div>
 	</div>

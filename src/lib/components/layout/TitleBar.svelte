@@ -14,6 +14,8 @@
 	import { isMuted, toggleMute, syncMuteToBackend } from '#lib/state/mute.svelte.js';
 	import { runningWireguard } from '#lib/state/wireguard.svelte.js';
 	import { ROUTE_ICON } from '#lib/utils/route.js';
+	import { getSettings } from '#lib/state/settings.svelte.js';
+	import NotificationHistory from './NotificationHistory.svelte';
 
 	/** On a Mac the window keeps the system's own traffic lights, drawn over
 	 *  this bar (tauri.macos.conf.json): they are what a Mac user reaches for,
@@ -110,6 +112,9 @@
 				{/if}
 			</svg>
 		</button>
+		{#if getSettings().notificationHistory}
+			<NotificationHistory />
+		{/if}
 		{#if tunnels.length}
 			<button class="settings-btn wg-btn" onclick={showTunnels} aria-label={tunnelsTitle} title={tunnelsTitle}>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

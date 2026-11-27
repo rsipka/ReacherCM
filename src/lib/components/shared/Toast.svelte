@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { getToasts, dismissToast, type ToastType } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
+	import { getSettings } from '#lib/state/settings.svelte.js';
 
 	let toasts = $derived(getToasts());
+	/** Settings > General > Notification position: 'top-center', 'bottom-right'… */
+	let position = $derived(getSettings().toastPosition);
+	let bottom = $derived(position.startsWith('bottom'));
 
 	const dotColors: Record<ToastType, string> = {
 		info: 'var(--color-accent)',
@@ -13,7 +17,12 @@
 </script>
 
 {#if toasts.length > 0}
-	<div class="toast-container">
+	<div
+		class="toast-container"
+		class:bottom
+		class:left={position.endsWith('left')}
+		class:right={position.endsWith('right')}
+	>
 		{#each toasts as toast (toast.id)}
 			<div
 				class="toast"
@@ -70,6 +79,23 @@
 		pointer-events: none;
 	}
 
+	/* Over the status bar, which is 0 tall on a phone. */
+	.toast-container.bottom {
+		top: auto;
+		bottom: calc(var(--statusbar-h, 24px) + 12px + var(--safe-bottom));
+	}
+
+	/* A corner: the toasts line up on that side, clear of the edge. */
+	.toast-container.left {
+		align-items: flex-start;
+		left: calc(12px + var(--safe-left));
+	}
+
+	.toast-container.right {
+		align-items: flex-end;
+		right: calc(12px + var(--safe-right));
+	}
+
 	.toast {
 		pointer-events: auto;
 		display: flex;
@@ -122,6 +148,15 @@
 
 	.toast.dismissing {
 		animation: slideUp 250ms var(--ease-default) forwards;
+	}
+
+	/* At the bottom they come up from the edge and go back down to it. */
+	.bottom .toast {
+		animation-name: riseIn;
+	}
+
+	.bottom .toast.dismissing {
+		animation-name: sinkOut;
 	}
 
 	.toast-dot {
@@ -180,6 +215,28 @@
 		to {
 			opacity: 0;
 			transform: translateY(-20px);
+		}
+	}
+
+	@keyframes riseIn {
+		from {
+			opacity: 0;
+			transform: translateY(20px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	@keyframes sinkOut {
+		from {
+			opacity: 1;
+			transform: translateY(0);
+		}
+		to {
+			opacity: 0;
+			transform: translateY(20px);
 		}
 	}
 
