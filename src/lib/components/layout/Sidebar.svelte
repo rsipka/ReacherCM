@@ -56,8 +56,17 @@
 			activeSection = id;
 			collapsed = false;
 		}
+		// A panel's own way back to what is under the drawer on a phone
+		// (the Files panel's terminal button).
+		function onClose(): void {
+			collapsed = true;
+		}
 		window.addEventListener('reach:sidebar-section', onSection);
-		return () => window.removeEventListener('reach:sidebar-section', onSection);
+		window.addEventListener('reach:sidebar-close', onClose);
+		return () => {
+			window.removeEventListener('reach:sidebar-section', onSection);
+			window.removeEventListener('reach:sidebar-close', onClose);
+		};
 	});
 	let sidebarWidth = $state(loadWidth());
 	let dragging = $state(false);

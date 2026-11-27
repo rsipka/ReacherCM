@@ -16,7 +16,6 @@ export function unsupportedReason(session: Pick<SessionConfig, 'kind' | 'files' 
 	if (!platform.mobile) return null;
 	if (session.kind === 'serial') return 'serial.desktop_only';
 	if (session.kind === 'winbox') return 'winbox.desktop_only';
-	if (session.kind === 'ftp' || session.files) return 'files.desktop_only';
 	if (session.x11_desktop) return 'session.x11_desktop_only';
 	return null;
 }

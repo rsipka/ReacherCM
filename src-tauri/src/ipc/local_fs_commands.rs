@@ -1,6 +1,8 @@
-//! This computer's own files, for the local side of the full-pane file
-//! manager (the remote side is the SFTP explorer's). Desktop only: a phone
-//! has no folders of its own worth browsing beside a server's.
+//! This device's own files, for the local side of the full-pane file
+//! manager (the remote side is the SFTP explorer's). On a computer that is
+//! the home folder and the drives. On a phone or tablet it starts in the
+//! app's own folder there (see [`set_device_files_dir`]), which the system's
+//! Files app shows too, so files can be passed in and out of it.
 //!
 //! The webview could already hand any local path to an upload, so this lets
 //! it see nothing it could not already send; deleting and renaming are only
@@ -76,9 +78,44 @@ fn entry_of(path: &Path) -> Option<LocalEntry> {
     })
 }
 
+/// Where an empty path starts: the home folder on a computer, the app's
+/// own files folder on a phone or tablet.
+static DEVICE_FILES_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+fn home() -> Option<PathBuf> {
+    DEVICE_FILES_DIR.get().cloned().or_else(dirs::home_dir)
+}
+
+/// The app's own files folder on a phone or tablet, made if missing:
+/// - iPhone/iPad: the app's Documents, which the Files app shows under the
+///   app's name (Info.ios.plist turns that on).
+/// - Android: `Download/ReacherCM` in shared storage, which every file
+///   manager shows; the app's private external folder when shared storage
+///   cannot be written.
+#[cfg(mobile)]
+pub fn set_device_files_dir(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let paths = app.path();
+    #[cfg(target_os = "ios")]
+    let candidates = [paths.document_dir().ok()];
+    #[cfg(target_os = "android")]
+    let candidates = [
+        paths.home_dir().ok().map(|h| h.join("Download").join("ReacherCM")),
+        paths.download_dir().ok(),
+    ];
+    for dir in candidates.into_iter().flatten() {
+        if std::fs::create_dir_all(&dir).is_ok() {
+            tracing::info!("Device files folder: {}", dir.display());
+            let _ = DEVICE_FILES_DIR.set(dir);
+            return;
+        }
+    }
+    tracing::warn!("No device files folder could be made");
+}
+
 pub(crate) fn list(path: &str) -> Result<LocalListing, String> {
     let dir = if path.is_empty() {
-        dirs::home_dir().ok_or_else(|| "No home folder".to_string())?
+        home().ok_or_else(|| "No home folder".to_string())?
     } else {
         PathBuf::from(path)
     };
@@ -156,10 +193,13 @@ pub(crate) fn join(dir: &str, name: &str) -> Result<String, String> {
     Ok(path_string(&Path::new(dir).join(plain_name(name)?)))
 }
 
-/// Where a pane can start: the home folder, then each drive on Windows, or
-/// `/` elsewhere.
+/// Where a pane can start: the home folder (the app's files folder on a
+/// phone), then each drive on Windows, the shared storage on Android, or
+/// `/` on other computers.
 fn roots() -> Vec<String> {
-    let mut out: Vec<String> = dirs::home_dir().map(|h| path_string(&h)).into_iter().collect();
+    let mut out: Vec<String> = home().map(|h| path_string(&h)).into_iter().collect();
+    #[cfg(target_os = "android")]
+    out.push("/storage/emulated/0".to_string());
     #[cfg(windows)]
     for letter in b'A'..=b'Z' {
         let drive = format!("{}:\\", letter as char);
@@ -167,7 +207,7 @@ fn roots() -> Vec<String> {
             out.push(drive);
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, mobile)))]
     out.push("/".to_string());
     out
 }
@@ -268,6 +308,7 @@ pub async fn local_touch(dir: String, name: String) -> Result<String, String> {
 }
 
 /// Show a file or folder in the system's file manager, selected.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn local_reveal(path: String) -> Result<(), String> {
     if std::fs::symlink_metadata(&path).is_err() {
@@ -292,6 +333,7 @@ pub async fn local_edit_copy_path(name: String) -> Result<String, String> {
 }
 
 /// Open a local file in the program the system uses for it.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn local_open(path: String) -> Result<(), String> {
     if !Path::new(&path).is_file() {

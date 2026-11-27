@@ -1,6 +1,13 @@
 package com.reachercm.client
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -28,11 +35,36 @@ class MainActivity : TauriActivity() {
     // The page asks for the screen edges when it starts (see edges.ts); this
     // gives it numbers only.
     webView.addJavascriptInterface(EdgesBridge(), "ReachEdges")
+    // The file manager's phone side lists the shared storage with plain file
+    // paths, which Android allows only with "All files access" (Android 11+)
+    // or the storage permission (older). This tells the page whether it has
+    // it, and opens the screen that grants it.
+    webView.addJavascriptInterface(StorageBridge(), "ReachStorage")
     this.webView = webView
   }
 
   private inner class EdgesBridge {
     @JavascriptInterface fun get(): String = edges
+  }
+
+  private inner class StorageBridge {
+    @JavascriptInterface fun granted(): Boolean =
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
+      else checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+
+    @JavascriptInterface fun request() {
+      runOnUiThread {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          try {
+            startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName")))
+          } catch (e: Exception) {
+            startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+          }
+        } else {
+          requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 4711)
+        }
+      }
+    }
   }
 
   companion object {

@@ -26,7 +26,6 @@ pub mod credential_folder_commands;
 pub(crate) mod password_history;
 pub mod session_commands;
 pub mod sftp_commands;
-#[cfg(desktop)]
 pub mod local_fs_commands;
 #[cfg(desktop)]
 pub mod editor_detect;

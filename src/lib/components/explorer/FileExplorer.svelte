@@ -75,6 +75,22 @@
 	let explorerEl: HTMLDivElement | undefined = $state();
 
 	let currentPath = $derived(connectionId ? getCurrentPath(connectionId) : '/');
+
+	// On a phone the sidebar is a full-screen drawer over the terminal (see
+	// Sidebar's 700px rule): the terminal button there goes back to it, as
+	// that is what a tap on a shell icon is for when the terminal is hidden.
+	const DRAWER_QUERY = '(max-width: 700px)';
+	let drawer = $state(typeof window !== 'undefined' && window.matchMedia(DRAWER_QUERY).matches);
+	$effect(() => {
+		const mq = window.matchMedia(DRAWER_QUERY);
+		const update = () => (drawer = mq.matches);
+		mq.addEventListener('change', update);
+		return () => mq.removeEventListener('change', update);
+	});
+
+	function closeDrawer(): void {
+		window.dispatchEvent(new CustomEvent('reach:sidebar-close'));
+	}
 	/** The SSH tab this explorer shows, when it can open the full-pane view. */
 	let fullTab = $derived.by(() => {
 		const tab = getActiveTab();
@@ -894,9 +910,9 @@
 
 			<button
 				class="tool-btn"
-				onclick={() => goToTerminalFolder()}
-				aria-label={t('explorer.go_terminal_folder')}
-				title={t('explorer.go_terminal_folder')}
+				onclick={() => (drawer ? closeDrawer() : goToTerminalFolder())}
+				aria-label={drawer ? t('files.back_to_terminal') : t('explorer.go_terminal_folder')}
+				title={drawer ? t('files.back_to_terminal') : t('explorer.go_terminal_folder')}
 				type="button"
 			>
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -936,7 +952,12 @@
 				<button
 					class="tool-btn"
 					class:on={fullTab.filesView}
-					onclick={() => fullTab && toggleFilesView(fullTab.id)}
+					onclick={() => {
+						if (!fullTab) return;
+						toggleFilesView(fullTab.id);
+						// The full-pane view is under the drawer: show it.
+						if (drawer) closeDrawer();
+					}}
 					aria-pressed={!!fullTab.filesView}
 					aria-label={t('files.open_full')}
 					title={`${fullTab.filesView ? t('files.back_to_terminal') : t('files.open_full')} (${actionLabel('files.toggle')})`}

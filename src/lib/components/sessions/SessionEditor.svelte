@@ -535,8 +535,6 @@
 	/** Whether this computer can open a kind. The one being edited always shows. */
 	function kindAvailable(k: Protocol): boolean {
 		if (k === proto) return true;
-		// The file manager has this computer's files beside the server's: none on a phone.
-		if (k === 'sftp' || k === 'scp' || k === 'ftp') return !isMobile();
 		// WinBox and serial ports are programs and ports on this computer: none on a phone.
 		if (k === 'winbox' || k === 'serial') return !isMobile();
 		if (k === 'wsl') return isWindows();
