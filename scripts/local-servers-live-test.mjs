@@ -198,7 +198,8 @@ try {
 	{
 		const { ctx, page } = await openApp(true);
 		await sleep(1000);
-		check('no Servers section on a phone', (await page.locator('.nav-btn[aria-label="Servers"]').count()) === 0);
+		await page.locator('.nav-btn[aria-label="Network"]').click();
+		check('no Servers section on a phone', (await page.locator('.switch-btn', { hasText: 'Servers' }).count()) === 0);
 		await ctx.close();
 	}
 
@@ -210,7 +211,8 @@ try {
 		await sleep(300);
 		await page.screenshot({ path: `${process.env.SHOT_DIR}/${name}.png`, clip: { x: 0, y: 0, width: 640, height } }).catch(() => {});
 	}
-	await page.locator('.nav-btn[aria-label="Servers"]').click();
+	await page.locator('.nav-btn[aria-label="Network"]').click();
+	await page.locator('.switch-btn', { hasText: 'Servers' }).click();
 	check('the Servers section opens', await until(async () => (await page.locator('.server-card').count()) === 4));
 	await page.evaluate(() => {
 		// A wider panel, as a user would drag it, for the screenshots.
@@ -218,7 +220,8 @@ try {
 	});
 	await page.reload();
 	await page.waitForSelector('.tabbar', { timeout: 30000 });
-	await page.locator('.nav-btn[aria-label="Servers"]').click();
+	await page.locator('.nav-btn[aria-label="Network"]').click();
+	await page.locator('.switch-btn', { hasText: 'Servers' }).click();
 	await until(async () => (await page.locator('.server-card').count()) === 4);
 	const names = await page.locator('.server-card .name').allInnerTexts();
 	check('TFTP, FTP, SFTP and HTTP', names.join(',') === 'TFTP,FTP,SFTP,HTTP', names.join(','));
