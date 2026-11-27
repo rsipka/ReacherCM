@@ -585,6 +585,9 @@ jobs:
           cp src-tauri/android/MainActivity.kt src-tauri/gen/android/app/src/main/java/com/reachercm/client/MainActivity.kt
           # R8 keep rules for the QR code scanner's ML Kit.
           cat src-tauri/android/proguard-rules.pro >> src-tauri/gen/android/app/proguard-rules.pro
+          # ML Kit's bundled barcode model instead of the Play Services one, so
+          # the QR scanner works on phones without Google Play Services.
+          cat src-tauri/android/no-gms.gradle.kts >> src-tauri/gen/android/app/build.gradle.kts
 
       # One permanent key, kept as a repository secret. Android installs an
       # update only over an app signed with the same key, so a key made fresh
