@@ -54,7 +54,14 @@ check('every action has a default key', ACTIONS.every((a) => a.defaults.length >
 check('no two actions share a default (PC)', conflicts({}, false).size === 0, JSON.stringify([...conflicts({}, false)]));
 check('no two actions share a default (Mac)', conflicts({}, true).size === 0, JSON.stringify([...conflicts({}, true)]));
 check('every default needs a modifier', ACTIONS.every((a) => [...a.defaults, ...(a.macDefaults ?? [])].every((k) => rejectReason(k) === null)));
-check('next tab on a Mac is Control+Tab', same(defaultKeys('tab.next', true), ['Ctrl+Tab']));
+check('next tab on a Mac is Control+Tab or Cmd+Alt+Right', same(defaultKeys('tab.next', true), ['Ctrl+Tab', 'Mod+Alt+ArrowRight']));
+check('Ctrl+1…8 go to tabs 1…8', [1, 2, 3, 4, 5, 6, 7, 8].every((n) => keyMap({}, false).get(`Mod+${n}`) === `tab.go${n}`));
+check('Ctrl+9 goes to the last tab', keyMap({}, false).get('Mod+9') === 'tab.goLast');
+check('Cmd+1 on a Mac', chordFromEvent(ev('1', 'Digit1', { meta: true }), true) === 'Mod+1' && keyMap({}, true).get('Mod+1') === 'tab.go1');
+check('Ctrl+1 on a Czech layout (types +)', chordFromEvent(ev('+', 'Digit1', { ctrl: true }), false) === 'Mod+1');
+check('previously used tab', keyMap({}, false).get('Mod+Shift+L') === 'tab.last');
+check('no Alt+digit taken from shells', ![...keyMap({}, false).keys()].some((k) => /^Alt\+[0-9]$/.test(k)));
+check('Ctrl+PgUp/PgDn left to the terminal', !keyMap({}, false).has('Mod+PageUp') && !keyMap({}, false).has('Mod+PageDown'));
 check('key map finds new tab', keyMap({}, false).get('Mod+T') === 'tab.new');
 check('zoom in has three keys', keysFor('zoom.in', {}, false).length === 3);
 

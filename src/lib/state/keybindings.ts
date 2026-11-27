@@ -18,6 +18,16 @@ export type ActionId =
 	| 'tab.close'
 	| 'tab.next'
 	| 'tab.previous'
+	| 'tab.last'
+	| 'tab.go1'
+	| 'tab.go2'
+	| 'tab.go3'
+	| 'tab.go4'
+	| 'tab.go5'
+	| 'tab.go6'
+	| 'tab.go7'
+	| 'tab.go8'
+	| 'tab.goLast'
 	| 'session.new'
 	| 'session.quickConnect'
 	| 'app.settings'
@@ -47,6 +57,8 @@ export interface ActionDef {
 	group: ActionGroup;
 	/** i18n key of the action's name. */
 	label: string;
+	/** Filled into the label, as t() does (`Go to tab {{n}}`). */
+	labelParams?: Record<string, string | number>;
 	defaults: string[];
 	/** On a Mac, where they differ (Cmd+Tab belongs to the system). */
 	macDefaults?: string[];
@@ -62,8 +74,20 @@ export const GROUP_LABELS: Record<ActionGroup, string> = {
 export const ACTIONS: ActionDef[] = [
 	{ id: 'tab.new', group: 'tabs', label: 'shortcuts.tab_new', defaults: ['Mod+T'] },
 	{ id: 'tab.close', group: 'tabs', label: 'shortcuts.tab_close', defaults: ['Mod+Shift+W'] },
-	{ id: 'tab.next', group: 'tabs', label: 'shortcuts.tab_next', defaults: ['Mod+Tab'], macDefaults: ['Ctrl+Tab'] },
-	{ id: 'tab.previous', group: 'tabs', label: 'shortcuts.tab_previous', defaults: ['Mod+Shift+Tab'], macDefaults: ['Ctrl+Shift+Tab'] },
+	// Ctrl+Tab sends a plain Tab to a terminal anyway. Cmd+Alt+arrows as in
+	// Chrome on a Mac. Not Ctrl+PgUp/PgDn by default: Midnight Commander and
+	// others use them in the terminal (add them in Settings if you like).
+	{ id: 'tab.next', group: 'tabs', label: 'shortcuts.tab_next', defaults: ['Mod+Tab'], macDefaults: ['Ctrl+Tab', 'Mod+Alt+ArrowRight'] },
+	{ id: 'tab.previous', group: 'tabs', label: 'shortcuts.tab_previous', defaults: ['Mod+Shift+Tab'], macDefaults: ['Ctrl+Shift+Tab', 'Mod+Alt+ArrowLeft'] },
+	// Back to the tab that was in front before; again to return.
+	{ id: 'tab.last', group: 'tabs', label: 'shortcuts.tab_last', defaults: ['Mod+Shift+L'] },
+	// Ctrl+1…8 (Cmd on a Mac) as in a browser, Ctrl+9 the last tab. Not Alt+1…9:
+	// shells, IRC clients and Emacs use Alt+digits, and Ctrl+Alt is AltGr on
+	// Windows, which types characters on many layouts.
+	...([1, 2, 3, 4, 5, 6, 7, 8] as const).map(
+		(n): ActionDef => ({ id: `tab.go${n}`, group: 'tabs', label: 'shortcuts.tab_go', labelParams: { n }, defaults: [`Mod+${n}`] })
+	),
+	{ id: 'tab.goLast', group: 'tabs', label: 'shortcuts.tab_go_last', defaults: ['Mod+9'] },
 	{ id: 'session.new', group: 'tabs', label: 'shortcuts.session_new', defaults: ['Mod+N'] },
 	{ id: 'session.quickConnect', group: 'tabs', label: 'shortcuts.session_quick', defaults: ['Mod+Shift+N'] },
 	{ id: 'app.palette', group: 'app', label: 'shortcuts.palette', defaults: ['Mod+Shift+P'] },

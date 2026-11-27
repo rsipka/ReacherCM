@@ -1410,6 +1410,9 @@
 
 	$effect(() => {
 		if (active) canvas?.focus();
+		// A tab-switching key (Ctrl+Tab, Ctrl+1) leaves this tab with Ctrl
+		// still down here: the remote must not keep it held.
+		else releaseAll();
 	});
 </script>
 
