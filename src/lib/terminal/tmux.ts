@@ -12,9 +12,9 @@
  */
 
 import type { Folder, SessionConfig, TmuxSetting } from '#lib/ipc/sessions.js';
-import type { TmuxStart } from '#lib/ipc/ssh.js';
+import type { TmuxStart, TmuxTool } from '#lib/ipc/ssh.js';
 
-export type { TmuxStart };
+export type { TmuxStart, TmuxTool };
 
 const MAX_NAME = 64;
 
@@ -25,6 +25,21 @@ export function validTmuxName(name: string): boolean {
 
 /** The tmux session every session uses unless it names its own. */
 export const DEFAULT_TMUX_NAME = 'reachercm-tmux';
+/** The default for Byobu (a tmux session too, but with Byobu's config). */
+export const DEFAULT_BYOBU_NAME = 'reachercm-byobu';
+/** The default for Zellij. */
+export const DEFAULT_ZELLIJ_NAME = 'reachercm-zellij';
+
+/** A saved program, as one this version knows: anything else is tmux. */
+export function tmuxTool(tool: string | null | undefined): TmuxTool {
+	return tool === 'byobu' || tool === 'zellij' ? tool : 'tmux';
+}
+
+/** The session name used when none is set, for `tool`. */
+export function defaultSessionName(tool: TmuxTool): string {
+	return tool === 'byobu' ? DEFAULT_BYOBU_NAME : tool === 'zellij' ? DEFAULT_ZELLIJ_NAME : DEFAULT_TMUX_NAME;
+}
+
 /** What the default names started with before. */
 const OLD_PREFIX = 'reachercm';
 
@@ -71,12 +86,15 @@ export function tmuxFor(session: Pick<SessionConfig, 'name' | 'kind' | 'folder_i
 	if (!on) return null;
 	const name = own?.name?.trim();
 	const ownName = !!name && validTmuxName(name);
-	const start: TmuxStart = { name: ownName ? name : DEFAULT_TMUX_NAME };
+	const tool = tmuxTool(own?.tool);
+	const start: TmuxStart = { name: ownName ? name : defaultSessionName(tool) };
+	if (tool !== 'tmux') start.tool = tool;
 	// The default name changed: a session started under the old one is
 	// still there to go back to (the backend picks it while it is the only one).
-	if (!ownName) start.legacy = legacyTmuxName(session.name);
+	if (!ownName && tool === 'tmux') start.legacy = legacyTmuxName(session.name);
 	if (mode === 'ask' && kind === 'ssh') start.ask = true;
-	if (own?.mouse) start.mouse = true;
+	// Zellij has the mouse on by itself, and no per-session switch for it.
+	if (own?.mouse && tool !== 'zellij') start.mouse = true;
 	return start;
 }
 

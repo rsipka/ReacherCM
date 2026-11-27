@@ -13,6 +13,7 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { addToast, dismissToast } from '#lib/state/toasts.svelte.js';
+	import { listedMeta } from '#lib/terminal/tmux-tabs.js';
 
 	interface AuthPrompt {
 		promptId: string;
@@ -36,12 +37,13 @@
 		answers = current ? (current.kind === 'tmux' ? [current.title] : current.fields.map(() => '')) : [];
 	});
 
-	/** tmux: the server's sessions, as `name\twindows\tattached\tactivity`. */
+	/** tmux: the server's sessions, as `name\twindows\tattached\tactivity\texited`
+	 *  (Zellij: no windows, clients or activity). */
 	let tmuxSessions = $derived(
 		current?.kind === 'tmux'
 			? current.fields.map((f) => {
-					const [name, windows, attached, activity] = f.text.split('\t');
-					return { name, windows: Number(windows) || 0, attached: Number(attached) || 0, activity: Number(activity) || 0 };
+					const [name, windows, attached, activity, exited] = f.text.split('\t');
+					return { name, windows: Number(windows) || 0, attached: Number(attached) || 0, activity: Number(activity) || 0, exited: exited === '1' };
 				})
 			: []
 	);
@@ -145,9 +147,7 @@
 							<button type="button" class="tmux-row" onclick={() => pick(s.name)}>
 								<span class="tmux-name">{s.name}</span>
 								<span class="tmux-meta">
-									{t('tmux.windows', { count: String(s.windows) })}
-									{#if s.attached > 0}· {t('tmux.attached', { count: String(s.attached) })}{/if}
-									· {ago(s.activity)}
+									{[listedMeta(s), s.activity > 0 ? ago(s.activity) : ''].filter(Boolean).join(' · ')}
 								</span>
 							</button>
 						{/each}
