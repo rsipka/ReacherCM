@@ -27,6 +27,7 @@
     "share:live": "node scripts/share-live-test.mjs",
     "ios-source:test": "node scripts/ios-source-test.mjs",
     "paste:test": "node scripts/paste-test.mjs",
+    "android-manifest:test": "node scripts/android-manifest-test.mjs",
     "mouse:test": "node scripts/mouse-test.mjs",
     "selection-sync:test": "node scripts/selection-sync-test.mjs",
     "cursor:test": "node scripts/cursor-test.mjs",

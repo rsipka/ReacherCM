@@ -1,5 +1,6 @@
 package com.reachercm.client
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.View
 import android.webkit.JavascriptInterface
@@ -11,12 +12,15 @@ import androidx.core.view.WindowInsetsCompat
 
 // Copied over the activity `tauri android init` generates (see the Android
 // jobs in .github/workflows), which is the same apart from the keyboard, the
-// screen edges and the text size below.
+// screen edges, the text size and the device state (keyboard, DeX) below.
 class MainActivity : TauriActivity() {
   private var webView: WebView? = null
 
   /** The system bars and camera cutout, as CSS "top right bottom left". */
   @Volatile private var edges = "0px 0px 0px 0px"
+
+  /** A hardware keyboard and Samsung DeX, as JSON for device.svelte.ts. */
+  @Volatile private var device = "{}"
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
@@ -28,11 +32,45 @@ class MainActivity : TauriActivity() {
     // The page asks for the screen edges when it starts (see edges.ts); this
     // gives it numbers only.
     webView.addJavascriptInterface(EdgesBridge(), "ReachEdges")
+    // Whether a hardware keyboard is attached and DeX is on: the terminal's
+    // extra-keys bar is not needed with a real keyboard.
+    device = deviceState(resources.configuration)
+    webView.addJavascriptInterface(DeviceBridge(), "ReachDevice")
     this.webView = webView
   }
 
   private inner class EdgesBridge {
     @JavascriptInterface fun get(): String = edges
+  }
+
+  private inner class DeviceBridge {
+    @JavascriptInterface fun get(): String = device
+  }
+
+  /** The manifest lists keyboard, uiMode, density and the screen changes DeX
+   *  makes (see patch-manifest.mjs), so the activity is not started again:
+   *  the open sessions stay. The page is told what changed. */
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    val now = deviceState(newConfig)
+    if (now != device) {
+      device = now
+      webView?.post { webView?.evaluateJavascript("window.__reachDevice?.('$now')", null) }
+    }
+  }
+
+  private fun deviceState(config: Configuration): String {
+    val keyboard = config.keyboard == Configuration.KEYBOARD_QWERTY &&
+      config.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+    return "{\"keyboard\":$keyboard,\"dex\":${dexOn(config)}}"
+  }
+
+  /** Samsung's own fields on Configuration; absent on other phones. */
+  private fun dexOn(config: Configuration): Boolean = try {
+    val c = config.javaClass
+    c.getField("SEM_DESKTOP_MODE_ENABLED").getInt(c) == c.getField("semDesktopModeEnabled").getInt(config)
+  } catch (e: Throwable) {
+    false
   }
 
   companion object {

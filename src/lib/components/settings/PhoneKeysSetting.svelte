@@ -39,6 +39,20 @@
 	}
 </script>
 
+<div class="setting-row">
+	<div class="setting-info">
+		<span class="setting-label">{t('phonekeys.show')}</span>
+		<span class="setting-description">{t('phonekeys.show_desc')}</span>
+	</div>
+	<div class="setting-control">
+		<select class="show-field" value={settings.mobileBarShow} aria-label={t('phonekeys.show')} onchange={(e) => updateSetting('mobileBarShow', (e.currentTarget as HTMLSelectElement).value as 'auto' | 'always' | 'never')}>
+			<option value="auto">{t('phonekeys.show_auto')}</option>
+			<option value="always">{t('phonekeys.show_always')}</option>
+			<option value="never">{t('phonekeys.show_never')}</option>
+		</select>
+	</div>
+</div>
+
 <div class="setting-section phone-keys">
 	<div class="setting-info">
 		<span class="setting-label">{t('phonekeys.title')}</span>
@@ -81,6 +95,18 @@
 </div>
 
 <style>
+	.show-field {
+		width: 100%;
+		min-width: 0;
+		padding: 7px 10px;
+		border-radius: var(--radius-btn);
+		border: 1px solid var(--color-border-strong);
+		background: var(--color-bg-primary);
+		color: var(--color-text-primary);
+		font-family: inherit;
+		font-size: 0.8125rem;
+	}
+
 	.phone-keys {
 		display: flex;
 		flex-direction: column;

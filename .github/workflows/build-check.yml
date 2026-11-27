@@ -412,6 +412,8 @@ jobs:
           cp src-tauri/android/MainActivity.kt src-tauri/gen/android/app/src/main/java/com/reachercm/client/MainActivity.kt
           # R8 keep rules for the QR code scanner's ML Kit.
           cat src-tauri/android/proguard-rules.pro >> src-tauri/gen/android/app/proguard-rules.pro
+          # Sessions stay open when DeX starts or the window changes screen; DeX window size.
+          node src-tauri/android/patch-manifest.mjs
 
       - name: Make a throwaway signing key
         run: keytool -genkeypair -keystore "$RUNNER_TEMP/check.keystore" -alias reach -keyalg RSA -keysize 2048 -validity 1 -storepass checkcheck -keypass checkcheck -dname "CN=Build check"
