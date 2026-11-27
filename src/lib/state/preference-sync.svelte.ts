@@ -3,8 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { getSettings, onPortableSettingChanged, applyPortableSettings } from '#lib/state/settings.svelte.js';
 import { defaults } from '#lib/state/settings-store.js';
 import {
-	incomingPreferences, portablePreferences, reconcilePreferences,
-	type PreferenceJournal, type PreferencePatch, type PreferenceSnapshot,
+	incomingPreferences, portablePreferences, readPreferenceJournal, reconcilePreferences, setPreferenceIncluded,
+	PREFERENCE_KEYS, type PreferenceJournal, type PreferenceKey, type PreferencePatch, type PreferenceSnapshot,
 } from '#lib/sync/preferences.js';
 
 export interface SyncAccount {
@@ -15,6 +15,7 @@ export interface SyncAccount {
 
 interface Journal extends PreferenceJournal {
 	scope: string;
+	enabled: boolean;
 }
 
 const STORAGE_KEY = 'reachercm-preference-sync';
@@ -26,7 +27,9 @@ let running = false;
 let accountRevision = 0;
 let resync = false;
 
-export const preferenceSync = $state({ enabled: false, syncing: false, error: '', online: true });
+export const preferenceSync = $state({
+	enabled: false, skipped: [] as readonly PreferenceKey[], syncing: false, error: '', online: true,
+});
 
 export function getSyncAccount(): SyncAccount | null {
 	return current;
@@ -40,8 +43,8 @@ function readJournal(): Journal | null {
 	try {
 		const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<Journal> | null;
 		return value && typeof value.scope === 'string'
-			? { scope: value.scope, initialized: value.initialized === true,
-				pending: portablePreferences(value.pending), remote: portablePreferences(value.remote) }
+			// Existing journals were written only when sync was enabled.
+			? { ...readPreferenceJournal(value), scope: value.scope, enabled: value.enabled !== false }
 			: null;
 	} catch {
 		return null;
@@ -63,25 +66,43 @@ export function bindPreferenceAccount(account: SyncAccount | null): void {
 	current = account;
 	const saved = readJournal();
 	journal = saved?.scope === scope(account) && account ? saved : null;
-	preferenceSync.enabled = journal !== null;
+	preferenceSync.enabled = journal?.enabled ?? false;
+	preferenceSync.skipped = journal?.skipped ?? [];
 	preferenceSync.error = '';
 	persist();
-	if (journal) schedule();
+	if (journal?.enabled) schedule();
 }
 
 export function setPreferenceSync(enabled: boolean): void {
-	if (enabled && (!current || journal)) return;
-	journal = enabled ? { scope: scope(current), initialized: false, pending: {}, remote: {} } : null;
+	if (!current || enabled === preferenceSync.enabled) return;
+	journal = {
+		scope: scope(current), enabled, initialized: false, pending: {}, remote: {},
+		skipped: journal?.skipped ?? [],
+	};
 	preferenceSync.enabled = enabled;
 	preferenceSync.error = '';
 	persist();
-	if (journal) schedule();
+	if (enabled) schedule();
+}
+
+export function setPreferenceSyncIncluded(key: PreferenceKey, included: boolean): void {
+	if (!current) return;
+	journal ??= { scope: scope(current), enabled: false, initialized: false, pending: {}, remote: {}, skipped: [] };
+	setPreferenceIncluded(journal, key, included);
+	preferenceSync.skipped = journal.skipped;
+	preferenceSync.error = '';
+	persist();
+	if (!journal.enabled) return;
+	if (running) resync = true;
+	else schedule();
 }
 
 export function startPreferenceSync(): () => void {
 	const stopChanges = onPortableSettingChanged((changed) => {
-		if (!journal) return;
-		Object.assign(journal.pending, changed);
+		if (!journal?.enabled) return;
+		const included = portablePreferences(changed, journal.skipped);
+		if (Object.keys(included).length === 0) return;
+		Object.assign(journal.pending, included);
 		persist();
 		if (running) resync = true;
 		else schedule();
@@ -137,7 +158,7 @@ function request(deviceId: string, patch?: PreferencePatch): Promise<PreferenceS
 export async function syncPreferences(): Promise<void> {
 	const account = current;
 	const active = journal;
-	if (!account || !active || running) return;
+	if (!account || !active?.enabled || active.skipped.length === PREFERENCE_KEYS.length || running) return;
 	running = true;
 	resync = false;
 	preferenceSync.syncing = true;
@@ -152,7 +173,7 @@ export async function syncPreferences(): Promise<void> {
 		active.remote = remote;
 		persist();
 	} catch (cause) {
-		if (journal !== active) return;
+		if (journal !== active || active.skipped.length === PREFERENCE_KEYS.length) return;
 		const error = typeof cause === 'string' && cause.startsWith('sync_account.')
 			? cause : 'sync_account.error_server';
 		if (error === 'sync_account.error_revoked') bindPreferenceAccount(null);
@@ -160,6 +181,6 @@ export async function syncPreferences(): Promise<void> {
 	} finally {
 		running = false;
 		preferenceSync.syncing = false;
-		if (journal && (resync || journal !== active)) schedule();
+		if (journal?.enabled && (resync || journal !== active)) schedule();
 	}
 }
