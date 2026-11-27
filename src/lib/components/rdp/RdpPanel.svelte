@@ -74,6 +74,8 @@
 		vncKey,
 		vncMouse,
 		vncResize,
+		vncTrustCert,
+		VNC_UNTRUSTED_CERT,
 		type VncConnectParams,
 	} from '#lib/ipc/vnc.js';
 	import {
@@ -93,7 +95,7 @@
 	import { getSettings, updateSetting } from '#lib/state/settings.svelte.js';
 	import { isMac, isMobile } from '#lib/platform.js';
 	import { isLockKey, localLocks, onLocksChange, type Locks } from '#lib/utils/lock-keys.js';
-	import { setTabLink, setDesktopUp, closeTab } from '#lib/state/tabs.svelte.js';
+	import { setTabLink, setDesktopUp, closeTab, getTabs } from '#lib/state/tabs.svelte.js';
 	import MobileKeyBar, { type BarKey } from '#lib/components/shared/MobileKeyBar.svelte';
 
 	interface Props {
@@ -199,6 +201,24 @@
 		setDesktopUp(id, phase === 'connected');
 	});
 	let message = $state('');
+	/** VNC: the error was a certificate the session does not trust yet; its
+	 *  SHA-256 fingerprint, offered to trust. */
+	let untrustedCert = $derived(isVnc() && message.startsWith(VNC_UNTRUSTED_CERT) ? message.slice(VNC_UNTRUSTED_CERT.length) : null);
+	let certDeclined = $state(false);
+
+	/** Trust the certificate for the saved session, and connect again. */
+	async function trustCert(fingerprint: string): Promise<void> {
+		const sessionId = (params as VncConnectParams).sessionId;
+		if (!sessionId) return;
+		try {
+			await vncTrustCert(sessionId, fingerprint);
+		} catch (err) {
+			message = String(err);
+			return;
+		}
+		const tab = getTabs().find((x) => x.id === id);
+		if (tab) tab.reconnect = (tab.reconnect ?? 0) + 1;
+	}
 	// Closed because the user logged off or disconnected, not on an error.
 	let ended = $state(false);
 
@@ -1575,9 +1595,21 @@
 			{:else if phase === 'closed'}
 				<span>{ended ? t('terminal.session_ended') : t('rdp.closed')}</span>
 				{#if message}<small>{message}</small>{/if}
+			{:else if untrustedCert && !certDeclined && (params as VncConnectParams).sessionId}
+				<div class="cert-ask">
+					<span>{t('ftp.cert_untrusted')}</span>
+					<small>{untrustedCert}</small>
+					<span class="cert-hint">{t('ftp.cert_hint')}</span>
+					<div class="cert-actions">
+						<button type="button" class="clip-btn" onclick={() => (certDeclined = true)}>{t('common.cancel')}</button>
+						<button type="button" class="clip-btn primary" onclick={() => void trustCert(untrustedCert!)}>{t('ftp.cert_trust')}</button>
+					</div>
+				</div>
 			{:else}
 				<span>{t('rdp.error')}</span>
-				{#if message}<small>{message}</small>{/if}
+				{#if certDeclined || untrustedCert}
+					<small>{t('ftp.cert_refused')}</small>
+				{:else if message}<small>{message}</small>{/if}
 			{/if}
 		</div>
 	{/if}
@@ -1721,6 +1753,29 @@
 
 	.overlay.failed {
 		color: var(--color-danger);
+	}
+
+	/* A VNC server's certificate to trust: the one part of the overlay
+	   that takes clicks. */
+	.cert-ask {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		max-width: 60ch;
+		padding: 0 16px;
+		text-align: center;
+		color: var(--color-text-primary);
+		pointer-events: auto;
+	}
+
+	.cert-hint {
+		color: var(--color-text-secondary);
+	}
+
+	.cert-actions {
+		display: flex;
+		gap: 8px;
 	}
 
 	.spinner {

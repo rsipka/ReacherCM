@@ -93,6 +93,10 @@ impl AccountTarget {
         }
     }
 
+    pub(crate) fn matches_account(&self, server: &str, username: &str) -> bool {
+        self.server.as_str() == server && self.username == username
+    }
+
     pub(crate) fn identity(&self) -> String {
         format!("{}#{}", self.config(), self.username)
     }

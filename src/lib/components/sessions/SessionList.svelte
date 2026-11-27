@@ -94,7 +94,7 @@
 	import { longPress } from '#lib/utils/longPress.js';
 	import { buildFolderTree, byName, bySavedOrder, canMoveFolder, commonVault, folderPath, foldersInVault, moveStep, placeAt, vaultOf, type FolderTreeNode } from '#lib/sessions/folder-tree.js';
 	import { canScanLinkCode, scanLinkCode } from '#lib/state/link-scan.js';
-	import { vaultState, checkState, initIdentity, importIdentity, linkDevice, ALL_VAULTS, loadVaultFilter, type VaultFilter } from '#lib/state/vault.svelte.js';
+	import { vaultState, checkState, initIdentity, importIdentity, linkDevice, ALL_VAULTS, loadVaultFilter, refreshVaults, type VaultFilter } from '#lib/state/vault.svelte.js';
 	import { tmuxFor } from '#lib/terminal/tmux.js';
 	import { openOtherWindows, tmuxView } from '#lib/terminal/tmux-tabs.js';
 
@@ -276,6 +276,7 @@
 		// backend in the background. When a sync brings in a change, such as
 		// a session someone added to a shared vault, show it.
 		const unlistenSynced = listen<string>('vault-synced', () => {
+			void refreshVaults().catch(() => {});
 			void loadSessions();
 		});
 		return () => {
@@ -1322,7 +1323,10 @@
 			passwordRef: session.auth_method.type === 'Password' ? (session.auth_method.password_ref ?? null) : null,
 			sessionId: session.id,
 			viaSessionId: session.via_session_id ?? null,
-			tls: extra?.tls ?? false,
+			// A server management session's VNC server says itself; a VNC
+			// session's encryption is its own.
+			tls: extra?.tls ?? session.vnc?.encryption === 'tls',
+			vencrypt: !extra && session.vnc?.encryption === 'vencrypt',
 			bmcSessionId: extra?.bmcSessionId,
 		};
 		addToast(t('session.connected_toast', { name: session.name }), 'success');

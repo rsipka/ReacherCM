@@ -121,6 +121,10 @@ pub struct SessionConfig {
     /// SPICE only: TLS port and how the server's certificate is checked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spice: Option<crate::spice::SpiceOptions>,
+    /// VNC only: encryption (VeNCrypt, or TLS from the first byte) and the
+    /// certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vnc: Option<crate::vnc::VncOptions>,
     /// Serial only: speed, framing, flow control and keys.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub serial: Option<crate::serial::options::SerialOptions>,

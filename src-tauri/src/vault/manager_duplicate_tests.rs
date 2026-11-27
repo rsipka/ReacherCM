@@ -7,6 +7,7 @@ fn vault(id: &str, url: Option<&str>) -> StoredVaultRef {
         vault_type: "shared".into(),
         sync_url: url.map(Into::into),
         sync_token: Some("t".into()),
+        managed_grant: None,
     }
 }
 
