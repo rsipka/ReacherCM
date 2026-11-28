@@ -97,6 +97,7 @@ pub struct SyncStatus {
     pub name: String,
     /// "turso", or a file backend's kind.
     pub backend: String,
+    pub can_restore_shared: bool,
     /// "legacy" (a Turso database older versions also read), "2" (sealed
     /// records), or not known before the first sync.
     pub format: Option<String>,

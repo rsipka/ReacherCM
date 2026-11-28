@@ -43,12 +43,12 @@ export interface VaultRestoreReview {
 	snapshotRevision: string;
 }
 
-export function reviewPersonalVaultRestore(): Promise<VaultRestoreReview | null> {
-	return invoke('vault_personal_restore_review');
+export function reviewVaultRestore(vaultId?: string): Promise<VaultRestoreReview | null> {
+	return invoke('vault_restore_review', { vaultId });
 }
 
-export function confirmPersonalVaultRestore(review: VaultRestoreReview): Promise<void> {
-	return invoke('vault_personal_restore_confirm', { review });
+export function confirmVaultRestore(review: VaultRestoreReview, vaultId?: string): Promise<void> {
+	return invoke('vault_restore_confirm', { review, vaultId });
 }
 
 // ==================== IDENTITY ====================
@@ -255,6 +255,7 @@ export interface SyncStatus {
 	name: string;
 	/** "turso", or a file backend's kind. */
 	backend: string;
+	canRestoreShared: boolean;
 	/** "legacy" (older Reach versions read it too), "2" (sealed records), or null before the first sync. */
 	format: string | null;
 	/** Milliseconds since the epoch. */

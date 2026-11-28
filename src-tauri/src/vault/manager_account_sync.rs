@@ -193,6 +193,16 @@ impl VaultManager {
 }
 
 impl VaultManager {
+    pub(crate) fn vault_restore_target(&self, vault_id: Option<&str>) -> Result<Option<sync_engine::Target>, VaultError> {
+        let Some(id) = vault_id else { return self.personal_restore_target() };
+        if self.is_locked() {
+            return Err(VaultError::Locked);
+        }
+        Ok(self.sync_targets(Some(id))?.into_iter().find(|target| {
+            matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some())
+        }))
+    }
+
     pub(crate) fn personal_restore_target(&self) -> Result<Option<sync_engine::Target>, VaultError> {
         if self.is_locked() {
             return Err(VaultError::Locked);

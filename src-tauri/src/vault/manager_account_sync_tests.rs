@@ -565,6 +565,7 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
 struct NativeSyncFixture {
     server: String,
     organization: uuid::Uuid,
+    restore_browser_session: Option<String>,
     devices: [NativeSyncDevice; 3],
 }
 
@@ -960,8 +961,72 @@ async fn three_native_clients_sync_through_postgres() {
     assert!(final_records.iter().any(|(id, _)| id == &transfer_pending));
     assert!(final_records.iter().any(|(id, _)| id == &retained_pending));
     assert!(!final_records.iter().any(|(id, _)| id == &revoked_pending));
+    if let Some(session) = &fixture.restore_browser_session {
+        editor_device.activate(server).await;
+        let record = editor.lock().await.create_secret(
+            &vault, "Restore check", SecretCategory::Session, value("shared snapshot value"),
+        ).await.unwrap();
+        native_sync(&editor, editor_device, server, &vault).await;
+        native_sync(&owner, owner_device, server, &vault).await;
+        editor.lock().await.update_secret(&vault, &record, value("shared active value")).await.unwrap();
+        native_sync(&editor, editor_device, server, &vault).await;
+        owner.lock().await.update_secret(&vault, &record, value("shared offline edit")).await.unwrap();
+
+        let target = editor.lock().await.vault_restore_target(Some(&vault)).unwrap().unwrap();
+        let sync_engine::Backend::Account(account) = &target.backend else { panic!("shared account vault required") };
+        let (_, active_revision) = account.get().await.unwrap().unwrap();
+        let history = format!("/vaults/organizations/{org}/{vault}/history");
+        let (browser, cookie) = request_native_portal_restore(server, &history, session, &active_revision).await;
+        let review = account.restore_review().await.unwrap().unwrap();
+        crate::vault::sync_bundle::complete_restore(&target, account, &review).await.unwrap();
+        native_sync(&owner, owner_device, server, &vault).await;
+        native_sync(&editor, editor_device, server, &vault).await;
+        for manager in [&editor, &owner] {
+            let restored = native_snapshot(manager, &vault).await;
+            assert!(restored.iter().any(|(id, bytes)| id == &record && bytes == b"shared snapshot value"));
+            assert!(restored.iter().any(|(_, bytes)| bytes == b"shared offline edit"));
+        }
+        let page = browser.get(format!("{server}{history}")).header(header::COOKIE, cookie.as_str())
+            .send().await.unwrap().text().await.unwrap();
+        assert!(page.contains("Before restore"));
+        assert!(page.contains("Uses a previous vault key"));
+        native_sync(&owner, owner_device, server, &vault).await;
+        println!("Shared restore kept the current grants, saved a pre-restore snapshot, and preserved an offline editor's change.");
+    }
     clear_vault_test_account().await;
     println!("Three clients converged; both collision copies and the deletion synced. Owner verification and revocation preserved the retained offline edits.");
+}
+
+async fn request_native_portal_restore(
+    server: &str, history: &str, browser_session: &str, active_revision: &str,
+) -> (reqwest::Client, String) {
+    let browser = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let session = format!("reachersync_session={}", browser_session);
+    let page = browser.get(format!("{server}{history}")).header(header::COOKIE, session.as_str()).send().await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let csrf_cookie = page.headers().get_all(header::SET_COOKIE).iter().find_map(|cookie| {
+        cookie.to_str().ok()?.split(';').next()?.strip_prefix("reachersync_csrf=").map(str::to_owned)
+    }).unwrap();
+    let html = page.text().await.unwrap();
+    let start = format!("href=\"{history}/");
+    let snapshot = html.split_once(&start).unwrap().1.split_once('/').unwrap().0;
+    let cookies = format!("{session}; reachersync_csrf={csrf_cookie}");
+    let mut form = url::form_urlencoded::Serializer::new(String::new());
+    form.append_pair("csrf", &csrf_cookie).append_pair("revision", active_revision);
+    if history.starts_with("/vaults/organizations/") {
+        let confirm_page = browser.get(format!("{server}{history}/{snapshot}/restore"))
+            .header(header::COOKIE, cookies.as_str()).send().await.unwrap().text().await.unwrap();
+        let acl = confirm_page.split_once("name=\"acl_version\" value=\"").unwrap().1.split_once('"').unwrap().0;
+        form.append_pair("acl_version", acl);
+    }
+    let form = form.finish();
+    let request = browser.post(format!("{server}{history}/{snapshot}/restore"))
+        .header(header::COOKIE, cookies.as_str())
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(form).send().await.unwrap();
+    assert_eq!(request.status(), StatusCode::SEE_OTHER);
+    assert!(request.headers()[header::LOCATION].to_str().unwrap().ends_with("?saved=requested"));
+    (browser, session)
 }
 
 #[cfg(desktop)]
@@ -1003,26 +1068,8 @@ async fn personal_vault_restore_through_postgres() {
     let target = first.personal_restore_target().unwrap().unwrap();
     let sync_engine::Backend::Account(account) = &target.backend else { panic!("account vault required") };
     let (_, active_revision) = account.get().await.unwrap().unwrap();
-    let browser = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
     let history = format!("/vaults/{personal}/history");
-    let session = format!("reachersync_session={}", fixture.browser_session);
-    let page = browser.get(format!("{server}{history}")).header(header::COOKIE, session.as_str()).send().await.unwrap();
-    assert_eq!(page.status(), StatusCode::OK);
-    let csrf_cookie = page.headers().get_all(header::SET_COOKIE).iter().find_map(|cookie| {
-        cookie.to_str().ok()?.split(';').next()?.strip_prefix("reachersync_csrf=").map(str::to_owned)
-    }).unwrap();
-    let html = page.text().await.unwrap();
-    let start = format!("href=\"{history}/");
-    let snapshot = html.split_once(&start).unwrap().1.split_once('/').unwrap().0;
-    let cookies = format!("{session}; reachersync_csrf={csrf_cookie}");
-    let form = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("csrf", &csrf_cookie).append_pair("revision", &active_revision).finish();
-    let request = browser.post(format!("{server}{history}/{snapshot}/restore"))
-        .header(header::COOKIE, cookies.as_str())
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-        .body(form).send().await.unwrap();
-    assert_eq!(request.status(), StatusCode::SEE_OTHER);
-    assert!(request.headers()[header::LOCATION].to_str().unwrap().ends_with("?saved=requested"));
+    let (browser, session) = request_native_portal_restore(server, &history, &fixture.browser_session, &active_revision).await;
     let review = account.restore_review().await.unwrap().unwrap();
     assert_eq!(review.active_revision, active_revision);
     assert_eq!(first.read_secret(&personal, &record).await.unwrap().expose_secret(), b"previous active revision");

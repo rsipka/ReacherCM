@@ -3343,7 +3343,7 @@
   "broadcast.palette_remove": "Diesen Tab aus der Übertragung nehmen",
   "broadcast.keywords": "broadcast übertragung multi-send an alle senden mehrere terminals",
   "sync.restore_check": "Wiederherstellung aus dem Portal prüfen",
-  "sync.restore_none": "Für den persönlichen Tresor steht keine Wiederherstellung aus.",
+  "sync.restore_none": "Für diesen Tresor steht keine Wiederherstellung aus.",
   "sync.restore_title": "Persönlichen Tresor wiederherstellen",
   "sync.restore_summary": "Bestätigen Sie nur eine Wiederherstellung, die Sie im Sync-Portal angefordert haben. Der Server sichert die aktuelle Version vor der Wiederherstellung. Konfliktbehaftete lokale Änderungen bleiben als Kopien erhalten.",
   "sync.restore_revision": "Snapshot-Version",

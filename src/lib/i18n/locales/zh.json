@@ -3343,7 +3343,7 @@
   "broadcast.palette_remove": "将此标签页移出广播",
   "broadcast.keywords": "broadcast 广播 multi-send 发送到所有 多个终端",
   "sync.restore_check": "检查门户中的恢复请求",
-  "sync.restore_none": "没有待处理的个人保险库恢复请求。",
+  "sync.restore_none": "没有待处理的保险库恢复请求。",
   "sync.restore_title": "恢复个人保险库",
   "sync.restore_summary": "只有当你在同步门户中发起了此恢复请求时才确认。服务器会在恢复前保存当前版本。有冲突的本地更改将保留为副本。",
   "sync.restore_revision": "快照版本",

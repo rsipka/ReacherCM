@@ -2032,10 +2032,21 @@ impl VaultManager {
                 let conn = conn.clone();
                 async move { sync_local::state(&conn, key).await.ok().flatten() }
             };
+            let can_restore_shared = if vault.master_dek.is_some()
+                && vault.sync_url.as_deref().is_some_and(|url| url.starts_with(crate::vault::sync_account_store::ORG_PREFIX))
+            {
+                match conn.query("SELECT 1 FROM organization_vault_access WHERE singleton = 1 AND role = 'owner'", ()).await {
+                    Ok(mut rows) => matches!(rows.next().await, Ok(Some(_))),
+                    Err(_) => false,
+                }
+            } else {
+                false
+            };
             out.push(SyncStatus {
                 vault_id: id.clone(),
                 name: vault.header.name.clone(),
                 backend: backend.into(),
+                can_restore_shared,
                 format: state(sync_engine::STATE_FORMAT).await,
                 last_sync: state(sync_engine::STATE_LAST_SYNC).await.and_then(|v| v.parse().ok()),
                 last_error: if self.account_vault_suspended(id, vault) {

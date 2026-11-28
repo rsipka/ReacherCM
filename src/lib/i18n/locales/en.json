@@ -3343,7 +3343,7 @@
   "broadcast.palette_remove": "Take this tab out of the broadcast",
   "broadcast.keywords": "broadcast multi-send send to all type into several terminals",
   "sync.restore_check": "Review portal restore",
-  "sync.restore_none": "No personal vault restore is pending.",
+  "sync.restore_none": "No vault restore is pending.",
   "sync.restore_title": "Restore personal vault",
   "sync.restore_summary": "Confirm only if you requested this restore in the sync portal. The server saves the active revision before publishing the restore. Conflicting local edits are kept as copies.",
   "sync.restore_revision": "Snapshot revision",

@@ -684,10 +684,11 @@ pub async fn vault_sync(
 }
 
 #[tauri::command]
-pub async fn vault_personal_restore_review(
+pub async fn vault_restore_review(
+    vault_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Option<crate::vault::sync_account_store::RestoreReview>, String> {
-    let target = state.vault_manager.lock().await.personal_restore_target().map_err(|err| err.to_string())?;
+    let target = state.vault_manager.lock().await.vault_restore_target(vault_id.as_deref()).map_err(|err| err.to_string())?;
     match target.map(|target| target.backend) {
         Some(crate::vault::sync_engine::Backend::Account(account)) => {
             account.restore_review().await.map_err(|err| err.to_string())
@@ -697,7 +698,8 @@ pub async fn vault_personal_restore_review(
 }
 
 #[tauri::command]
-pub async fn vault_personal_restore_confirm(
+pub async fn vault_restore_confirm(
+    vault_id: Option<String>,
     review: crate::vault::sync_account_store::RestoreReview,
     state: State<'_, AppState>,
     app: tauri::AppHandle,
@@ -705,10 +707,10 @@ pub async fn vault_personal_restore_confirm(
     use crate::vault::{manager::SYNC_OPERATIONS, sync_bundle, sync_engine::Backend};
 
     let operation = SYNC_OPERATIONS.write().await;
-    let target = state.vault_manager.lock().await.personal_restore_target().map_err(|err| err.to_string())?
-        .ok_or_else(|| "Open the personal vault linked to Reacher CM Sync.".to_string())?;
+    let target = state.vault_manager.lock().await.vault_restore_target(vault_id.as_deref()).map_err(|err| err.to_string())?
+        .ok_or_else(|| "Open the vault linked to Reacher CM Sync.".to_string())?;
     let Backend::Account(account) = &target.backend else {
-        return Err("Open the personal vault linked to Reacher CM Sync.".into());
+        return Err("Open the vault linked to Reacher CM Sync.".into());
     };
     sync_bundle::complete_restore(&target, account, &review).await.map_err(|err| err.to_string())?;
     drop(operation);

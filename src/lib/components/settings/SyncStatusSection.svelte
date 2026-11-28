@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { listen } from '@tauri-apps/api/event';
+	import VaultRestore from './VaultRestore.svelte';
 	import Button from '#lib/components/shared/Button.svelte';
 	import {
 		syncStatus,
@@ -77,6 +78,7 @@
 					{/if}
 				</div>
 				<div class="buttons">
+					{#if s.canRestoreShared}<VaultRestore vaultId={s.vaultId} vaultName={label(s)} />{/if}
 					{#if s.format === 'legacy'}
 						<Button
 							variant="secondary"
