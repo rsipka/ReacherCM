@@ -4265,6 +4265,7 @@
   "sync_account.preference_input": "Είσοδος και συντομεύσεις",
   "sync_account.preference_selected": "Επιλογές: {{count}}",
   "sync_account.preference_device_only": "Μόνο σε αυτή τη συσκευή",
+  "sync_account.synced_mark": "Συγχρονίζεται με τον λογαριασμό σας Reacher CM",
   "sync_account.preference_server_update": "Ενημερώστε τον διακομιστή συγχρονισμού για να συγχρονίσετε όλες τις προτιμήσεις που επιλέξατε εδώ.",
   "sync_account.preference_fullscreen_position": "Θέση κουμπιού πλήρους οθόνης",
   "sync_account.preference_key_biometrics": "Απομνημόνευση φράσεων πρόσβασης κλειδιών με βιομετρικά στοιχεία",

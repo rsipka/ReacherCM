@@ -4265,6 +4265,7 @@
   "sync_account.preference_input": "Eingabe und Tastenkürzel",
   "sync_account.preference_selected": "{{count}} ausgewählt",
   "sync_account.preference_device_only": "Nur auf diesem Gerät",
+  "sync_account.synced_mark": "Wird mit deinem Reacher CM-Konto synchronisiert",
   "sync_account.preference_server_update": "Aktualisiere den Sync-Server, um alle hier ausgewählten Einstellungen zu synchronisieren.",
   "sync_account.preference_fullscreen_position": "Position der Vollbild-Schaltfläche",
   "sync_account.preference_key_biometrics": "Schlüsselpassphrasen mit Biometrie merken",
