@@ -5,8 +5,9 @@
  * second pick of it brings that tab forward, another one opens a tab of its
  * own, and closing one's tab closes its connection. A database connection
  * connects in the Databases tab; an Ansible project opens in the Ansible tab.
- * A workspace that fails stays inside its tab, and switching a tool off
- * closes its tabs. There is no page switcher in the tab bar.
+ * A workspace that fails stays inside its tab. New session adds a cluster,
+ * host, connection or project in place. Databases, Containers and Kubernetes
+ * cannot be switched off; Ansible can. There is no page switcher.
  *
  * Needs Playwright's Chromium; skips cleanly without it. SHOT_DIR=<dir>
  * saves screenshots.
@@ -90,7 +91,7 @@ await page.addInitScript(() => {
 			terminalBar: 'hidden',
 			serverMonitoring: false,
 			theme: 'dark',
-			devopsTools: ['ansible', 'tofu', 'databases', 'containers', 'kubernetes']
+			devopsTools: ['ansible', 'tofu']
 		})
 	);
 });
@@ -98,6 +99,10 @@ const auth = { type: 'Password', password: 'x' };
 const SESSIONS = [{ id: 's1', name: 'web-01', host: '10.0.0.10', port: 22, username: 'admin', auth_method: auth, folder_id: null, tags: [] }];
 const cluster = (id, name, environment) => ({ id, name, context: name, server: 'https://10.0.0.5:6443', user: 'admin', route: { kind: 'direct' }, environment, readOnly: false, lastUsedAt: 0, namespace: null });
 const CLUSTERS = [cluster('c1', 'prod', 'production'), cluster('c2', 'staging', 'staging')];
+const HOSTS = [
+	{ id: 'h1', name: 'docker-01', route: { kind: 'direct' }, engine: 'docker', environment: 'none', readOnly: false },
+	{ id: 'h2', name: 'docker-02', route: { kind: 'direct' }, engine: 'docker', environment: 'staging', readOnly: false }
+];
 const calls = [];
 page.on('pageerror', (e) => console.log(`  page error: ${e.message}`));
 await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
@@ -125,10 +130,12 @@ await page.exposeBinding('__bridge', async (_src, { cmd, args }) => {
 		case 'db_connect':
 			return { engine: 'postgres', databases: ['app'], defaultDatabase: 'app', server: { version: '16.4', currentDatabase: 'app', currentUser: 'app' } };
 		case 'ctr_hosts':
-			return [
-				{ id: 'h1', name: 'docker-01', route: { kind: 'direct' }, engine: 'docker', environment: 'none', readOnly: false },
-				{ id: 'h2', name: 'docker-02', route: { kind: 'direct' }, engine: 'docker', environment: 'staging', readOnly: false }
-			];
+			return HOSTS;
+		case 'ctr_host_save': {
+			const saved = { ...args.host, id: 'h3' };
+			HOSTS.push(saved);
+			return saved;
+		}
 		case 'ctr_open':
 			return { key: args.hostId, info: { engine: 'docker', version: '27.1', os: 'linux' }, readOnly: false };
 		case 'ansible_list_projects':
@@ -299,36 +306,46 @@ try {
 	check('the other cluster stays open', !calls.some((c) => c.cmd === 'k8s_close' && c.args.key === 'c2'), JSON.stringify(calls.filter((c) => c.cmd.startsWith('k8s_open') || c.cmd === 'k8s_close').map((c) => c.cmd + ':' + (c.args.clusterId ?? c.args.key))));
 
 	console.log('\nnew session');
+	const dialog = page.locator('.session-form');
 	const openNew = async () => {
 		await page.keyboard.press('Control+Shift+N');
 		return until(async () => (await page.locator('.category-tab', { hasText: 'DevOps' }).count()) === 1);
 	};
-	check('New session has a DevOps tab', await openNew());
+	check('New session has Databases and DevOps tabs', (await openNew()) && (await page.locator('.category-tab', { hasText: 'Databases' }).count()) === 1);
 	await page.locator('.category-tab', { hasText: 'DevOps' }).click();
-	const offers = (await page.locator('.devops-new-title').allInnerTexts()).map((x) => x.trim());
-	check('it offers each tool', ['Ansible project', 'OpenTofu project', 'Database connection', 'Container host', 'Kubernetes cluster'].every((n) => offers.includes(n)), JSON.stringify(offers));
-	check('with no Save button', (await page.locator('button', { hasText: 'Save session' }).count()) === 0);
-	await shot('new-session', false);
-	const k8sTabs = (await tabTitles()).length;
-	await page.locator('.devops-new-item', { hasText: 'Kubernetes cluster' }).click();
-	check('Kubernetes cluster opens the add-cluster editor', await until(async () => (await page.getByText('Add cluster', { exact: true }).count()) > 0));
-	check('in a new Kubernetes tab, not over a cluster tab', (await tabTitles()).length === k8sTabs + 1 && (await activeTitle()) === 'Kubernetes', JSON.stringify(await tabTitles()));
-	await page.keyboard.press('Escape');
-	await sleep(300);
+	const kinds = (await dialog.locator('.protocol-toggle .auth-btn').allInnerTexts()).map((x) => x.trim());
+	check('DevOps lists each tool as a type', JSON.stringify(kinds) === JSON.stringify(['Ansible', 'OpenTofu', 'Containers', 'Kubernetes']), JSON.stringify(kinds));
+	await dialog.locator('.protocol-toggle .auth-btn', { hasText: 'Kubernetes' }).click();
+	check('Kubernetes shows the cluster form inside the dialog', await until(async () => (await dialog.locator('textarea').count()) === 1));
+	check('with no Save session button', (await page.locator('button', { hasText: 'Save session' }).count()) === 0);
+	await shot('new-session-k8s', false);
+	await dialog.locator('.protocol-toggle .auth-btn', { hasText: 'Containers' }).click();
+	check('Containers shows the host form inside the dialog', await until(async () => (await dialog.locator('.inline-actions').count()) === 1 && (await dialog.locator('textarea').count()) === 0));
+	const tabsBefore = (await tabTitles()).length;
+	await dialog.locator('input:not([type=radio]):not([type=checkbox])').first().fill('docker-new');
+	await dialog.locator('.inline-actions button').last().click();
+	check('saving the host closes New session', await until(async () => (await page.locator('.session-form').count()) === 0));
+	check('and opens the host in its own tab', await until(async () => (await activeTitle()) === 'docker-new' && (await tabTitles()).length === tabsBefore + 1), JSON.stringify(await tabTitles()));
+	check('connected', await until(async () => calls.some((c) => c.cmd === 'ctr_open' && c.args.hostId === 'h3')));
 	await openNew();
-	await page.locator('.category-tab', { hasText: 'DevOps' }).click();
-	await page.locator('.devops-new-item', { hasText: 'Database connection' }).click();
-	check('Database connection opens the new-connection editor in the Databases tab', await until(async () => (await page.getByText('New connection', { exact: true }).count()) > 0) && (await activeTitle()) === 'Databases');
+	await page.locator('.category-tab', { hasText: 'Databases' }).click();
+	check('Databases shows the engines inside the dialog', await until(async () => (await dialog.locator('.engine').count()) > 3));
+	await shot('new-session-db', false);
 	await page.keyboard.press('Escape');
 	await sleep(300);
 
-	console.log('\ntool switched off');
+	console.log('\nbuilt-in tools are always on');
 	await page.evaluate(async () => {
 		const m = await import('/src/lib/state/devops.svelte.ts');
 		await m.setDevopsEnabled('kubernetes', false);
 	});
-	check('its tabs close', await until(async () => !(await tabTitles()).includes('staging')), JSON.stringify(await tabTitles()));
-	check('it leaves the list', await until(async () => (await group().locator('.row', { hasText: 'Kubernetes' }).count()) === 0));
+	await sleep(500);
+	check('Kubernetes cannot be switched off', (await tabTitles()).includes('staging') && (await group().locator('.row', { hasText: 'Kubernetes' }).count()) > 0);
+	await page.evaluate(async () => {
+		const m = await import('/src/lib/state/devops.svelte.ts');
+		await m.setDevopsEnabled('ansible', false);
+	});
+	check('Ansible can, and leaves the list', await until(async () => (await group().locator('.row', { hasText: 'Ansible' }).count()) === 0));
 	check('the others stay', (await tabTitles()).includes('Databases'));
 
 	console.log('\nphone width');

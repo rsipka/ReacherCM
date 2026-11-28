@@ -10,6 +10,10 @@
 //! and pushes it here on launch and on every change. Until it does, everything
 //! is off: a command that arrives before the settings have loaded is refused
 //! rather than guessed at.
+//!
+//! Databases, Containers and Kubernetes are built in and always on: they need
+//! nothing installed and cost nothing until used, so they have no switch.
+//! Only Ansible and OpenTofu, which run tools from the system, can be off.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -36,6 +40,11 @@ impl Tool {
         }
     }
 
+    /// Built in, with no switch: never off.
+    pub fn always_on(self) -> bool {
+        matches!(self, Tool::Databases | Tool::Containers | Tool::Kubernetes)
+    }
+
     fn flag(self) -> &'static AtomicBool {
         static ANSIBLE: AtomicBool = AtomicBool::new(false);
         static TOFU: AtomicBool = AtomicBool::new(false);
@@ -57,7 +66,7 @@ pub fn set_enabled(tool: Tool, enabled: bool) {
 }
 
 pub fn is_enabled(tool: Tool) -> bool {
-    tool.flag().load(Ordering::Relaxed)
+    tool.always_on() || tool.flag().load(Ordering::Relaxed)
 }
 
 /// Refuse the call unless `tool` is switched on.
@@ -70,19 +79,8 @@ pub fn require(tool: Tool) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn devops_set_enabled(state: tauri::State<'_, crate::state::AppState>, tool: Tool, enabled: bool) -> Result<(), String> {
+pub async fn devops_set_enabled(tool: Tool, enabled: bool) -> Result<(), String> {
     set_enabled(tool, enabled);
-    // Off means off: open database connections and their SSH tunnels close
-    // too, rather than lingering until Reach quits.
-    if tool == Tool::Databases && !enabled {
-        state.db.lock().await.close_all().await;
-    }
-    if tool == Tool::Containers && !enabled {
-        state.containers.lock().await.close_all();
-    }
-    if tool == Tool::Kubernetes && !enabled {
-        state.k8s.lock().await.close_all();
-    }
     Ok(())
 }
 
@@ -120,6 +118,14 @@ mod tests {
 
         set_enabled(Tool::Ansible, false);
         assert!(require(Tool::Ansible).is_err());
+    }
+
+    #[test]
+    fn built_in_tools_cannot_be_switched_off() {
+        for tool in [Tool::Databases, Tool::Containers, Tool::Kubernetes] {
+            set_enabled(tool, false);
+            assert!(require(tool).is_ok(), "{tool:?}");
+        }
     }
 
     #[test]
