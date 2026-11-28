@@ -6,8 +6,6 @@ use {
     sha2::Digest,
 };
 
-const PERSONAL: &str = "__personal__";
-
 #[cfg(desktop)]
 fn sync_error(message: &str) -> VaultError {
     VaultError::SyncError(message.into())
@@ -189,28 +187,6 @@ impl VaultManager {
             }
         }
         Ok(())
-    }
-}
-
-impl VaultManager {
-    pub(crate) fn vault_restore_target(&self, vault_id: Option<&str>) -> Result<Option<sync_engine::Target>, VaultError> {
-        let Some(id) = vault_id else { return self.personal_restore_target() };
-        if self.is_locked() {
-            return Err(VaultError::Locked);
-        }
-        Ok(self.sync_targets(Some(id))?.into_iter().find(|target| {
-            matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some())
-        }))
-    }
-
-    pub(crate) fn personal_restore_target(&self) -> Result<Option<sync_engine::Target>, VaultError> {
-        if self.is_locked() {
-            return Err(VaultError::Locked);
-        }
-        let Some(id) = self.get_vault_id_by_name(PERSONAL) else { return Ok(None) };
-        Ok(self.sync_targets(Some(&id))?.into_iter().find(|target| {
-            matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_none())
-        }))
     }
 }
 

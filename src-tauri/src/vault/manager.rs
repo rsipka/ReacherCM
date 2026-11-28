@@ -30,6 +30,7 @@ pub fn unified_secret_id(vault_name: &str, original_id: &str) -> String {
 }
 
 /// Internal vault names for encrypted app data.
+const PERSONAL: &str = "__personal__";
 pub const SESSIONS_VAULT: &str = "__sessions__";
 pub const CREDENTIALS_VAULT: &str = "__credentials__";
 pub const FOLDERS_VAULT: &str = "__folders__";
@@ -2014,6 +2015,27 @@ impl VaultManager {
     pub fn personal_vault_id(&self) -> Option<String> {
         let id = self.internal_vault_ids.get("__personal__")?;
         Some(self.vaults.get(id).map(|v| v.header.id.clone()).unwrap_or_else(|| id.clone()))
+    }
+
+    // Restore is registered on both desktop and mobile.
+    pub(crate) fn vault_restore_target(&self, vault_id: Option<&str>) -> Result<Option<sync_engine::Target>, VaultError> {
+        let Some(id) = vault_id else { return self.personal_restore_target() };
+        if self.is_locked() {
+            return Err(VaultError::Locked);
+        }
+        Ok(self.sync_targets(Some(id))?.into_iter().find(|target| {
+            matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_some())
+        }))
+    }
+
+    pub(crate) fn personal_restore_target(&self) -> Result<Option<sync_engine::Target>, VaultError> {
+        if self.is_locked() {
+            return Err(VaultError::Locked);
+        }
+        let Some(id) = self.get_vault_id_by_name(PERSONAL) else { return Ok(None) };
+        Ok(self.sync_targets(Some(&id))?.into_iter().find(|target| {
+            matches!(&target.backend, sync_engine::Backend::Account(account) if account.organization.is_none())
+        }))
     }
 
     /// How each synced vault's sync stands, from its local file.
