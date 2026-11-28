@@ -400,7 +400,7 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
             .and_then(|value| value.parse::<i64>().ok()).unwrap_or(0);
         let full = revision.is_some() && !rolled_back;
         let merged = if let Some(marker) = body.restore_counter.filter(|&marker|
-            full && !organization && matches!(store, Store::Account(_)) && marker > local_restore && marker <= body.counter
+            full && matches!(store, Store::Account(_)) && marker > local_restore && marker <= body.counter
         ) {
             if unreadable {
                 return Err(VaultError::DecryptionError("Could not verify every record in the restored vault.".into()));

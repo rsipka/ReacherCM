@@ -6,7 +6,7 @@
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import AccountVaultLocation from './AccountVaultLocation.svelte';
-	import PersonalVaultRestore from './PersonalVaultRestore.svelte';
+	import VaultRestore from './VaultRestore.svelte';
 	import TursoSync from './TursoSync.svelte';
 
 	/** Sync location: where the personal vault syncs. One choice in the
@@ -319,7 +319,7 @@
 
 	{#if kind === 'account'}
 		<AccountVaultLocation {onOpenVaultLinks} onChanged={() => void loadActive()} />
-		{#if activeKind === 'account'}<PersonalVaultRestore />{/if}
+		{#if activeKind === 'account'}<VaultRestore />{/if}
 	{:else if kind === 'turso'}
 		<TursoSync personalOnTurso={activeKind === 'turso'} onChanged={() => void loadActive()} />
 	{:else if kind === 'folder'}

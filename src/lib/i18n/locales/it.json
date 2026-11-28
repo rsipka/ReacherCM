@@ -3343,7 +3343,7 @@
   "broadcast.palette_remove": "Togli questa scheda dalla trasmissione",
   "broadcast.keywords": "broadcast trasmissione multi-send invia a tutti più terminali",
   "sync.restore_check": "Verifica il ripristino dal portale",
-  "sync.restore_none": "Non ci sono ripristini in attesa per il vault personale.",
+  "sync.restore_none": "Non ci sono ripristini in attesa per il vault.",
   "sync.restore_title": "Ripristina il vault personale",
   "sync.restore_summary": "Conferma solo se hai richiesto il ripristino nel portale di sincronizzazione. Il server salva la versione attiva prima del ripristino. Le modifiche locali in conflitto vengono conservate come copie.",
   "sync.restore_revision": "Versione dell’istantanea",

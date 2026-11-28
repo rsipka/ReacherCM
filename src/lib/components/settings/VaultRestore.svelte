@@ -2,20 +2,22 @@
 	import Button from '#lib/components/shared/Button.svelte';
 	import Modal from '#lib/components/shared/Modal.svelte';
 	import {
-		confirmPersonalVaultRestore,
-		reviewPersonalVaultRestore,
+		confirmVaultRestore,
+		reviewVaultRestore,
 		type VaultRestoreReview
 	} from '#lib/ipc/vault.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 
+	let { vaultId, vaultName }: { vaultId?: string; vaultName?: string } = $props();
+	let title = $derived(vaultId ? t('db.restore_title', { name: vaultName ?? '' }) : t('sync.restore_title'));
 	let review = $state<VaultRestoreReview | null>(null);
 	let busy = $state(false);
 
 	async function checkRequest() {
 		busy = true;
 		try {
-			review = await reviewPersonalVaultRestore();
+			review = await reviewVaultRestore(vaultId);
 			if (!review) addToast(t('sync.restore_none'), 'info');
 		} catch (error) {
 			addToast(t(String(error)), 'error');
@@ -27,7 +29,7 @@
 	async function confirm(reviewed: VaultRestoreReview) {
 		busy = true;
 		try {
-			await confirmPersonalVaultRestore(reviewed);
+			await confirmVaultRestore(reviewed, vaultId);
 			addToast(t('sync.restore_published'), 'success');
 		} catch (error) {
 			addToast(t(String(error)), 'error');
@@ -42,7 +44,7 @@
 	{t('sync.restore_check')}
 </Button>
 
-<Modal open={review !== null} onclose={() => { if (!busy) review = null; }} title={t('sync.restore_title')} zIndex={200}>
+<Modal open={review !== null} onclose={() => { if (!busy) review = null; }} title={title} zIndex={200}>
 	{#if review}
 		<p>{t('sync.restore_summary')}</p>
 		<p>{t('sync.restore_revision')} <code>{review.snapshotRevision.slice(1, -1)}</code></p>
@@ -50,7 +52,7 @@
 	{#snippet actions()}
 		<Button variant="ghost" onclick={() => (review = null)} disabled={busy}>{t('common.cancel')}</Button>
 		<Button variant="danger" onclick={() => review && confirm(review)} disabled={busy || !review}>
-			{t('sync.restore_title')}
+			{title}
 		</Button>
 	{/snippet}
 </Modal>
