@@ -124,6 +124,39 @@ impl Device {
 }
 
 #[tokio::test]
+async fn a_restore_keeps_overwritten_offline_edits_as_conflict_copies() {
+    let world = world(false).await;
+    let device = device(&world, "offline").await;
+    device.put("original", "my offline edit").await;
+    device.put("removed", "my offline edit to a removed record").await;
+    device.put("new", "my offline addition").await;
+    let restored = encrypt_secret(&device.target.master, br#"{"id":"original","name":"snapshot value"}"#).unwrap();
+    let now = now_ms();
+    let incoming = vec![
+        Record {
+            id: "original".into(), version: now + 1, device: "owner".into(),
+            row: Some(Row {
+                id: "original".into(), name: "snapshot value".into(), category: "session".into(),
+                nonce: restored.nonce.to_vec(), ciphertext: restored.ciphertext,
+                wrapped_dek: serde_json::to_string(&restored.wrapped_dek).unwrap(), created_at: 1, updated_at: 2,
+            }),
+        },
+        Record { id: "removed".into(), version: now + 1, device: "owner".into(), row: None },
+    ];
+    let tx = device.local.transaction_with_behavior(TransactionBehavior::Immediate).await.unwrap();
+    let report = merge_records(&device.target, &tx, incoming, true, true).await.unwrap();
+    tx.commit().await.unwrap();
+
+    assert_eq!(report.conflicts, 2);
+    assert_eq!(device.payload("original").await["name"], "snapshot value");
+    assert!(sync_local::read_row(&device.local, "removed").await.unwrap().is_none());
+    let names = device.names().await;
+    assert!(names.iter().any(|name| name.starts_with("my offline edit (conflict copy")));
+    assert!(names.iter().any(|name| name.starts_with("my offline edit to a removed record (conflict copy")));
+    assert!(names.iter().any(|name| name == "my offline addition"));
+}
+
+#[tokio::test]
 async fn a_change_reaches_the_other_device() {
     let w = world(false).await;
     let a = device(&w, "a").await;

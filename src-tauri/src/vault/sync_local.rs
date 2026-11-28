@@ -192,32 +192,24 @@ pub async fn clear_state(conn: &Connection, key: &str) -> Result<(), VaultError>
 /// (which waits for the transaction) is still noted.
 pub async fn apply(conn: &Connection, id: &str, row: Option<&Row>) -> Result<(), VaultError> {
     let tx = conn.transaction_with_behavior(libsql::TransactionBehavior::Immediate).await?;
-    tx.execute("INSERT INTO sync_applying (x) VALUES (1)", ()).await?;
-    let conn: &Connection = &tx;
-    let result = match row {
-        Some(r) => conn
-            .execute(
-                &format!("INSERT OR REPLACE INTO secrets ({ROW_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
-                (
-                    r.id.as_str(),
-                    r.name.as_str(),
-                    r.category.as_str(),
-                    r.nonce.as_slice(),
-                    r.ciphertext.as_slice(),
-                    r.wrapped_dek.as_str(),
-                    r.created_at,
-                    r.updated_at,
-                ),
-            )
-            .await,
-        None => conn.execute("DELETE FROM secrets WHERE id = ?", [id]).await,
-    };
-    if let Err(e) = result {
-        tx.rollback().await?;
-        return Err(e.into());
-    }
-    tx.execute("DELETE FROM sync_applying", ()).await?;
+    apply_in_transaction(&tx, id, row).await?;
     tx.commit().await?;
+    Ok(())
+}
+
+pub(super) async fn apply_in_transaction(conn: &Connection, id: &str, row: Option<&Row>) -> Result<(), VaultError> {
+    conn.execute("INSERT INTO sync_applying (x) VALUES (1)", ()).await?;
+    match row {
+        Some(r) => conn.execute(
+            &format!("INSERT OR REPLACE INTO secrets ({ROW_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"),
+            (
+                r.id.as_str(), r.name.as_str(), r.category.as_str(), r.nonce.as_slice(),
+                r.ciphertext.as_slice(), r.wrapped_dek.as_str(), r.created_at, r.updated_at,
+            ),
+        ).await?,
+        None => conn.execute("DELETE FROM secrets WHERE id = ?", [id]).await?,
+    };
+    conn.execute("DELETE FROM sync_applying", ()).await?;
     Ok(())
 }
 

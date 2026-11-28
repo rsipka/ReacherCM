@@ -963,3 +963,86 @@ async fn three_native_clients_sync_through_postgres() {
     clear_vault_test_account().await;
     println!("Three clients converged; both collision copies and the deletion synced. Owner verification and revocation preserved the retained offline edits.");
 }
+
+#[cfg(desktop)]
+#[derive(Deserialize)]
+struct NativeRestoreFixture {
+    server: String,
+    browser_session: String,
+    devices: [NativeSyncDevice; 2],
+}
+
+#[cfg(desktop)]
+#[tokio::test]
+#[ignore = "requires the Go loopback portal and disposable PostgreSQL fixture on stdin"]
+async fn personal_vault_restore_through_postgres() {
+    use crate::ipc::sync_account_commands::clear_vault_test_account;
+
+    let _account_guard = VAULT_TEST_ACCOUNT.lock().await;
+    let fixture: NativeRestoreFixture = serde_json::from_reader(std::io::stdin().lock()).unwrap();
+    let [first_device, second_device] = &fixture.devices;
+    let server = &fixture.server;
+    let dir = tempfile::tempdir().unwrap();
+    let mut first = VaultManager::new(dir.path().join("first"));
+    let mut second = VaultManager::new(dir.path().join("second"));
+    first.init_identity("first test password").await.unwrap();
+    second.init_identity("second test password").await.unwrap();
+    let original = first.get_vault_id_by_name(SESSIONS_VAULT).unwrap();
+    let record = first.create_secret(&original, "Test entry", SecretCategory::Session, value("snapshot"))
+        .await.unwrap();
+    let account = first_device.activate(server).await;
+    let personal = first.enable_account_sync(&account).await.unwrap();
+    let link = first.export_device_link().await.unwrap();
+    second_device.activate(server).await;
+    second.link_device(&link).await.unwrap();
+
+    first_device.activate(server).await;
+    first.update_secret(&personal, &record, value("previous active revision")).await.unwrap();
+    flush(&first, &personal).await;
+    second.update_secret(&personal, &record, value("offline edit")).await.unwrap();
+    let target = first.personal_restore_target().unwrap().unwrap();
+    let sync_engine::Backend::Account(account) = &target.backend else { panic!("account vault required") };
+    let (_, active_revision) = account.get().await.unwrap().unwrap();
+    let browser = reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+    let history = format!("/vaults/{personal}/history");
+    let session = format!("reachersync_session={}", fixture.browser_session);
+    let page = browser.get(format!("{server}{history}")).header(header::COOKIE, session.as_str()).send().await.unwrap();
+    assert_eq!(page.status(), StatusCode::OK);
+    let csrf_cookie = page.headers().get_all(header::SET_COOKIE).iter().find_map(|cookie| {
+        cookie.to_str().ok()?.split(';').next()?.strip_prefix("reachersync_csrf=").map(str::to_owned)
+    }).unwrap();
+    let html = page.text().await.unwrap();
+    let start = format!("href=\"{history}/");
+    let snapshot = html.split_once(&start).unwrap().1.split_once('/').unwrap().0;
+    let cookies = format!("{session}; reachersync_csrf={csrf_cookie}");
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("csrf", &csrf_cookie).append_pair("revision", &active_revision).finish();
+    let request = browser.post(format!("{server}{history}/{snapshot}/restore"))
+        .header(header::COOKIE, cookies.as_str())
+        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .body(form).send().await.unwrap();
+    assert_eq!(request.status(), StatusCode::SEE_OTHER);
+    assert!(request.headers()[header::LOCATION].to_str().unwrap().ends_with("?saved=requested"));
+    let review = account.restore_review().await.unwrap().unwrap();
+    assert_eq!(review.active_revision, active_revision);
+    assert_eq!(first.read_secret(&personal, &record).await.unwrap().expose_secret(), b"previous active revision");
+
+    crate::vault::sync_bundle::complete_restore(&target, account, &review).await.unwrap();
+    assert!(account.restore_review().await.unwrap().is_none());
+    flush(&first, &personal).await;
+    second_device.activate(server).await;
+    assert_eq!(flush(&second, &personal).await.conflicts, 1);
+    first_device.activate(server).await;
+    flush(&first, &personal).await;
+    for manager in [&first, &second] {
+        assert_eq!(manager.read_secret(&personal, &record).await.unwrap().expose_secret(), b"snapshot");
+        let records = manager.list_secrets(&personal).await.unwrap();
+        let copy = records.iter().find(|item| item.name.contains("conflict copy")).unwrap();
+        assert_eq!(manager.read_secret(&personal, &copy.id).await.unwrap().expose_secret(), b"offline edit");
+    }
+    let page = browser.get(format!("{server}{history}")).header(header::COOKIE, session.as_str())
+        .send().await.unwrap().text().await.unwrap();
+    assert!(page.contains("Before restore"));
+    clear_vault_test_account().await;
+    println!("The portal and two native clients restored the snapshot, retained the pre-restore revision, and preserved an offline edit.");
+}

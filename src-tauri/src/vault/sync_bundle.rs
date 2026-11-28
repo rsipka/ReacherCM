@@ -28,7 +28,7 @@ use zeroize::Zeroizing;
 use crate::vault::error::VaultError;
 use crate::vault::sync_engine::{self, merge, mirror_header, outgoing, sent, Report, Target};
 use crate::vault::sync_local;
-use crate::vault::sync_record::RecordKey;
+use crate::vault::sync_record::{Record, RecordKey};
 use crate::vault::sync_store::Store;
 
 const FORMAT: u8 = 1;
@@ -36,6 +36,7 @@ const BODY_LABEL: &str = "reach-bundle-v1";
 
 /// `sync_state`: the highest counter read or written.
 pub const STATE_COUNTER: &str = "bundle_counter";
+const STATE_RESTORE_COUNTER: &str = "bundle_restore_counter";
 
 /// A deletion is kept this long, for devices that have not synced since.
 /// One that comes back later still loses the record: what it holds, unchanged
@@ -57,6 +58,8 @@ struct File {
 #[derive(Serialize, Deserialize, Default)]
 struct Body {
     counter: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    restore_counter: Option<i64>,
     /// Remote id and sealed record, base64.
     records: Vec<(String, String)>,
 }
@@ -247,6 +250,70 @@ async fn counter_seen(local: &Connection) -> Result<i64, VaultError> {
     Ok(sync_local::state(local, STATE_COUNTER).await?.and_then(|v| v.parse().ok()).unwrap_or(0))
 }
 
+/// Re-author the reviewed snapshot with the active vault key and newer record
+/// stamps. Only the unlocked client's explicit restore action calls this.
+pub(crate) async fn complete_restore(
+    target: &Target,
+    account: &super::sync_account_store::AccountTarget,
+    review: &super::sync_account_store::RestoreReview,
+) -> Result<(), VaultError> {
+    let historical_data = account.restore_snapshot(review).await?;
+    let (active_data, active_revision) = account.get().await?
+        .ok_or_else(|| VaultError::SyncError("The active vault changed. Review the restore again.".into()))?;
+    let digest = format!("\"{}\"", super::sync_store::revision_of(&active_data));
+    if active_revision != review.active_revision || digest != active_revision {
+        return Err(VaultError::SyncError("The active vault changed. Review the restore again.".into()));
+    }
+    let local = sync_engine::open_local(&target.local_path).await?;
+    let bytes = rebuild_restore(&target.key, &target.device, &active_data, &historical_data, counter_seen(&local).await?)?;
+    account.publish_restore(review, &bytes).await
+}
+
+fn restore_records(key: &RecordKey, body: Body) -> Result<BTreeMap<String, Record>, VaultError> {
+    let mut records = BTreeMap::new();
+    for (remote_id, encoded) in body.records {
+        let sealed = BASE64.decode(encoded).map_err(|_| VaultError::SerializationError("Invalid record in vault restore".into()))?;
+        if records.insert(remote_id.clone(), key.open(&remote_id, &sealed)?).is_some() {
+            return Err(VaultError::SerializationError("Duplicate record in vault restore".into()));
+        }
+    }
+    Ok(records)
+}
+
+fn rebuild_restore(
+    key: &RecordKey, device: &str, active: &[u8], historical: &[u8], seen: i64,
+) -> Result<Vec<u8>, VaultError> {
+    let (rows, active) = open(key, active)?;
+    let (_, historical) = open(key, historical)?;
+    if active.counter < seen || historical.counter > active.counter {
+        return Err(VaultError::SyncError("The server returned vault revisions in an unexpected order.".into()));
+    }
+    let exhausted = || VaultError::SyncError("The vault revision counter is exhausted.".into());
+    let counter = active.counter.checked_add(1).ok_or_else(exhausted)?;
+    let mut desired = restore_records(key, historical)?;
+    let current = restore_records(key, active)?;
+    let mut records = Vec::with_capacity(current.len().max(desired.len()));
+    for (id, record) in current {
+        let previous = desired.remove(&id);
+        let row = previous.as_ref().and_then(|record| record.row.clone());
+        let version = record.version.max(previous.as_ref().map_or(0, |record| record.version));
+        let record = if row == record.row {
+            record
+        } else {
+            Record { row, version: version.checked_add(1).ok_or_else(exhausted)?.max(sync_engine::now_ms()), device: device.into(), ..record }
+        };
+        records.push((id, BASE64.encode(key.seal(&record)?)));
+    }
+    for (id, mut record) in desired {
+        if record.row.is_some() {
+            record.version = record.version.checked_add(1).ok_or_else(exhausted)?.max(sync_engine::now_ms());
+            record.device = device.into();
+            records.push((id, BASE64.encode(key.seal(&record)?)));
+        }
+    }
+    seal(key, &rows, &Body { counter, restore_counter: Some(counter), records })
+}
+
 /// Sync a vault with the file in `store`.
 pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Result<Report, VaultError> {
     let mut report = Report::default();
@@ -329,7 +396,24 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
             }
             entries.insert(remote_id.clone(), sealed);
         }
-        let merged = merge(target, local, records, revision.is_some() && !rolled_back).await?;
+        let local_restore = sync_local::state(local, STATE_RESTORE_COUNTER).await?
+            .and_then(|value| value.parse::<i64>().ok()).unwrap_or(0);
+        let full = revision.is_some() && !rolled_back;
+        let merged = if let Some(marker) = body.restore_counter.filter(|&marker|
+            full && !organization && matches!(store, Store::Account(_)) && marker > local_restore && marker <= body.counter
+        ) {
+            if unreadable {
+                return Err(VaultError::DecryptionError("Could not verify every record in the restored vault.".into()));
+            }
+            let tx = local.transaction_with_behavior(libsql::TransactionBehavior::Immediate).await?;
+            let merged = sync_engine::merge_records(target, &tx, records, full, true).await?;
+            sync_local::set_state(&tx, STATE_RESTORE_COUNTER, &marker.to_string()).await?;
+            sync_local::set_state(&tx, STATE_COUNTER, &body.counter.to_string()).await?;
+            tx.commit().await?;
+            merged
+        } else {
+            merge(target, local, records, full).await?
+        };
         report.pulled += merged.pulled;
         report.conflicts += merged.conflicts;
 
@@ -355,6 +439,7 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         let counter = body.counter.max(seen) + 1;
         let new_body = Body {
             counter,
+            restore_counter: body.restore_counter,
             records: entries.into_iter().map(|(id, sealed)| (id, BASE64.encode(sealed))).collect(),
         };
         let data = seal(&target.key, &sync_engine::turso::read_header(local).await?, &new_body)?;
@@ -397,10 +482,50 @@ mod tests {
         )
     }
 
+    fn record(id: &str, name: Option<&str>, version: i64) -> Record {
+        Record {
+            id: id.into(), version, device: "source".into(),
+            row: name.map(|name| sync_local::Row {
+                id: id.into(), name: name.into(), category: "credential".into(),
+                nonce: vec![0; 24], ciphertext: vec![1], wrapped_dek: "{}".into(),
+                created_at: 1, updated_at: 2,
+            }),
+        }
+    }
+
+    fn bundle(key: &RecordKey, counter: i64, records: &[Record]) -> Vec<u8> {
+        let records = records.iter().map(|record| {
+            (key.remote_id(&record.id), BASE64.encode(key.seal(record).unwrap()))
+        }).collect();
+        seal(key, &rows(key.vault_id()), &Body { counter, restore_counter: None, records }).unwrap()
+    }
+
+    #[test]
+    fn restore_reauthors_historical_records_without_replaying_the_old_revision() {
+        let k = key("personal");
+        let original = bundle(&k, 2, &[record("edited", Some("old"), 10), record("lost", Some("lost"), 12)]);
+        let active = bundle(&k, 5, &[record("edited", Some("new"), 50), record("added", Some("new"), 51)]);
+        let restored = rebuild_restore(&k, "restoring", &active, &original, 5).unwrap();
+        let (_, body) = open(&k, &restored).unwrap();
+        assert_eq!(body.counter, 6);
+        assert_eq!(body.restore_counter, Some(6));
+        let records = restore_records(&k, body).unwrap();
+        let edited = &records[&k.remote_id("edited")];
+        assert_eq!(edited.row.as_ref().unwrap().name, "old");
+        assert!(edited.version > 50);
+        let removed = &records[&k.remote_id("added")];
+        assert!(removed.row.is_none() && removed.version > 51);
+        assert_eq!(records[&k.remote_id("lost")].row.as_ref().unwrap().name, "lost");
+        assert!(rebuild_restore(&k, "restoring", &active, &original, 6).is_err());
+        assert!(rebuild_restore(&k, "restoring", &original, &active, 0).is_err());
+        let foreign = bundle(&key("foreign"), 1, &[]);
+        assert!(rebuild_restore(&k, "restoring", &active, &foreign, 5).is_err());
+    }
+
     #[test]
     fn a_file_opens_with_its_key_and_header_only() {
         let k = key("v1");
-        let body = Body { counter: 3, records: vec![("r".into(), "AAAA".into())] };
+        let body = Body { counter: 3, restore_counter: None, records: vec![("r".into(), "AAAA".into())] };
         let data = seal(&k, &rows("v1"), &body).unwrap();
         let (back, opened) = open(&k, &data).unwrap();
         assert_eq!(back, rows("v1"));
