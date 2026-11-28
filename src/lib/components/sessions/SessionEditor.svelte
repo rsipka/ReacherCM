@@ -1,6 +1,14 @@
 <script lang="ts">
-	import { getEnabledDevopsTools, type DevopsTool } from '#lib/state/devops.svelte.js';
-	import { requestNewDevopsItem } from '#lib/state/navigation.svelte.js';
+	import { getEnabledDevopsTools, type DevopsToolId } from '#lib/state/devops.svelte.js';
+	import { openDevopsTab } from '#lib/state/navigation.svelte.js';
+	import { clustersChanged } from '#lib/state/k8s.svelte.js';
+	import { hostsChanged } from '#lib/state/containers.svelte.js';
+	import * as dbState from '#lib/state/db.svelte.js';
+	import ClusterEditor from '#lib/components/k8s/ClusterEditor.svelte';
+	import HostEditor from '#lib/components/containers/HostEditor.svelte';
+	import ConnectionEditor from '#lib/components/db/ConnectionEditor.svelte';
+	import AnsibleProjectEditor from '#lib/components/ansible/AnsibleProjectEditor.svelte';
+	import TofuProjectEditor from '#lib/components/tofu/TofuProjectEditor.svelte';
 	import * as ansibleState from '#lib/state/ansible.svelte.js';
 	import * as tofuState from '#lib/state/tofu.svelte.js';
 	import { addToast as toastDevops } from '#lib/state/toasts.svelte.js';
@@ -605,44 +613,60 @@
 	let group = $derived(KIND_GROUPS.find((g) => g.kinds.includes(proto))?.id ?? 'terminal');
 	let groupKinds = $derived((KIND_GROUPS.find((g) => g.id === group)?.kinds ?? []).filter(kindAvailable));
 
-	/* New session's DevOps tab: not a session kind but the way to add what
-	   the DevOps workspaces hold (a cluster, a host, a database connection, a
-	   project), with the editor each of them has. Only for a new session. */
-	let devopsPicked = $state(false);
-	let devopsTools = $derived(getEnabledDevopsTools());
-	let showDevops = $derived(!editSession && !cloneSession && devopsTools.length > 0);
+	/* New session's Databases and DevOps tabs: not session kinds but the way
+	   to add what those workspaces hold (a database connection, a cluster, a
+	   container host, a project). Each one's own editor is drawn in place, as
+	   what they need (an engine, a kubeconfig, a project folder) differs too
+	   much for one form; saving opens it in its tab. Only for a new session. */
+	type ExtraTab = 'databases' | 'devops';
+	let extraTab = $state<ExtraTab | null>(null);
+	let devopsPicked = $derived(extraTab !== null);
+	let devopsTools = $derived(getEnabledDevopsTools().filter((d) => d.id !== 'databases'));
+	let devopsTool = $state<DevopsToolId>('kubernetes');
+	let shownDevopsTool = $derived(devopsTools.find((d) => d.id === devopsTool)?.id ?? devopsTools[0]?.id ?? 'kubernetes');
+	let showExtraTabs = $derived(!editSession && !cloneSession);
 	$effect(() => {
-		if (!open) devopsPicked = false;
+		if (!open) extraTab = null;
 	});
 
-	function addDevopsItem(tool: DevopsTool): void {
-		if (tool.id === 'ansible' || tool.id === 'tofu') {
-			const st = tool.id === 'ansible' ? ansibleState : tofuState;
-			// The project list holds the add button: leave the open project,
-			// unless a run in it would be hidden.
-			if (st.getActiveProjectId()) {
-				if (st.isCommandRunning()) {
-					toastDevops(t('devops.new_busy'), 'warning');
-					return;
-				}
-				st.closeProject();
-			}
-		}
-		requestNewDevopsItem(tool.id);
+	function clusterAdded(c: { id: string; name: string }): void {
+		clustersChanged();
 		open = false;
+		openDevopsTab('kubernetes', c.id, c.name);
 	}
 
-	const DEVOPS_NEW_LABEL: Record<string, string> = {
-		ansible: 'devops.new_ansible',
-		tofu: 'devops.new_tofu',
-		databases: 'devops.new_database',
-		containers: 'devops.new_container_host',
-		kubernetes: 'devops.new_k8s_cluster'
-	};
+	function hostAdded(h: { id: string; name: string }): void {
+		hostsChanged();
+		open = false;
+		openDevopsTab('containers', h.id, h.name);
+	}
+
+	async function connectionAdded(c: { id: string }): Promise<void> {
+		open = false;
+		openDevopsTab('databases');
+		const info = await dbState.openConnection(c.id);
+		if (info?.engine === 'redis') dbState.openRedis(c.id);
+	}
+
+	async function projectAdded(tool: 'ansible' | 'tofu', id: string): Promise<void> {
+		const st = tool === 'ansible' ? ansibleState : tofuState;
+		open = false;
+		openDevopsTab(tool);
+		// A run goes on in the open project; switching would hide it.
+		if (st.isCommandRunning()) {
+			toastDevops(t('devops.project_busy'), 'warning');
+			return;
+		}
+		try {
+			await st.openProject(id);
+		} catch (e) {
+			toastDevops(String(e), 'error');
+		}
+	}
 
 	/** A group's tab: its first protocol, unless the session already is one of its. */
 	function pickGroup(id: (typeof KIND_GROUPS)[number]['id']): void {
-		devopsPicked = false;
+		extraTab = null;
 		if (id === group) return;
 		const first = KIND_GROUPS.find((g) => g.id === id)?.kinds.find(kindAvailable);
 		if (first) setKind(first);
@@ -1411,7 +1435,8 @@
 <svelte:window bind:innerWidth={windowWidth} />
 
 <Modal {open} onclose={handleClose} title={isEditing ? t('session.edit_session') : cloneSession ? t('session.clone_session') : t('session.new')} maxWidth={wide ? WIDE_DIALOG : undefined} height={isMobile() ? undefined : DIALOG_HEIGHT} fullOnPhone>
-	<form class="form session-form" onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
+	<!-- Not a form while a DevOps editor (with a form of its own) is shown. -->
+	<svelte:element this={devopsPicked ? 'div' : 'form'} class="form session-form" onsubmit={(e: SubmitEvent) => { e.preventDefault(); if (!devopsPicked) handleSave(); }}>
 		<!-- Same control as the auth method below, but a grid that wraps into
 		     rows where the window is narrow, so no protocol is cut to "S…". -->
 		<div class="auth-section">
@@ -1423,13 +1448,24 @@
 						{t(`session.category_${g.id}`)}
 					</button>
 				{/each}
-				{#if showDevops}
-					<button type="button" role="tab" class="category-tab" class:active={devopsPicked} aria-selected={devopsPicked} disabled={saving} onclick={() => (devopsPicked = true)}>
+				{#if showExtraTabs}
+					<button type="button" role="tab" class="category-tab" class:active={extraTab === 'databases'} aria-selected={extraTab === 'databases'} disabled={saving} onclick={() => (extraTab = 'databases')}>
+						{t('nav.databases')}
+					</button>
+					<button type="button" role="tab" class="category-tab" class:active={extraTab === 'devops'} aria-selected={extraTab === 'devops'} disabled={saving} onclick={() => (extraTab = 'devops')}>
 						{t('devops.sessions_group')}
 					</button>
 				{/if}
 			</div>
-			{#if !devopsPicked}
+			{#if extraTab === 'devops'}
+			<div class="auth-toggle protocol-toggle">
+				{#each devopsTools as tool (tool.id)}
+					<button type="button" class="auth-btn" class:active={shownDevopsTool === tool.id} onclick={() => (devopsTool = tool.id)}>
+						{tool.label()}
+					</button>
+				{/each}
+			</div>
+			{:else if !extraTab}
 			<div class="auth-toggle protocol-toggle">
 				{#each groupKinds as k (k)}
 					<button type="button" class="auth-btn" class:active={proto === k} disabled={saving} onclick={() => setKind(k)} title={k === 'rdp' ? t('session.protocol_rdp') : undefined}>
@@ -1440,23 +1476,20 @@
 			{/if}
 		</div>
 
-		{#if devopsPicked}
-			<!-- Each tool's own editor, in its tab: what it needs (a kubeconfig,
-			     an engine, a project folder) differs too much for one form. -->
-			<div class="devops-new">
-				{#each devopsTools as tool (tool.id)}
-					<button type="button" class="devops-new-item" onclick={() => addDevopsItem(tool)}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path d={tool.icon} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-						<span class="devops-new-text">
-							<span class="devops-new-title">{t(DEVOPS_NEW_LABEL[tool.id])}</span>
-							<span class="devops-new-desc">{tool.description()}</span>
-						</span>
-					</button>
-				{/each}
-				<p class="devops-new-hint">{t('devops.new_hint')}</p>
-			</div>
+		{#if extraTab === 'databases'}
+			<ConnectionEditor inline open onclose={() => {}} onsaved={connectionAdded} />
+		{:else if extraTab === 'devops'}
+			{#key shownDevopsTool}
+				{#if shownDevopsTool === 'kubernetes'}
+					<ClusterEditor inline open initial={null} onclose={() => {}} onsaved={clusterAdded} ondeleted={() => {}} />
+				{:else if shownDevopsTool === 'containers'}
+					<HostEditor inline open host={null} onclose={() => {}} onsaved={hostAdded} ondeleted={() => {}} />
+				{:else if shownDevopsTool === 'ansible'}
+					<AnsibleProjectEditor inline open onclose={() => {}} oncreate={(p) => projectAdded('ansible', p.id)} />
+				{:else if shownDevopsTool === 'tofu'}
+					<TofuProjectEditor inline open onclose={() => {}} oncreate={(p) => projectAdded('tofu', p.id)} />
+				{/if}
+			{/key}
 		{:else}
 
 		<!-- On a wide window two columns; otherwise the columns vanish
@@ -2705,7 +2738,7 @@
 		{#if error}
 			<div class="error-message">{error}</div>
 		{/if}
-	</form>
+	</svelte:element>
 
 	{#snippet actions()}
 		<Button variant="secondary" onclick={handleClose} disabled={saving}>
@@ -2725,59 +2758,6 @@
 </Modal>
 
 <style>
-	.devops-new {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.devops-new-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 12px;
-		padding: 10px 12px;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		background: var(--color-bg-secondary);
-		color: var(--color-text-primary);
-		font-family: var(--font-sans);
-		text-align: left;
-		cursor: pointer;
-		transition: border-color 0.15s ease, background-color 0.15s ease;
-	}
-
-	.devops-new-item:hover {
-		border-color: var(--color-accent);
-	}
-
-	.devops-new-item svg {
-		flex-shrink: 0;
-		margin-top: 1px;
-		color: var(--color-text-secondary);
-	}
-
-	.devops-new-text {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-
-	.devops-new-title {
-		font-size: var(--text-sm);
-		font-weight: 600;
-	}
-
-	.devops-new-desc,
-	.devops-new-hint {
-		font-size: var(--text-xs, 0.75rem);
-		color: var(--color-text-secondary);
-	}
-
-	.devops-new-hint {
-		margin: 4px 2px 0;
-	}
-
 	.form {
 		display: flex;
 		flex-direction: column;

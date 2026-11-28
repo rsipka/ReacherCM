@@ -21,6 +21,8 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	interface Props {
+		/** Drawn in place (New session's DevOps and Databases tabs), not as a dialog. */
+		inline?: boolean;
 		open: boolean;
 		initial: ClusterView | null;
 		onclose: () => void;
@@ -28,7 +30,7 @@
 		ondeleted: (id: string) => void;
 	}
 
-	let { open, initial, onclose, onsaved, ondeleted }: Props = $props();
+	let { open, initial, inline = false, onclose, onsaved, ondeleted }: Props = $props();
 
 	let name = $state('');
 	let yaml = $state('');
@@ -170,111 +172,124 @@
 	}
 </script>
 
-<Modal {open} {onclose} title={isEdit ? t('k8s.edit_cluster') : t('k8s.add_cluster')} maxWidth="580px">
-	{#snippet children()}
-		<div class="form">
-			<div class="field">
-				<div class="label-row">
-					<span>{t('k8s.kubeconfig')}</span>
-					<span class="spacer"></span>
-					<button type="button" class="link" onclick={() => fileInput?.click()}>{t('k8s.choose_file')}</button>
-					<input bind:this={fileInput} type="file" class="hidden" onchange={readFile} tabindex="-1" aria-hidden="true" />
-				</div>
-				<textarea
-					bind:value={yaml}
-					rows="7"
-					class="mono"
-					spellcheck="false"
-					autocomplete="off"
-					autocapitalize="off"
-					aria-label={t('k8s.kubeconfig')}
-					placeholder={isEdit ? t('k8s.kubeconfig_keep') : t('k8s.kubeconfig_paste')}
-				></textarea>
-				<small>{isEdit ? t('k8s.kubeconfig_keep_hint') : t('k8s.kubeconfig_hint')}</small>
-				{#if parseError}
-					<small class="bad">{parseError}</small>
-				{/if}
+{#snippet body()}
+	<div class="form">
+		<div class="field">
+			<div class="label-row">
+				<span>{t('k8s.kubeconfig')}</span>
+				<span class="spacer"></span>
+				<button type="button" class="link" onclick={() => fileInput?.click()}>{t('k8s.choose_file')}</button>
+				<input bind:this={fileInput} type="file" class="hidden" onchange={readFile} tabindex="-1" aria-hidden="true" />
 			</div>
-
-			<label class="field">
-				<span>{t('k8s.context')}</span>
-				<select bind:value={context} disabled={contexts.length === 0 && !isEdit}>
-					{#if contexts.length === 0}
-						{#if isEdit}
-							<option value={initial?.context}>{initial?.context}</option>
-						{:else}
-							<option value="">{t('k8s.context_paste_first')}</option>
-						{/if}
-					{/if}
-					{#each contexts as c (c.name)}
-						<option value={c.name}>{c.name}</option>
-					{/each}
-				</select>
-				{#if chosen}
-					<small class="mono">{chosen.server} · {chosen.user}{chosen.namespace ? ` · ${chosen.namespace}` : ''}</small>
-				{:else if isEdit && initial}
-					<small class="mono">{initial.server} · {initial.user}</small>
-				{/if}
-			</label>
-
-			<label class="field">
-				<span>{t('k8s.cluster_name')}</span>
-				<input bind:value={name} placeholder={context || t('k8s.cluster_name_placeholder')} autocomplete="off" />
-			</label>
-
-			<label class="field">
-				<span>{t('k8s.reach_through')}</span>
-				<select value={routeValue} onchange={(e) => setRoute(e.currentTarget.value)}>
-					<option value="direct">{t('k8s.route_direct')}</option>
-					{#if sessions.length}
-						<optgroup label={t('k8s.route_session_group')}>
-							{#each sessions as s (s.id)}
-								<option value="s:{s.id}">{s.name} ({s.username}@{s.host})</option>
-							{/each}
-						</optgroup>
-					{/if}
-				</select>
-				<small>{t('k8s.route_hint')}</small>
-			</label>
-
-			<div class="grid2">
-				<label class="field grow">
-					<span>{t('k8s.environment')}</span>
-					<select value={environment} onchange={(e) => setEnvironment(e.currentTarget.value as Environment)}>
-						<option value="none">{t('k8s.env_none')}</option>
-						<option value="development">{t('env.development')}</option>
-						<option value="staging">{t('env.staging')}</option>
-						<option value="production">{t('env.production')}</option>
-					</select>
-				</label>
-				<label class="field grow">
-					<span>{t('k8s.default_namespace')}</span>
-					<input bind:value={namespace} class="mono" placeholder={chosen?.namespace ?? 'default'} autocomplete="off" autocapitalize="off" spellcheck="false" />
-				</label>
-			</div>
-
-			<div class="toggle-row">
-				<div>
-					<strong>{t('env.read_only')}</strong>
-					<small>{environment === 'production' ? t('k8s.read_only_prod') : t('k8s.read_only_desc')}</small>
-				</div>
-				<Toggle hideLabel label={t('env.read_only')} checked={readOnly} onchange={(v) => (readOnly = v)} />
-			</div>
-
-			{#if error}
-				<ErrorHelp {error} />
+			<textarea
+				bind:value={yaml}
+				rows="7"
+				class="mono"
+				spellcheck="false"
+				autocomplete="off"
+				autocapitalize="off"
+				aria-label={t('k8s.kubeconfig')}
+				placeholder={isEdit ? t('k8s.kubeconfig_keep') : t('k8s.kubeconfig_paste')}
+			></textarea>
+			<small>{isEdit ? t('k8s.kubeconfig_keep_hint') : t('k8s.kubeconfig_hint')}</small>
+			{#if parseError}
+				<small class="bad">{parseError}</small>
 			{/if}
 		</div>
-	{/snippet}
-	{#snippet actions()}
-		{#if isEdit}
-			<Button variant="ghost" onclick={() => (confirmDelete = true)}>{t('k8s.remove_cluster')}</Button>
+
+		<label class="field">
+			<span>{t('k8s.context')}</span>
+			<select bind:value={context} disabled={contexts.length === 0 && !isEdit}>
+				{#if contexts.length === 0}
+					{#if isEdit}
+						<option value={initial?.context}>{initial?.context}</option>
+					{:else}
+						<option value="">{t('k8s.context_paste_first')}</option>
+					{/if}
+				{/if}
+				{#each contexts as c (c.name)}
+					<option value={c.name}>{c.name}</option>
+				{/each}
+			</select>
+			{#if chosen}
+				<small class="mono">{chosen.server} · {chosen.user}{chosen.namespace ? ` · ${chosen.namespace}` : ''}</small>
+			{:else if isEdit && initial}
+				<small class="mono">{initial.server} · {initial.user}</small>
+			{/if}
+		</label>
+
+		<label class="field">
+			<span>{t('k8s.cluster_name')}</span>
+			<input bind:value={name} placeholder={context || t('k8s.cluster_name_placeholder')} autocomplete="off" />
+		</label>
+
+		<label class="field">
+			<span>{t('k8s.reach_through')}</span>
+			<select value={routeValue} onchange={(e) => setRoute(e.currentTarget.value)}>
+				<option value="direct">{t('k8s.route_direct')}</option>
+				{#if sessions.length}
+					<optgroup label={t('k8s.route_session_group')}>
+						{#each sessions as s (s.id)}
+							<option value="s:{s.id}">{s.name} ({s.username}@{s.host})</option>
+						{/each}
+					</optgroup>
+				{/if}
+			</select>
+			<small>{t('k8s.route_hint')}</small>
+		</label>
+
+		<div class="grid2">
+			<label class="field grow">
+				<span>{t('k8s.environment')}</span>
+				<select value={environment} onchange={(e) => setEnvironment(e.currentTarget.value as Environment)}>
+					<option value="none">{t('k8s.env_none')}</option>
+					<option value="development">{t('env.development')}</option>
+					<option value="staging">{t('env.staging')}</option>
+					<option value="production">{t('env.production')}</option>
+				</select>
+			</label>
+			<label class="field grow">
+				<span>{t('k8s.default_namespace')}</span>
+				<input bind:value={namespace} class="mono" placeholder={chosen?.namespace ?? 'default'} autocomplete="off" autocapitalize="off" spellcheck="false" />
+			</label>
+		</div>
+
+		<div class="toggle-row">
+			<div>
+				<strong>{t('env.read_only')}</strong>
+				<small>{environment === 'production' ? t('k8s.read_only_prod') : t('k8s.read_only_desc')}</small>
+			</div>
+			<Toggle hideLabel label={t('env.read_only')} checked={readOnly} onchange={(v) => (readOnly = v)} />
+		</div>
+
+		{#if error}
+			<ErrorHelp {error} />
 		{/if}
-		<span class="spacer"></span>
+	</div>
+{/snippet}
+
+{#snippet acts()}
+	{#if isEdit}
+		<Button variant="ghost" onclick={() => (confirmDelete = true)}>{t('k8s.remove_cluster')}</Button>
+	{/if}
+	<span class="spacer"></span>
+	{#if !inline}
 		<Button variant="ghost" onclick={onclose}>{t('common.cancel')}</Button>
-		<Button variant="primary" disabled={!canSave} onclick={submit}>{saving ? t('k8s.saving') : isEdit ? t('common.save') : t('k8s.add_and_connect')}</Button>
-	{/snippet}
+	{/if}
+	<Button variant="primary" disabled={!canSave} onclick={submit}>{saving ? t('k8s.saving') : isEdit ? t('common.save') : t('k8s.add_and_connect')}</Button>
+{/snippet}
+
+{#if inline}
+	<div class="inline-editor">
+		{@render body()}
+		<div class="inline-actions">{@render acts()}</div>
+	</div>
+{:else}
+<Modal {open} {onclose} title={isEdit ? t('k8s.edit_cluster') : t('k8s.add_cluster')} maxWidth="580px">
+	{@render body()}
+	{#snippet actions()}{@render acts()}{/snippet}
 </Modal>
+{/if}
 
 {#if initial}
 	<ConfirmAction
@@ -292,6 +307,14 @@
 {/if}
 
 <style>
+	.inline-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+
 	.form {
 		display: flex;
 		flex-direction: column;

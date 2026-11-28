@@ -14,6 +14,8 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	interface Props {
+		/** Drawn in place (New session's DevOps and Databases tabs), not as a dialog. */
+		inline?: boolean;
 		open: boolean;
 		/** The host to edit, or null for a new one. */
 		host: ContainerHost | null;
@@ -22,7 +24,7 @@
 		ondeleted: (id: string) => void;
 	}
 
-	let { open, host, onclose, onsaved, ondeleted }: Props = $props();
+	let { open, host, inline = false, onclose, onsaved, ondeleted }: Props = $props();
 
 	let sessions = $state<SessionConfig[]>([]);
 	let name = $state('');
@@ -103,7 +105,7 @@
 	}
 </script>
 
-<Modal {open} {onclose} title={host ? t('ctr.edit_host') : t('ctr.add_host')} maxWidth="500px">
+{#snippet body()}
 	<form class="form" onsubmit={(e) => (e.preventDefault(), save())}>
 		<label class="field">
 			<span>{t('ctr.server')}</span>
@@ -169,22 +171,45 @@
 		{/if}
 	</form>
 
-	{#snippet actions()}
-		{#if host}
-			{#if confirmDelete}
-				<span class="sure">{t('ctr.remove_host_sure')}</span>
-				<Button variant="danger" onclick={remove}>{t('ctr.remove_host')}</Button>
-			{:else}
-				<Button variant="ghost" onclick={() => (confirmDelete = true)}>{t('ctr.remove_host')}</Button>
-			{/if}
-			<span class="gap"></span>
+{/snippet}
+
+{#snippet acts()}
+	{#if host}
+		{#if confirmDelete}
+			<span class="sure">{t('ctr.remove_host_sure')}</span>
+			<Button variant="danger" onclick={remove}>{t('ctr.remove_host')}</Button>
+		{:else}
+			<Button variant="ghost" onclick={() => (confirmDelete = true)}>{t('ctr.remove_host')}</Button>
 		{/if}
+		<span class="gap"></span>
+	{/if}
+	{#if !inline}
 		<Button variant="ghost" onclick={onclose}>{t('common.cancel')}</Button>
-		<Button disabled={saving} onclick={save}>{host ? t('common.save') : t('ctr.add_host')}</Button>
-	{/snippet}
+	{/if}
+	<Button disabled={saving} onclick={save}>{host ? t('common.save') : t('ctr.add_host')}</Button>
+{/snippet}
+
+{#if inline}
+	<div class="inline-editor">
+		{@render body()}
+		<div class="inline-actions">{@render acts()}</div>
+	</div>
+{:else}
+<Modal {open} {onclose} title={host ? t('ctr.edit_host') : t('ctr.add_host')} maxWidth="500px">
+	{@render body()}
+	{#snippet actions()}{@render acts()}{/snippet}
 </Modal>
+{/if}
 
 <style>
+	.inline-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+
 	.form {
 		display: flex;
 		flex-direction: column;

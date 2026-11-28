@@ -6,8 +6,11 @@
  * here, a variant in `src-tauri/src/devops.rs`, and a `require` at the top of
  * its commands.
  *
- * Switching a tool off hides it and makes the backend refuse its commands.
- * Nothing is deleted; projects and runs are there again when it comes back.
+ * Databases, Containers and Kubernetes are built in and always on: they need
+ * nothing installed and cost nothing until opened. Ansible and OpenTofu, which
+ * run programs from the system, can be switched off; off hides them and makes
+ * the backend refuse their commands. Nothing is deleted; projects and runs
+ * are there again when it comes back.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -34,6 +37,8 @@ export interface DevopsTool {
 	isBusy: () => boolean;
 	/** 24×24 stroked icon path, for its tabs and its rows in the Sessions list. */
 	icon: string;
+	/** Built in and always on: no switch in Settings → DevOps. */
+	alwaysOn?: boolean;
 }
 
 /** The terminal's icon, beside the workspaces' (the command palette's page list). */
@@ -61,6 +66,7 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 	{
 		id: 'databases',
 		page: 'databases',
+		alwaysOn: true,
 		binary: '',
 		label: () => t('nav.databases'),
 		description: () => t('devops.databases_desc'),
@@ -70,6 +76,7 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 	{
 		id: 'containers',
 		page: 'containers',
+		alwaysOn: true,
 		binary: '',
 		label: () => t('nav.containers'),
 		description: () => t('devops.containers_desc'),
@@ -79,6 +86,7 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 	{
 		id: 'kubernetes',
 		page: 'kubernetes',
+		alwaysOn: true,
 		binary: '',
 		label: () => t('nav.kubernetes'),
 		description: () => t('devops.kubernetes_desc'),
@@ -88,7 +96,12 @@ export const DEVOPS_TOOLS: DevopsTool[] = [
 ];
 
 export function isDevopsEnabled(id: DevopsToolId): boolean {
-	return getSettings().devopsTools.includes(id);
+	return !!DEVOPS_TOOLS.find((d) => d.id === id)?.alwaysOn || getSettings().devopsTools.includes(id);
+}
+
+/** The tools Settings → DevOps has a switch for. */
+export function getSwitchableDevopsTools(): DevopsTool[] {
+	return DEVOPS_TOOLS.filter((tool) => !tool.alwaysOn);
 }
 
 export function getEnabledDevopsTools(): DevopsTool[] {
@@ -101,7 +114,7 @@ export function getEnabledDevopsTools(): DevopsTool[] {
  */
 export async function setDevopsEnabled(id: DevopsToolId, enabled: boolean): Promise<boolean> {
 	const tool = DEVOPS_TOOLS.find((d) => d.id === id);
-	if (!tool) return false;
+	if (!tool || tool.alwaysOn) return false;
 	if (!enabled && tool.isBusy()) return false;
 
 	const others = getSettings().devopsTools.filter((d) => d !== id);

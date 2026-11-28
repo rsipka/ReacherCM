@@ -8,13 +8,15 @@
 	import Button from '#lib/components/shared/Button.svelte';
 
 	interface Props {
+		/** Drawn in place (New session's DevOps and Databases tabs), not as a dialog. */
+		inline?: boolean;
 		open: boolean;
 		templateId?: string | null;
 		onclose: () => void;
 		oncreate: (project: TofuProject) => void;
 	}
 
-	let { open: isOpen, templateId = null, onclose, oncreate }: Props = $props();
+	let { open: isOpen, templateId = null, inline = false, onclose, oncreate }: Props = $props();
 
 	let name = $state('');
 	let path = $state('');
@@ -60,7 +62,7 @@
 	}
 </script>
 
-<Modal open={isOpen} onclose={handleClose} title={t('tofu.new_project')}>
+{#snippet body()}
 	<form class="form" onsubmit={handleSubmit}>
 		<Input label={t('tofu.project_name')} bind:value={name} placeholder={t('tofu.project_name')} />
 
@@ -80,17 +82,40 @@
 		/>
 	</form>
 
-	{#snippet actions()}
+{/snippet}
+
+{#snippet acts()}
+	{#if !inline}
 		<Button variant="secondary" size="sm" onclick={handleClose} disabled={loading}>
 			{t('tofu.cancel')}
 		</Button>
-		<Button variant="primary" size="sm" onclick={handleSubmit} disabled={!canSubmit}>
-			{loading ? t('tofu.creating') : t('tofu.create')}
-		</Button>
-	{/snippet}
+	{/if}
+	<Button variant="primary" size="sm" onclick={handleSubmit} disabled={!canSubmit}>
+		{loading ? t('tofu.creating') : t('tofu.create')}
+	</Button>
+{/snippet}
+
+{#if inline}
+	<div class="inline-editor">
+		{@render body()}
+		<div class="inline-actions">{@render acts()}</div>
+	</div>
+{:else}
+<Modal open={isOpen} onclose={handleClose} title={t('tofu.new_project')}>
+	{@render body()}
+	{#snippet actions()}{@render acts()}{/snippet}
 </Modal>
+{/if}
 
 <style>
+	.inline-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+
 	.form {
 		display: flex;
 		flex-direction: column;

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { t } from '#lib/state/i18n.svelte.js';
-	import { takeNewDevopsItem, wantsNewDevopsItem } from '#lib/state/navigation.svelte.js';
 	import { getProjects, loadProjects, openProject, deleteProject } from '#lib/state/ansible.svelte.js';
 	import Button from '#lib/components/shared/Button.svelte';
 	import AnsibleProjectEditor from './AnsibleProjectEditor.svelte';
@@ -9,10 +8,6 @@
 	let showEditor = $state(false);
 	let deletingId = $state<string | null>(null);
 
-	// New session → DevOps → new project: the project editor.
-	$effect(() => {
-		if (wantsNewDevopsItem('ansible') && takeNewDevopsItem('ansible')) showEditor = true;
-	});
 
 	let projectList = $derived(getProjects());
 
