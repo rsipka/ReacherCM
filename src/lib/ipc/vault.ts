@@ -37,6 +37,20 @@ export interface InviteInfo {
 	token: string;
 }
 
+export interface VaultRestoreReview {
+	request: string;
+	activeRevision: string;
+	snapshotRevision: string;
+}
+
+export function reviewPersonalVaultRestore(): Promise<VaultRestoreReview | null> {
+	return invoke('vault_personal_restore_review');
+}
+
+export function confirmPersonalVaultRestore(review: VaultRestoreReview): Promise<void> {
+	return invoke('vault_personal_restore_confirm', { review });
+}
+
 // ==================== IDENTITY ====================
 
 export async function initIdentity(password: string): Promise<string> {

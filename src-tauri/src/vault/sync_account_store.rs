@@ -10,6 +10,17 @@ use crate::vault::VaultError;
 pub(crate) const PREFIX: &str = "reachercm-sync:";
 pub(crate) const ORG_PREFIX: &str = "reachercm-org:";
 const MAX_BYTES: usize = 64 << 20;
+const HISTORY_HEADER: &str = "X-Reacher-Vault-History";
+const RESTORE_REQUEST: &str = "X-Reacher-Vault-Restore-Request";
+const ACTIVE_REVISION: &str = "X-Reacher-Vault-Active-Revision";
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreReview {
+    pub request: String,
+    pub active_revision: String,
+    pub snapshot_revision: String,
+}
 
 #[derive(Clone)]
 pub struct AccountTarget {
@@ -160,42 +171,61 @@ impl AccountTarget {
 
     pub(crate) async fn get(&self) -> Result<Option<(Vec<u8>, String)>, VaultError> {
         let url = self.bundle_url();
-        let mut response =
-            sync_account_commands::vault_request(&self.server, &self.username, |http| {
-                http.get(url.clone())
-            })
-            .await
-            .map_err(connection_error)?;
+        let response = self.request(|http| http.get(url.clone()).header(HISTORY_HEADER, "1")).await?;
         match response.status() {
             StatusCode::NOT_FOUND => return Ok(None),
             StatusCode::OK => {}
             _ => return Err(error("The sync server could not download the vault bundle")),
         }
-        let etag = response
-            .headers()
-            .get(header::ETAG)
-            .and_then(|value| value.to_str().ok())
-            .filter(|value| valid_revision(value))
-            .ok_or_else(|| error("The sync server returned an invalid vault revision"))?
-            .to_owned();
-        if response
-            .content_length()
-            .is_some_and(|n| n > MAX_BYTES as u64)
-        {
-            return Err(error("The vault bundle exceeds the maximum size"));
+        let etag = response_revision(response.headers(), header::ETAG.as_str())?;
+        Ok(Some((read_bundle(response).await?, etag)))
+    }
+
+    async fn request_restore(&self, method: reqwest::Method) -> Result<Option<reqwest::Response>, VaultError> {
+        let url = self.api(&format!("{}/restore", self.vault_path()));
+        let response = self.request(|http| http.request(method.clone(), url.clone())).await?;
+        match response.status() {
+            StatusCode::OK => Ok(Some(response)),
+            StatusCode::NOT_FOUND => Ok(None),
+            _ => Err(error("The sync server could not check the vault restore request")),
         }
-        let mut data = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| error("The vault download was interrupted"))?
-        {
-            if chunk.len() > MAX_BYTES - data.len() {
-                return Err(error("The vault bundle exceeds the maximum size"));
-            }
-            data.extend_from_slice(&chunk);
+    }
+
+    pub(crate) async fn restore_review(&self) -> Result<Option<RestoreReview>, VaultError> {
+        let Some(response) = self.request_restore(reqwest::Method::HEAD).await? else { return Ok(None) };
+        read_review(response.headers()).map(Some)
+    }
+
+    pub(crate) async fn restore_snapshot(&self, review: &RestoreReview) -> Result<Vec<u8>, VaultError> {
+        let response = self.request_restore(reqwest::Method::GET).await?
+            .ok_or_else(|| error("The vault restore request changed. Review it again"))?;
+        if read_review(response.headers())? != *review {
+            return Err(error("The vault restore request changed. Review it again"));
         }
-        Ok(Some((data, etag)))
+        let data = read_bundle(response).await?;
+        if format!("\"{}\"", super::sync_store::revision_of(&data)) != review.snapshot_revision {
+            return Err(error("The downloaded vault snapshot did not match the reviewed revision"));
+        }
+        Ok(data)
+    }
+
+    pub(crate) async fn publish_restore(&self, review: &RestoreReview, data: &[u8]) -> Result<(), VaultError> {
+        if data.len() > MAX_BYTES || data.is_empty() {
+            return Err(error("The restored vault bundle size is invalid"));
+        }
+        let url = self.api(&format!("{}/restore", self.vault_path()));
+        let response = self.request(|http| http.put(url.clone())
+            .header(header::CONTENT_TYPE, "application/octet-stream")
+            .header(header::IF_MATCH, review.active_revision.as_str())
+            .header(RESTORE_REQUEST, review.request.as_str())
+            .body(data.to_vec())).await?;
+        match response.status() {
+            StatusCode::NO_CONTENT => Ok(()),
+            StatusCode::PRECONDITION_FAILED | StatusCode::NOT_FOUND =>
+                Err(error("The vault restore request changed. Review it again")),
+            StatusCode::PAYLOAD_TOO_LARGE => Err(error("The restored vault exceeds the sync server's size limit")),
+            _ => Err(error("The sync server could not publish the restored vault")),
+        }
     }
 
     pub(crate) async fn report_applied(&self, revision: &str) {
@@ -236,6 +266,7 @@ impl AccountTarget {
             let request = http
                 .put(url.clone())
                 .header(header::CONTENT_TYPE, "application/octet-stream")
+                .header(HISTORY_HEADER, "1")
                 .body(data.to_vec());
             let request = if self.organization.is_some() {
                 request.header("X-Reacher-Vault-Key-Epoch", self.key_epoch)
@@ -258,6 +289,7 @@ impl AccountTarget {
             StatusCode::CONFLICT => Err(error(
                 "This sync account already has a different personal vault",
             )),
+            StatusCode::LOCKED => Err(error("Review the pending vault restore in Sync & Backup, or cancel it in the portal")),
             StatusCode::FORBIDDEN => Err(error("This vault is read-only for this account")),
             StatusCode::PAYLOAD_TOO_LARGE => Err(error(
                 "The vault bundle exceeds the sync server's size limit",
@@ -265,6 +297,37 @@ impl AccountTarget {
             _ => Err(error("The sync server could not write the vault bundle")),
         }
     }
+}
+
+fn response_revision(headers: &header::HeaderMap, name: &str) -> Result<String, VaultError> {
+    headers.get(name).and_then(|value| value.to_str().ok())
+        .filter(|value| valid_revision(value)).map(ToOwned::to_owned)
+        .ok_or_else(|| error("The sync server returned an invalid vault revision"))
+}
+
+fn read_review(headers: &header::HeaderMap) -> Result<RestoreReview, VaultError> {
+    let request = headers.get(RESTORE_REQUEST).and_then(|v| v.to_str().ok())
+        .filter(|v| v.len() == 43 && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
+        .ok_or_else(|| error("The sync server returned an invalid vault restore request"))?;
+    Ok(RestoreReview {
+        request: request.to_owned(),
+        active_revision: response_revision(headers, ACTIVE_REVISION)?,
+        snapshot_revision: response_revision(headers, header::ETAG.as_str())?,
+    })
+}
+
+async fn read_bundle(mut response: reqwest::Response) -> Result<Vec<u8>, VaultError> {
+    if response.content_length().is_some_and(|n| n > MAX_BYTES as u64) {
+        return Err(error("The vault bundle exceeds the maximum size"));
+    }
+    let mut data = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| error("The vault download was interrupted"))? {
+        if chunk.len() > MAX_BYTES - data.len() {
+            return Err(error("The vault bundle exceeds the maximum size"));
+        }
+        data.extend_from_slice(&chunk);
+    }
+    Ok(data)
 }
 
 fn valid_revision(tag: &str) -> bool {

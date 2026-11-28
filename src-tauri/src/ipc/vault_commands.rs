@@ -683,6 +683,46 @@ pub async fn vault_sync(
     }
 }
 
+#[tauri::command]
+pub async fn vault_personal_restore_review(
+    state: State<'_, AppState>,
+) -> Result<Option<crate::vault::sync_account_store::RestoreReview>, String> {
+    let target = state.vault_manager.lock().await.personal_restore_target().map_err(|err| err.to_string())?;
+    match target.map(|target| target.backend) {
+        Some(crate::vault::sync_engine::Backend::Account(account)) => {
+            account.restore_review().await.map_err(|err| err.to_string())
+        }
+        _ => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn vault_personal_restore_confirm(
+    review: crate::vault::sync_account_store::RestoreReview,
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    use crate::vault::{manager::SYNC_OPERATIONS, sync_bundle, sync_engine::Backend};
+
+    let operation = SYNC_OPERATIONS.write().await;
+    let target = state.vault_manager.lock().await.personal_restore_target().map_err(|err| err.to_string())?
+        .ok_or_else(|| "Open the personal vault linked to Reacher CM Sync.".to_string())?;
+    let Backend::Account(account) = &target.backend else {
+        return Err("Open the personal vault linked to Reacher CM Sync.".into());
+    };
+    sync_bundle::complete_restore(&target, account, &review).await.map_err(|err| err.to_string())?;
+    drop(operation);
+
+    // The server has already committed the restore. Local sync failures are
+    // shown by the regular sync status and retried by the sync scheduler.
+    let (changed, _) = crate::vault::manager::sync_vaults(&state.vault_manager, Some(&target.vault_id), false).await;
+    for id in changed {
+        let _ = app.emit("vault-synced", id);
+    }
+    let _ = app.emit("vault-sync-status", ());
+    Ok(())
+}
+
 /// Every synced vault with how its sync stands.
 #[tauri::command(rename_all = "snake_case")]
 pub async fn vault_sync_status(state: State<'_, AppState>) -> Result<Vec<crate::vault::SyncStatus>, String> {

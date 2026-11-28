@@ -459,6 +459,10 @@ pub async fn upgrade(target: &Target) -> Result<(), VaultError> {
 /// `incoming` is everything the backend holds, so a row here that is in none
 /// of them, and was not changed here, was deleted elsewhere.
 pub async fn merge(target: &Target, local: &Connection, incoming: Vec<Record>, full: bool) -> Result<Report, VaultError> {
+    merge_records(target, local, incoming, full, false).await
+}
+
+pub(super) async fn merge_records(target: &Target, local: &Connection, incoming: Vec<Record>, full: bool, restored: bool) -> Result<Report, VaultError> {
     let dirty: HashMap<String, Dirty> = sync_local::dirty(local)
         .await?
         .into_iter()
@@ -482,27 +486,36 @@ pub async fn merge(target: &Target, local: &Connection, incoming: Vec<Record>, f
         };
         match dirty.get(&record.id) {
             None => {
-                sync_local::apply(local, &record.id, record.row.as_ref()).await?;
+                apply_merged(local, &record.id, record.row.as_ref(), restored).await?;
                 if let (Some(theirs), Some(mine)) = (&record.row, &mine) {
                     keep_host_keys(local, &target.master, theirs, mine).await?;
                 }
                 report.pulled += 1;
             }
             Some(change) => {
-                let remote_wins = match (change.deleted, record.row.is_some()) {
-                    (true, true) => true,   // deleted here, edited there: the edit wins
-                    (false, false) => false, // edited here, deleted there: the edit wins
-                    _ => record.newer_than(change.changed_at, &target.device),
+                let remote_wins = if restored {
+                    !change.deleted
+                } else {
+                    match (change.deleted, record.row.is_some()) {
+                        (true, true) => true,   // deleted here, edited there: the edit wins
+                        (false, false) => false, // edited here, deleted there: the edit wins
+                        _ => record.newer_than(change.changed_at, &target.device),
+                    }
                 };
                 if remote_wins {
-                    if !change.deleted && record.row.is_some() {
-                        if let Some(mine) = sync_local::read_row(local, &record.id).await? {
-                            if keeps_conflict_copy(&mine.category) && conflict_copy(local, &target.master, &mine).await? {
-                                report.conflicts += 1;
-                            }
+                    let losing = if restored || (!change.deleted && record.row.is_some()) {
+                        sync_local::read_row(local, &record.id).await?
+                    } else {
+                        None
+                    };
+                    if let Some(mine) = losing.filter(|mine| restored || keeps_conflict_copy(&mine.category)) {
+                        if conflict_copy(local, &target.master, &mine).await? {
+                            report.conflicts += 1;
+                        } else if restored {
+                            return Err(VaultError::SyncError("Could not preserve an unsynced vault edit. The restore was not applied on this device.".into()));
                         }
                     }
-                    sync_local::apply(local, &record.id, record.row.as_ref()).await?;
+                    apply_merged(local, &record.id, record.row.as_ref(), restored).await?;
                     local.execute("DELETE FROM sync_dirty WHERE id = ?", [record.id.as_str()]).await?;
                     if let (Some(theirs), Some(mine)) = (&record.row, &mine) {
                         keep_host_keys(local, &target.master, theirs, mine).await?;
@@ -523,13 +536,21 @@ pub async fn merge(target: &Target, local: &Connection, incoming: Vec<Record>, f
         let dirty: HashSet<String> = sync_local::dirty(local).await?.into_iter().map(|d| d.id).collect();
         for row in sync_local::all_rows(local).await? {
             if !seen.contains(&row.id) && !dirty.contains(&row.id) {
-                sync_local::apply(local, &row.id, None).await?;
+                apply_merged(local, &row.id, None, restored).await?;
                 local.execute("DELETE FROM sync_known WHERE id = ?", [row.id.as_str()]).await?;
                 report.pulled += 1;
             }
         }
     }
     Ok(report)
+}
+
+async fn apply_merged(local: &Connection, id: &str, row: Option<&Row>, in_transaction: bool) -> Result<(), VaultError> {
+    if in_transaction {
+        sync_local::apply_in_transaction(local, id, row).await
+    } else {
+        sync_local::apply(local, id, row).await
+    }
 }
 
 /// The changes waiting here, as records to send: each with a version newer
