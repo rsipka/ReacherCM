@@ -122,7 +122,6 @@ impl AccountTarget {
             .map_err(|_| error("The sync server returned an invalid vault list"))
     }
 
-    #[cfg(desktop)]
     pub(crate) fn shared(
         account: &sync_account_commands::AccountView,
         organization: Uuid,

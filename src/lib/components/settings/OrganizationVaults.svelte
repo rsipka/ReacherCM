@@ -5,7 +5,7 @@
 	import Input from '#lib/components/shared/Input.svelte';
 	import { invoke } from '@tauri-apps/api/core';
 	import { t } from '#lib/state/i18n.svelte.js';
-	import { refreshVaults, setActiveVault } from '#lib/state/vault.svelte.js';
+	import { getPublicKey, refreshVaults, setActiveVault } from '#lib/state/vault.svelte.js';
 
 	type Organization = { id: string; name: string };
 	type Role = 'owner' | 'editor' | 'viewer';
@@ -30,6 +30,7 @@
 	let confirmingTransfer = $state(false);
 	let error = $state('');
 	let message = $state('');
+	let myPublicKey = $derived(getPublicKey());
 
 	onMount(() => { void reload(); });
 
@@ -186,6 +187,19 @@
 			{/if}
 		</div>
 	</div>
+	{#if organizations.length && myPublicKey}
+		<div class="vault-row">
+			<div class="setting-info">
+				<span class="setting-label">{t('vault.your_public_key')}</span>
+				<code class="setting-description">{myPublicKey}</code>
+			</div>
+			<Button variant="ghost" size="sm" disabled={busy} onclick={() => run(async () => {
+				if (!myPublicKey) return;
+				await navigator.clipboard.writeText(myPublicKey);
+				message = 'common.copied';
+			})}>{t('common.copy')}</Button>
+		</div>
+	{/if}
 	{#if loaded && organizations.length === 0}
 		<p class="setting-description feedback">{t('organization.empty')}</p>
 	{:else if organizations.length}

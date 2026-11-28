@@ -30,6 +30,7 @@ impl Remote {
 
 type Shared = Arc<Mutex<Remote>>;
 
+#[cfg(desktop)]
 async fn list(State(remote): State<Shared>) -> impl IntoResponse {
     Json(json!({"vault_ids": remote.lock().await.id.iter().collect::<Vec<_>>()}))
 }
@@ -88,6 +89,7 @@ async fn flush(manager: &VaultManager, id: &str) -> sync_engine::Report {
     sync_engine::sync(&target).await.unwrap()
 }
 
+#[cfg(desktop)]
 #[tokio::test]
 async fn an_account_vault_migrates_and_links_without_exposing_records() {
     use crate::ipc::sync_account_commands::{clear_vault_test_account, seed_vault_test_account};
@@ -319,7 +321,12 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
         signed_in: "owner",
         ..Default::default()
     }));
+    let organization = json!({"id": org, "name": "Team", "role": "owner"});
+    let listed = organization.clone();
     let router = Router::new()
+        .route("/api/v1/organizations", get(move || async move {
+            Json(vec![listed])
+        }))
         .route(&vaults, get({
             let acl = acl.clone();
             let remote = remote.clone();
@@ -391,6 +398,8 @@ async fn an_organization_vault_rotates_without_losing_retained_offline_edits() {
     owner.init_identity("owner-password").await.unwrap();
     recipient.init_identity("recipient-password").await.unwrap();
     let account = seed_vault_test_account(&url, "owner").await;
+    let organizations = VaultManager::organizations(&account).await.unwrap();
+    assert_eq!(serde_json::to_value(organizations).unwrap(), json!([organization]));
     let info = owner
         .create_organization_vault(&account, org, "Team vault")
         .await
