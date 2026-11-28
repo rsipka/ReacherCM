@@ -6,6 +6,7 @@ import type { SpiceOptions } from './spice';
 import type { RdpOptions } from './rdp';
 import type { ProxmoxOptions } from './proxmox';
 import type { S3Options } from './s3';
+import type { MqttOptions } from './mqtt';
 import type { HistoryMode } from './history';
 import type { CursorStyle } from '#lib/terminal/cursor.js';
 import { t } from '#lib/state/i18n.svelte.js';
@@ -153,6 +154,8 @@ export interface SessionConfig {
   proxmox?: ProxmoxOptions | null;
   /** S3 only: region, address style, bucket, plain HTTP. */
   s3?: S3Options | null;
+  /** MQTT only: transport, client ID, topic filters, client certificate. */
+  mqtt?: MqttOptions | null;
 }
 
 /** How to wake a session's machine over the network. */
@@ -413,7 +416,7 @@ export interface BmcVnc {
   password?: string | null;
 }
 
-export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc' | 'proxmox' | 's3';
+export type SessionKind = 'ssh' | 'rdp' | 'vnc' | 'spice' | 'wsl' | 'telnet' | 'serial' | 'winbox' | 'web' | 'ftp' | 'bmc' | 'proxmox' | 'mqtt' | 's3';
 
 export function sessionKind(session: Pick<SessionConfig, 'kind'>): SessionKind {
   return session.kind ?? 'ssh';
@@ -505,6 +508,7 @@ export async function sessionCreate(params: {
   proxmox?: ProxmoxOptions | null;
   bmc?: BmcOptions | null;
   s3?: S3Options | null;
+  mqtt?: MqttOptions | null;
 }): Promise<SessionConfig> {
   return invoke<SessionConfig>('session_create', {
     name: params.name,
@@ -558,6 +562,7 @@ export async function sessionCreate(params: {
     proxmox: params.kind === 'proxmox' ? (params.proxmox ?? {}) : null,
     bmc: params.kind === 'bmc' ? (params.bmc ?? null) : null,
     s3: params.kind === 's3' ? (params.s3 ?? {}) : null,
+    mqtt: params.kind === 'mqtt' ? (params.mqtt ?? {}) : null,
   });
 }
 

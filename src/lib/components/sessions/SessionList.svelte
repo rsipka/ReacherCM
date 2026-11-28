@@ -1443,6 +1443,18 @@
 	 * asking for a password, a code or about a certificate there. An open
 	 * one is switched to.
 	 */
+	/** Open a saved MQTT session in a tab of its own; an open one is switched to. */
+	function openMqtt(session: SessionConfig): void {
+		setActivePage('terminal');
+		const open = getTabs().find((tab) => tab.type === 'mqtt' && tab.mqttConnectParams?.sessionId === session.id);
+		if (open) {
+			activateTab(open.id);
+			return;
+		}
+		const tab = createTab('mqtt', session.host, undefined, session.name, null);
+		tab.mqttConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
+	}
+
 	function openProxmox(session: SessionConfig): void {
 		setActivePage('terminal');
 		const open = getTabs().find((tab) => tab.type === 'proxmox' && tab.proxmoxConnectParams?.sessionId === session.id);
@@ -1923,6 +1935,10 @@
 		}
 		if (sessionKind(session) === 'proxmox') {
 			openProxmox(session);
+			return;
+		}
+		if (sessionKind(session) === 'mqtt') {
+			openMqtt(session);
 			return;
 		}
 		// Check if credentials are stored in the session (from vault)

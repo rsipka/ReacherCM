@@ -29,7 +29,6 @@
 	import { engineInfo } from '#lib/db/engines.js';
 	import { addToast } from '#lib/state/toasts.svelte.js';
 	import { t } from '#lib/state/i18n.svelte.js';
-	import { takeNewDevopsItem, wantsNewDevopsItem } from '#lib/state/navigation.svelte.js';
 
 	let editor = $state<{ initial: Partial<DbConnectionView> | null; connectOnly: boolean } | null>(null);
 	let job = $state<{ mode: 'backup' | 'restore'; connId: string; database: string; schema: string | null } | null>(null);
@@ -56,10 +55,6 @@
 		editor = { initial: null, connectOnly: false };
 	}
 
-	// New session → DevOps → Database connection: the add editor.
-	$effect(() => {
-		if (wantsNewDevopsItem('databases') && takeNewDevopsItem('databases')) newConnection();
-	});
 
 	function edit(c: DbConnectionView): void {
 		const isSaved = st.getConnections().some((x) => x.id === c.id);

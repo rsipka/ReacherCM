@@ -316,12 +316,12 @@ fn has_login(kind: SessionKind) -> bool {
 
 /// The kinds the session editor offers a saved credential for.
 fn takes_credential(kind: SessionKind) -> bool {
-    matches!(kind, SessionKind::Ssh | SessionKind::Rdp | SessionKind::Telnet | SessionKind::Winbox | SessionKind::Web | SessionKind::Bmc | SessionKind::Proxmox | SessionKind::S3)
+    matches!(kind, SessionKind::Ssh | SessionKind::Rdp | SessionKind::Telnet | SessionKind::Winbox | SessionKind::Web | SessionKind::Bmc | SessionKind::Proxmox | SessionKind::Mqtt | SessionKind::S3)
 }
 
 /// The kinds the session editor offers a WireGuard tunnel for.
 fn takes_wireguard(kind: SessionKind) -> bool {
-    matches!(kind, SessionKind::Ssh | SessionKind::Telnet | SessionKind::Rdp | SessionKind::Vnc | SessionKind::Spice | SessionKind::Web | SessionKind::Winbox)
+    matches!(kind, SessionKind::Ssh | SessionKind::Telnet | SessionKind::Rdp | SessionKind::Vnc | SessionKind::Spice | SessionKind::Web | SessionKind::Winbox | SessionKind::Mqtt)
 }
 
 /// The kinds the session editor offers an OS icon for.

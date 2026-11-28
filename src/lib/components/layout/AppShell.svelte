@@ -84,7 +84,7 @@
 	async function countActiveConnections(): Promise<number> {
 		const tabs = getTabs();
 		const ended = new Set(tabs.filter((tab) => tab.link === 'down' && tab.connectionId).map((tab) => tab.connectionId));
-		const others = tabs.filter((tab) => tab.link !== 'down' && (isDesktopTab(tab) || (tab.type === 'telnet' && !!tab.telnetConnectionId) || (tab.type === 'serial' && !!tab.serialConnectionId) || (tab.type === 'ftp' && !!tab.ftpConnectionId) || (tab.type === 'bmc' && !!tab.bmcConnectionId) || (tab.type === 'proxmox' && !!tab.proxmoxConnectionId) || (tab.type === 's3' && !!tab.s3ConnectionId))).length;
+		const others = tabs.filter((tab) => tab.link !== 'down' && (isDesktopTab(tab) || (tab.type === 'telnet' && !!tab.telnetConnectionId) || (tab.type === 'serial' && !!tab.serialConnectionId) || (tab.type === 'ftp' && !!tab.ftpConnectionId) || (tab.type === 'bmc' && !!tab.bmcConnectionId) || (tab.type === 'proxmox' && !!tab.proxmoxConnectionId) || (tab.type === 'mqtt' && !!tab.mqttConnectionId) || (tab.type === 's3' && !!tab.s3ConnectionId))).length;
 		try {
 			return (await sshListConnections()).filter((c) => !ended.has(c.id)).length + others;
 		} catch {
@@ -242,7 +242,7 @@
 		     (it runs no shell commands), so it is told there is no tab. -->
 		<AIPanel
 			connectionId={activeConnectionId}
-			activeTabId={isDesktopTab(activeTab) || activeTab?.type === 'telnet' || activeTab?.type === 'serial' || activeTab?.type === 'ftp' || activeTab?.type === 'bmc' || activeTab?.type === 'proxmox' || activeTab?.type === 's3' ? undefined : activeTab?.id}
+			activeTabId={isDesktopTab(activeTab) || activeTab?.type === 'telnet' || activeTab?.type === 'serial' || activeTab?.type === 'ftp' || activeTab?.type === 'bmc' || activeTab?.type === 'proxmox' || activeTab?.type === 'mqtt' || activeTab?.type === 's3' ? undefined : activeTab?.id}
 			activeTabType={activeTab?.type === 'local' || activeTab?.type === 'ssh' ? activeTab.type : undefined}
 		/>
 	</div>

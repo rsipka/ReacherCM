@@ -21,6 +21,8 @@
 	import { t } from '#lib/state/i18n.svelte.js';
 
 	interface Props {
+		/** Drawn in place (New session's DevOps and Databases tabs), not as a dialog. */
+		inline?: boolean;
 		open: boolean;
 		/** Editing an existing one, or a starting point (a detected database). */
 		initial?: Partial<DbConnectionView> | null;
@@ -31,7 +33,7 @@
 		onconnect?: (c: DbConnection) => void;
 	}
 
-	let { open, initial = null, allowConnectOnly = false, onclose, onsaved, onconnect }: Props = $props();
+	let { open, initial = null, allowConnectOnly = false, inline = false, onclose, onsaved, onconnect }: Props = $props();
 
 	const COLORS = ['', '#30d158', '#0a84ff', '#ffd60a', '#ff9f0a', '#ff453a', '#bf5af2'];
 
@@ -210,188 +212,207 @@
 	}
 </script>
 
-<Modal {open} {onclose} title={isEdit ? t('db.edit_connection') : t('db.new_connection')} maxWidth="560px">
-	{#snippet children()}
-		<div class="form">
-			<div class="engines" role="radiogroup" aria-label={t('db.engine')}>
-				{#each ENGINES as e (e.id)}
-					<button
-						type="button"
-						class="engine"
-						class:selected={form.engine === e.id}
-						role="radio"
-						aria-checked={form.engine === e.id}
-						onclick={() => pickEngine(e.id)}
-					>
-						<EngineBadge engine={e.id} size={22} />
-						<span>{e.name}</span>
-					</button>
-				{/each}
-			</div>
+{#snippet body()}
+	<div class="form">
+		<div class="engines" role="radiogroup" aria-label={t('db.engine')}>
+			{#each ENGINES as e (e.id)}
+				<button
+					type="button"
+					class="engine"
+					class:selected={form.engine === e.id}
+					role="radio"
+					aria-checked={form.engine === e.id}
+					onclick={() => pickEngine(e.id)}
+				>
+					<EngineBadge engine={e.id} size={22} />
+					<span>{e.name}</span>
+				</button>
+			{/each}
+		</div>
 
+		<label class="field">
+			<span>{t('db.name')}</span>
+			<input bind:value={form.name} placeholder={suggestedName()} />
+		</label>
+
+		{#if isSqlite}
+			<div class="field">
+				<span>{t('db.file')}</span>
+				<div class="row">
+					<input bind:value={form.filePath} placeholder="/path/to/data.db" class="mono" />
+					<Button variant="secondary" size="sm" onclick={browseFile}>{t('db.browse')}</Button>
+				</div>
+			</div>
+		{:else}
 			<label class="field">
-				<span>{t('db.name')}</span>
-				<input bind:value={form.name} placeholder={suggestedName()} />
+				<span>{t('db.reach_it')}</span>
+				<select value={routeValue} onchange={(e) => setRoute(e.currentTarget.value)}>
+					<option value="direct">{t('db.route_direct')}</option>
+					{#if form.route.kind === 'live'}
+						<option value="live">{t('db.route_live')}</option>
+					{/if}
+					{#if sessions.length}
+						<optgroup label={t('db.route_through_session')}>
+							{#each sessions as s (s.id)}
+								<option value="s:{s.id}">{s.name} ({s.username}@{s.host})</option>
+							{/each}
+						</optgroup>
+					{/if}
+				</select>
+				{#if form.route.kind !== 'direct'}
+					<small>{t('db.route_hint')}</small>
+				{/if}
+				{#if route}
+					<span class="route-dest" role="note">
+						<span>{t('db.route_goes_to', { target: target(route.route) })}</span>
+						{#if route.route.jumps.length > 0 || route.route.proxy}
+							<span>{t('db.route_through', { route: route.route.jumps.length > 0 ? route.route.jumps.join(' → ') : (route.route.proxy ?? '') })}</span>
+						{/if}
+						{#if route.route.route_lines.length > 0}
+							<span>{t('db.route_lines')}</span>
+							{#each route.route.route_lines as line, i (i)}
+								<code>{line}</code>
+							{/each}
+						{/if}
+					</span>
+				{:else if routeError}
+					<small class="route-error">{routeError}</small>
+				{/if}
 			</label>
 
-			{#if isSqlite}
-				<div class="field">
-					<span>{t('db.file')}</span>
-					<div class="row">
-						<input bind:value={form.filePath} placeholder="/path/to/data.db" class="mono" />
-						<Button variant="secondary" size="sm" onclick={browseFile}>{t('db.browse')}</Button>
-					</div>
-				</div>
-			{:else}
-				<label class="field">
-					<span>{t('db.reach_it')}</span>
-					<select value={routeValue} onchange={(e) => setRoute(e.currentTarget.value)}>
-						<option value="direct">{t('db.route_direct')}</option>
-						{#if form.route.kind === 'live'}
-							<option value="live">{t('db.route_live')}</option>
-						{/if}
-						{#if sessions.length}
-							<optgroup label={t('db.route_through_session')}>
-								{#each sessions as s (s.id)}
-									<option value="s:{s.id}">{s.name} ({s.username}@{s.host})</option>
-								{/each}
-							</optgroup>
-						{/if}
-					</select>
-					{#if form.route.kind !== 'direct'}
-						<small>{t('db.route_hint')}</small>
-					{/if}
-					{#if route}
-						<span class="route-dest" role="note">
-							<span>{t('db.route_goes_to', { target: target(route.route) })}</span>
-							{#if route.route.jumps.length > 0 || route.route.proxy}
-								<span>{t('db.route_through', { route: route.route.jumps.length > 0 ? route.route.jumps.join(' → ') : (route.route.proxy ?? '') })}</span>
-							{/if}
-							{#if route.route.route_lines.length > 0}
-								<span>{t('db.route_lines')}</span>
-								{#each route.route.route_lines as line, i (i)}
-									<code>{line}</code>
-								{/each}
-							{/if}
-						</span>
-					{:else if routeError}
-						<small class="route-error">{routeError}</small>
-					{/if}
+			<div class="grid2">
+				<label class="field grow">
+					<span>{form.route.kind === 'direct' ? t('db.host') : t('db.host_from_server')}</span>
+					<input bind:value={form.host} class="mono" autocapitalize="off" spellcheck="false" />
 				</label>
+				<label class="field port">
+					<span>{t('db.port')}</span>
+					<input type="number" bind:value={form.port} min="1" max="65535" />
+				</label>
+			</div>
 
-				<div class="grid2">
-					<label class="field grow">
-						<span>{form.route.kind === 'direct' ? t('db.host') : t('db.host_from_server')}</span>
-						<input bind:value={form.host} class="mono" autocapitalize="off" spellcheck="false" />
-					</label>
-					<label class="field port">
-						<span>{t('db.port')}</span>
-						<input type="number" bind:value={form.port} min="1" max="65535" />
-					</label>
-				</div>
-
-				<div class="grid2">
-					<label class="field grow">
-						<span>{t('db.username')}</span>
-						<input bind:value={form.username} autocapitalize="off" spellcheck="false" autocomplete="off" />
-					</label>
-					<div class="field grow">
-						<span id="db-password-label">{t('db.password')}</span>
-						<SecretRefField
-							bind:value={password}
-							bind:secretRef={form.passwordRef}
-							label={t('db.password')}
-							onpick={(e) => {
-								if (!form.username?.trim() && e.username) form.username = e.username;
-							}}
-						>
-							{#snippet input()}
-								<PasswordField>
-									{#snippet children(type)}
-										<input
-											{type}
-											bind:value={password}
-											autocomplete="new-password"
-											aria-labelledby="db-password-label"
-											placeholder={hasStoredPassword ? t('db.password_kept') : ''}
-										/>
-									{/snippet}
-								</PasswordField>
-							{/snippet}
-						</SecretRefField>
-					</div>
-				</div>
-
-				<div class="grid2">
-					<label class="field grow">
-						<span>{isRedis ? t('db.redis_db') : t('db.database')}</span>
-						<input bind:value={form.database} placeholder={isRedis ? '0' : t('db.database_default')} class="mono" />
-					</label>
-					<label class="field grow">
-						<span>{t('db.tls')}</span>
-						<select bind:value={form.tls}>
-							<option value={'prefer' satisfies TlsMode}>{t('db.tls_prefer')}</option>
-							<option value={'require' satisfies TlsMode}>{t('db.tls_require')}</option>
-							<option value={'disable' satisfies TlsMode}>{t('db.tls_disable')}</option>
-						</select>
-					</label>
-				</div>
-			{/if}
-
-			<div class="field">
-				<span>{t('db.color')}</span>
-				<div class="colors">
-					{#each COLORS as c (c)}
-						<button
-							type="button"
-							class="swatch"
-							class:none={!c}
-							class:selected={(form.color ?? '') === c}
-							style:--c={c || 'transparent'}
-							aria-label={c || t('db.color_none')}
-							onclick={() => (form.color = c || null)}
-						></button>
-					{/each}
+			<div class="grid2">
+				<label class="field grow">
+					<span>{t('db.username')}</span>
+					<input bind:value={form.username} autocapitalize="off" spellcheck="false" autocomplete="off" />
+				</label>
+				<div class="field grow">
+					<span id="db-password-label">{t('db.password')}</span>
+					<SecretRefField
+						bind:value={password}
+						bind:secretRef={form.passwordRef}
+						label={t('db.password')}
+						onpick={(e) => {
+							if (!form.username?.trim() && e.username) form.username = e.username;
+						}}
+					>
+						{#snippet input()}
+							<PasswordField>
+								{#snippet children(type)}
+									<input
+										{type}
+										bind:value={password}
+										autocomplete="new-password"
+										aria-labelledby="db-password-label"
+										placeholder={hasStoredPassword ? t('db.password_kept') : ''}
+									/>
+								{/snippet}
+							</PasswordField>
+						{/snippet}
+					</SecretRefField>
 				</div>
 			</div>
 
-			<div class="toggles">
-				<div class="toggle-row">
-					<div>
-						<strong>{t('db.read_only')}</strong>
-						<small>{t('db.read_only_desc')}</small>
-					</div>
-					<Toggle hideLabel label={t('db.read_only')} checked={form.readOnly} onchange={(v) => (form.readOnly = v)} />
-				</div>
-				<div class="toggle-row">
-					<div>
-						<strong>{t('db.production')}</strong>
-						<small>{t('db.production_desc')}</small>
-					</div>
-					<Toggle hideLabel label={t('db.production')} checked={form.production} onchange={(v) => (form.production = v)} />
-				</div>
+			<div class="grid2">
+				<label class="field grow">
+					<span>{isRedis ? t('db.redis_db') : t('db.database')}</span>
+					<input bind:value={form.database} placeholder={isRedis ? '0' : t('db.database_default')} class="mono" />
+				</label>
+				<label class="field grow">
+					<span>{t('db.tls')}</span>
+					<select bind:value={form.tls}>
+						<option value={'prefer' satisfies TlsMode}>{t('db.tls_prefer')}</option>
+						<option value={'require' satisfies TlsMode}>{t('db.tls_require')}</option>
+						<option value={'disable' satisfies TlsMode}>{t('db.tls_disable')}</option>
+					</select>
+				</label>
 			</div>
+		{/if}
 
-			{#if testResult}
-				<div class="test" class:ok={testResult.ok} role="status">
-					{testResult.ok ? t('db.test_ok', { version: testResult.text }) : testResult.text}
-				</div>
-			{/if}
+		<div class="field">
+			<span>{t('db.color')}</span>
+			<div class="colors">
+				{#each COLORS as c (c)}
+					<button
+						type="button"
+						class="swatch"
+						class:none={!c}
+						class:selected={(form.color ?? '') === c}
+						style:--c={c || 'transparent'}
+						aria-label={c || t('db.color_none')}
+						onclick={() => (form.color = c || null)}
+					></button>
+				{/each}
+			</div>
 		</div>
-	{/snippet}
-	{#snippet actions()}
-		<Button variant="ghost" onclick={test} disabled={testing}>{testing ? t('db.testing') : t('db.test')}</Button>
-		<span class="spacer"></span>
-		{#if allowConnectOnly}
-			<Button variant="secondary" onclick={connectOnly}>{t('db.connect_once')}</Button>
+
+		<div class="toggles">
+			<div class="toggle-row">
+				<div>
+					<strong>{t('db.read_only')}</strong>
+					<small>{t('db.read_only_desc')}</small>
+				</div>
+				<Toggle hideLabel label={t('db.read_only')} checked={form.readOnly} onchange={(v) => (form.readOnly = v)} />
+			</div>
+			<div class="toggle-row">
+				<div>
+					<strong>{t('db.production')}</strong>
+					<small>{t('db.production_desc')}</small>
+				</div>
+				<Toggle hideLabel label={t('db.production')} checked={form.production} onchange={(v) => (form.production = v)} />
+			</div>
+		</div>
+
+		{#if testResult}
+			<div class="test" class:ok={testResult.ok} role="status">
+				{testResult.ok ? t('db.test_ok', { version: testResult.text }) : testResult.text}
+			</div>
 		{/if}
-		{#if !(allowConnectOnly && form.route.kind === 'live')}
-			<Button variant="primary" onclick={submit} disabled={saving}>{isEdit ? t('db.save') : t('db.save_and_add')}</Button>
-		{/if}
-	{/snippet}
+	</div>
+{/snippet}
+
+{#snippet acts()}
+	<Button variant="ghost" onclick={test} disabled={testing}>{testing ? t('db.testing') : t('db.test')}</Button>
+	<span class="spacer"></span>
+	{#if allowConnectOnly}
+		<Button variant="secondary" onclick={connectOnly}>{t('db.connect_once')}</Button>
+	{/if}
+	{#if !(allowConnectOnly && form.route.kind === 'live')}
+		<Button variant="primary" onclick={submit} disabled={saving}>{isEdit ? t('db.save') : t('db.save_and_add')}</Button>
+	{/if}
+{/snippet}
+
+{#if inline}
+	<div class="inline-editor">
+		{@render body()}
+		<div class="inline-actions">{@render acts()}</div>
+	</div>
+{:else}
+<Modal {open} {onclose} title={isEdit ? t('db.edit_connection') : t('db.new_connection')} maxWidth="560px">
+	{@render body()}
+	{#snippet actions()}{@render acts()}{/snippet}
 </Modal>
+{/if}
 
 <style>
+	.inline-actions {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+
 	.form {
 		display: flex;
 		flex-direction: column;

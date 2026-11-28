@@ -1,6 +1,14 @@
 <script lang="ts">
-	import { getEnabledDevopsTools, type DevopsTool } from '#lib/state/devops.svelte.js';
-	import { requestNewDevopsItem } from '#lib/state/navigation.svelte.js';
+	import { getEnabledDevopsTools, type DevopsToolId } from '#lib/state/devops.svelte.js';
+	import { openDevopsTab } from '#lib/state/navigation.svelte.js';
+	import { clustersChanged } from '#lib/state/k8s.svelte.js';
+	import { hostsChanged } from '#lib/state/containers.svelte.js';
+	import * as dbState from '#lib/state/db.svelte.js';
+	import ClusterEditor from '#lib/components/k8s/ClusterEditor.svelte';
+	import HostEditor from '#lib/components/containers/HostEditor.svelte';
+	import ConnectionEditor from '#lib/components/db/ConnectionEditor.svelte';
+	import AnsibleProjectEditor from '#lib/components/ansible/AnsibleProjectEditor.svelte';
+	import TofuProjectEditor from '#lib/components/tofu/TofuProjectEditor.svelte';
 	import * as ansibleState from '#lib/state/ansible.svelte.js';
 	import * as tofuState from '#lib/state/tofu.svelte.js';
 	import { addToast as toastDevops } from '#lib/state/toasts.svelte.js';
@@ -47,6 +55,7 @@
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
 	import type { ProxmoxOptions } from '#lib/ipc/proxmox.js';
 	import { S3_PROVIDERS, type S3Options } from '#lib/ipc/s3.js';
+	import { MQTT_PORTS, type MqttOptions } from '#lib/ipc/mqtt.js';
 	import { parseResolution, type RdpOptions } from '#lib/ipc/rdp.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
 	import type { CursorStyle } from '#lib/terminal/cursor.js';
@@ -156,6 +165,45 @@
 		const cur = String(portStr ?? '').trim();
 		if (cur === '80' || cur === '443' || cur === '') portStr = next ? '80' : '443';
 		s3Http = next;
+	}
+	/* An MQTT session: how it reaches the broker, what it subscribes to,
+	 * and a client certificate for brokers that want one. */
+	let mqttTransport = $state<'tcp' | 'tls' | 'ws' | 'wss'>('tcp');
+	let mqttWsPath = $state('');
+	let mqttClientId = $state('');
+	let mqttKeepAlive = $state('');
+	let mqttSubscriptions = $state('');
+	let mqttClientCert = $state('');
+	let mqttClientKey = $state('');
+	function fillMqtt(o: MqttOptions | null): void {
+		const tr = o?.transport ?? 'tcp';
+		mqttTransport = tr === 'tls' || tr === 'ws' || tr === 'wss' ? tr : 'tcp';
+		mqttWsPath = o?.ws_path ?? '';
+		mqttClientId = o?.client_id ?? '';
+		mqttKeepAlive = o?.keep_alive ? String(o.keep_alive) : '';
+		mqttSubscriptions = (o?.subscriptions ?? []).join('\n');
+		mqttClientCert = o?.client_cert ?? '';
+		mqttClientKey = o?.client_key ?? '';
+	}
+	function mqttOptionsToSave(): MqttOptions {
+		const ka = Number.parseInt(mqttKeepAlive, 10);
+		const secure = mqttTransport === 'tls' || mqttTransport === 'wss';
+		const ws = mqttTransport === 'ws' || mqttTransport === 'wss';
+		return {
+			transport: mqttTransport === 'tcp' ? null : mqttTransport,
+			ws_path: ws && mqttWsPath.trim() ? mqttWsPath.trim() : null,
+			client_id: mqttClientId.trim() || null,
+			keep_alive: ka > 0 && ka <= 65535 ? ka : null,
+			subscriptions: mqttSubscriptions.split('\n').map((s) => s.trim()).filter(Boolean),
+			client_cert: secure && mqttClientCert.trim() ? mqttClientCert.trim() + '\n' : null,
+			client_key: secure && mqttClientKey.trim() ? mqttClientKey.trim() + '\n' : null,
+		};
+	}
+	/** The transport; the port follows its usual one unless typed in. */
+	function setMqttTransport(next: 'tcp' | 'tls' | 'ws' | 'wss'): void {
+		const usual = Object.values(MQTT_PORTS).map(String);
+		if (usual.includes(portStr) || portStr.trim() === '') portStr = String(MQTT_PORTS[next]);
+		mqttTransport = next;
 	}
 	/** The protocol as the editor shows it: SFTP and SCP are SSH underneath. */
 	let proto = $derived<Protocol>(filesProto || kind);
@@ -450,7 +498,7 @@
 
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
-	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox' || kind === 's3');
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox' || kind === 'mqtt' || kind === 's3');
 	/** The session or the folder it takes its login from asks each person
 	 *  for their own (only offered in a shared vault). Its login is then
 	 *  nobody's here: only a user name is kept with the session. */
@@ -577,7 +625,7 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006', s3: '443' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006', mqtt: '1883', s3: '443' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
@@ -587,8 +635,9 @@
 		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
 		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp', 's3'] },
 		// Neither a terminal nor a remote desktop: a server's management
-		// controller over Redfish, a device's web page, MikroTik's own app.
-		{ id: 'other', kinds: ['web', 'bmc', 'proxmox', 'winbox'] }
+		// controller over Redfish, a device's web page, an MQTT broker,
+		// MikroTik's own app.
+		{ id: 'other', kinds: ['web', 'bmc', 'proxmox', 'mqtt', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -604,44 +653,60 @@
 	let group = $derived(KIND_GROUPS.find((g) => g.kinds.includes(proto))?.id ?? 'terminal');
 	let groupKinds = $derived((KIND_GROUPS.find((g) => g.id === group)?.kinds ?? []).filter(kindAvailable));
 
-	/* New session's DevOps tab: not a session kind but the way to add what
-	   the DevOps workspaces hold (a cluster, a host, a database connection, a
-	   project), with the editor each of them has. Only for a new session. */
-	let devopsPicked = $state(false);
-	let devopsTools = $derived(getEnabledDevopsTools());
-	let showDevops = $derived(!editSession && !cloneSession && devopsTools.length > 0);
+	/* New session's Databases and DevOps tabs: not session kinds but the way
+	   to add what those workspaces hold (a database connection, a cluster, a
+	   container host, a project). Each one's own editor is drawn in place, as
+	   what they need (an engine, a kubeconfig, a project folder) differs too
+	   much for one form; saving opens it in its tab. Only for a new session. */
+	type ExtraTab = 'databases' | 'devops';
+	let extraTab = $state<ExtraTab | null>(null);
+	let devopsPicked = $derived(extraTab !== null);
+	let devopsTools = $derived(getEnabledDevopsTools().filter((d) => d.id !== 'databases'));
+	let devopsTool = $state<DevopsToolId>('kubernetes');
+	let shownDevopsTool = $derived(devopsTools.find((d) => d.id === devopsTool)?.id ?? devopsTools[0]?.id ?? 'kubernetes');
+	let showExtraTabs = $derived(!editSession && !cloneSession);
 	$effect(() => {
-		if (!open) devopsPicked = false;
+		if (!open) extraTab = null;
 	});
 
-	function addDevopsItem(tool: DevopsTool): void {
-		if (tool.id === 'ansible' || tool.id === 'tofu') {
-			const st = tool.id === 'ansible' ? ansibleState : tofuState;
-			// The project list holds the add button: leave the open project,
-			// unless a run in it would be hidden.
-			if (st.getActiveProjectId()) {
-				if (st.isCommandRunning()) {
-					toastDevops(t('devops.new_busy'), 'warning');
-					return;
-				}
-				st.closeProject();
-			}
-		}
-		requestNewDevopsItem(tool.id);
+	function clusterAdded(c: { id: string; name: string }): void {
+		clustersChanged();
 		open = false;
+		openDevopsTab('kubernetes', c.id, c.name);
 	}
 
-	const DEVOPS_NEW_LABEL: Record<string, string> = {
-		ansible: 'devops.new_ansible',
-		tofu: 'devops.new_tofu',
-		databases: 'devops.new_database',
-		containers: 'devops.new_container_host',
-		kubernetes: 'devops.new_k8s_cluster'
-	};
+	function hostAdded(h: { id: string; name: string }): void {
+		hostsChanged();
+		open = false;
+		openDevopsTab('containers', h.id, h.name);
+	}
+
+	async function connectionAdded(c: { id: string }): Promise<void> {
+		open = false;
+		openDevopsTab('databases');
+		const info = await dbState.openConnection(c.id);
+		if (info?.engine === 'redis') dbState.openRedis(c.id);
+	}
+
+	async function projectAdded(tool: 'ansible' | 'tofu', id: string): Promise<void> {
+		const st = tool === 'ansible' ? ansibleState : tofuState;
+		open = false;
+		openDevopsTab(tool);
+		// A run goes on in the open project; switching would hide it.
+		if (st.isCommandRunning()) {
+			toastDevops(t('devops.project_busy'), 'warning');
+			return;
+		}
+		try {
+			await st.openProject(id);
+		} catch (e) {
+			toastDevops(String(e), 'error');
+		}
+	}
 
 	/** A group's tab: its first protocol, unless the session already is one of its. */
 	function pickGroup(id: (typeof KIND_GROUPS)[number]['id']): void {
-		devopsPicked = false;
+		extraTab = null;
 		if (id === group) return;
 		const first = KIND_GROUPS.find((g) => g.id === id)?.kinds.find(kindAvailable);
 		if (first) setKind(first);
@@ -739,7 +804,7 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc', 's3'];
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc', 'mqtt', 's3'];
 	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
@@ -764,11 +829,11 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 's3' && kind !== 'bmc' && kind !== 'proxmox' && !filesProto);
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && kind !== 'mqtt' && kind !== 's3' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
-		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || !!usedCredential || personal || username.trim().length > 0) &&
+		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || kind === 'mqtt' || !!usedCredential || personal || username.trim().length > 0) &&
 		!saving
 	);
 
@@ -840,6 +905,7 @@
 		osCleared = false;
 		fillProxmox(editSession?.proxmox ?? null);
 		fillS3(editSession?.s3 ?? null);
+		fillMqtt(editSession?.mqtt ?? null);
 		osChoice = editSession?.os_manual ? (editSession.detected_os ?? '') : '';
 		if (editSession) {
 			kind = sessionKind(editSession);
@@ -1053,9 +1119,11 @@
 		const bmc = kind === 'bmc';
 		const pve = kind === 'proxmox';
 		const s3 = kind === 's3';
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve || s3;
 		const s3ToSave: S3Options | null = s3 ? s3OptionsToSave() : null;
+		const mqtt = kind === 'mqtt';
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve || mqtt || s3;
 		const proxmoxToSave = pve ? proxmoxOptionsToSave() : null;
+		const mqttToSave = mqtt ? mqttOptionsToSave() : null;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
 		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
 		const vncToSave: VncOptions | null = vnc && vncEncryption ? { encryption: vncEncryption } : null;
@@ -1226,6 +1294,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? { ...webToSave(), certs: webCerts } : null,
 					proxmox: proxmoxToSave,
+					mqtt: mqttToSave ? { ...mqttToSave, certs: editSession.mqtt?.certs } : null,
 					bmc: bmc ? { ...editSession.bmc, vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
@@ -1286,6 +1355,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? webToSave() : null,
 					proxmox: proxmoxToSave,
+					mqtt: mqttToSave,
 					bmc: bmc ? { vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
@@ -1410,7 +1480,8 @@
 <svelte:window bind:innerWidth={windowWidth} />
 
 <Modal {open} onclose={handleClose} title={isEditing ? t('session.edit_session') : cloneSession ? t('session.clone_session') : t('session.new')} maxWidth={wide ? WIDE_DIALOG : undefined} height={isMobile() ? undefined : DIALOG_HEIGHT} fullOnPhone>
-	<form class="form session-form" onsubmit={(e) => { e.preventDefault(); handleSave(); }}>
+	<!-- Not a form while a DevOps editor (with a form of its own) is shown. -->
+	<svelte:element this={devopsPicked ? 'div' : 'form'} class="form session-form" onsubmit={(e: SubmitEvent) => { e.preventDefault(); if (!devopsPicked) handleSave(); }}>
 		<!-- Same control as the auth method below, but a grid that wraps into
 		     rows where the window is narrow, so no protocol is cut to "S…". -->
 		<div class="auth-section">
@@ -1422,13 +1493,24 @@
 						{t(`session.category_${g.id}`)}
 					</button>
 				{/each}
-				{#if showDevops}
-					<button type="button" role="tab" class="category-tab" class:active={devopsPicked} aria-selected={devopsPicked} disabled={saving} onclick={() => (devopsPicked = true)}>
+				{#if showExtraTabs}
+					<button type="button" role="tab" class="category-tab" class:active={extraTab === 'databases'} aria-selected={extraTab === 'databases'} disabled={saving} onclick={() => (extraTab = 'databases')}>
+						{t('nav.databases')}
+					</button>
+					<button type="button" role="tab" class="category-tab" class:active={extraTab === 'devops'} aria-selected={extraTab === 'devops'} disabled={saving} onclick={() => (extraTab = 'devops')}>
 						{t('devops.sessions_group')}
 					</button>
 				{/if}
 			</div>
-			{#if !devopsPicked}
+			{#if extraTab === 'devops'}
+			<div class="auth-toggle protocol-toggle">
+				{#each devopsTools as tool (tool.id)}
+					<button type="button" class="auth-btn" class:active={shownDevopsTool === tool.id} onclick={() => (devopsTool = tool.id)}>
+						{tool.label()}
+					</button>
+				{/each}
+			</div>
+			{:else if !extraTab}
 			<div class="auth-toggle protocol-toggle">
 				{#each groupKinds as k (k)}
 					<button type="button" class="auth-btn" class:active={proto === k} disabled={saving} onclick={() => setKind(k)} title={k === 'rdp' ? t('session.protocol_rdp') : undefined}>
@@ -1439,23 +1521,20 @@
 			{/if}
 		</div>
 
-		{#if devopsPicked}
-			<!-- Each tool's own editor, in its tab: what it needs (a kubeconfig,
-			     an engine, a project folder) differs too much for one form. -->
-			<div class="devops-new">
-				{#each devopsTools as tool (tool.id)}
-					<button type="button" class="devops-new-item" onclick={() => addDevopsItem(tool)}>
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-							<path d={tool.icon} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
-						</svg>
-						<span class="devops-new-text">
-							<span class="devops-new-title">{t(DEVOPS_NEW_LABEL[tool.id])}</span>
-							<span class="devops-new-desc">{tool.description()}</span>
-						</span>
-					</button>
-				{/each}
-				<p class="devops-new-hint">{t('devops.new_hint')}</p>
-			</div>
+		{#if extraTab === 'databases'}
+			<ConnectionEditor inline open onclose={() => {}} onsaved={connectionAdded} />
+		{:else if extraTab === 'devops'}
+			{#key shownDevopsTool}
+				{#if shownDevopsTool === 'kubernetes'}
+					<ClusterEditor inline open initial={null} onclose={() => {}} onsaved={clusterAdded} ondeleted={() => {}} />
+				{:else if shownDevopsTool === 'containers'}
+					<HostEditor inline open host={null} onclose={() => {}} onsaved={hostAdded} ondeleted={() => {}} />
+				{:else if shownDevopsTool === 'ansible'}
+					<AnsibleProjectEditor inline open onclose={() => {}} oncreate={(p) => projectAdded('ansible', p.id)} />
+				{:else if shownDevopsTool === 'tofu'}
+					<TofuProjectEditor inline open onclose={() => {}} oncreate={(p) => projectAdded('tofu', p.id)} />
+				{/if}
+			{/key}
 		{:else}
 
 		<!-- On a wide window two columns; otherwise the columns vanish
@@ -1463,7 +1542,7 @@
 		<div class="columns" class:wide>
 		<div class="column">
 		{#if wide}<span class="column-title">{t('session.column_connection')}</span>{/if}
-		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : kind === 'proxmox' ? 'pve1' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
+		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : kind === 'proxmox' ? 'pve1' : kind === 'mqtt' ? 'Home broker' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
 
 		{#if kind === 'wsl'}
 			<div class="shell-field">
@@ -1592,7 +1671,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={personal ? t('credential.personal_username') : kind === 's3' ? t('s3.access_key') : kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 's3' ? 'AKIAIOSFODNN7EXAMPLE' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
+			<Input label={personal ? t('credential.personal_username') : kind === 's3' ? t('s3.access_key') : kind === 'telnet' ? t('session.telnet_username') : kind === 'mqtt' ? t('session.username_optional') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 's3' ? 'AKIAIOSFODNN7EXAMPLE' : kind === 'ftp' || kind === 'mqtt' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -2232,6 +2311,46 @@
 				<Input label={t('proxmox.token_secret')} type="password" bind:value={pveTokenSecret} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" disabled={saving} />
 			{/if}
 			<p class="shell-hint">{t('proxmox.editor_hint')}</p>
+		{:else if kind === 'mqtt'}
+			<!-- A broker login (optional), how to reach the broker, and what
+			     to subscribe to on connect. -->
+			{#if !usedCredential && !personal}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+				</div>
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="mqtt-transport">{t('mqtt.transport')}</label>
+				<select id="mqtt-transport" class="via-select" value={mqttTransport} onchange={(e) => setMqttTransport(e.currentTarget.value as 'tcp' | 'tls' | 'ws' | 'wss')} disabled={saving}>
+					<option value="tcp">{t('mqtt.transport_tcp')}</option>
+					<option value="tls">{t('mqtt.transport_tls')}</option>
+					<option value="ws">{t('mqtt.transport_ws')}</option>
+					<option value="wss">{t('mqtt.transport_wss')}</option>
+				</select>
+				{#if mqttTransport === 'tcp' || mqttTransport === 'ws'}
+					<p class="shell-hint">{t('mqtt.transport_plain_hint')}</p>
+				{/if}
+			</div>
+			{#if mqttTransport === 'ws' || mqttTransport === 'wss'}
+				<Input label={t('mqtt.ws_path')} bind:value={mqttWsPath} placeholder="/mqtt" disabled={saving} />
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="mqtt-subs">{t('mqtt.subscriptions')}</label>
+				<textarea id="mqtt-subs" class="spice-ca" rows="3" bind:value={mqttSubscriptions} placeholder={'#\n$SYS/#'} spellcheck="false" disabled={saving}></textarea>
+				<p class="shell-hint">{t('mqtt.subscriptions_hint')}</p>
+			</div>
+			<Input label={t('mqtt.client_id')} bind:value={mqttClientId} placeholder={t('mqtt.client_id_placeholder')} disabled={saving} />
+			<Input label={t('mqtt.keep_alive')} bind:value={mqttKeepAlive} type="number" placeholder="60" disabled={saving} />
+			{#if mqttTransport === 'tls' || mqttTransport === 'wss'}
+				<div class="shell-field">
+					<label class="via-label" for="mqtt-cert">{t('mqtt.client_cert')}</label>
+					<textarea id="mqtt-cert" class="spice-ca" rows="3" bind:value={mqttClientCert} placeholder="-----BEGIN CERTIFICATE-----" spellcheck="false" disabled={saving}></textarea>
+					<label class="via-label" for="mqtt-key">{t('mqtt.client_key')}</label>
+					<textarea id="mqtt-key" class="spice-ca" rows="3" bind:value={mqttClientKey} placeholder="-----BEGIN PRIVATE KEY-----" spellcheck="false" disabled={saving}></textarea>
+					<p class="shell-hint">{t('mqtt.client_cert_hint')}</p>
+				</div>
+			{/if}
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->
@@ -2700,7 +2819,7 @@
 		{#if error}
 			<div class="error-message">{error}</div>
 		{/if}
-	</form>
+	</svelte:element>
 
 	{#snippet actions()}
 		<Button variant="secondary" onclick={handleClose} disabled={saving}>
@@ -2720,59 +2839,6 @@
 </Modal>
 
 <style>
-	.devops-new {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-
-	.devops-new-item {
-		display: flex;
-		align-items: flex-start;
-		gap: 12px;
-		padding: 10px 12px;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		background: var(--color-bg-secondary);
-		color: var(--color-text-primary);
-		font-family: var(--font-sans);
-		text-align: left;
-		cursor: pointer;
-		transition: border-color 0.15s ease, background-color 0.15s ease;
-	}
-
-	.devops-new-item:hover {
-		border-color: var(--color-accent);
-	}
-
-	.devops-new-item svg {
-		flex-shrink: 0;
-		margin-top: 1px;
-		color: var(--color-text-secondary);
-	}
-
-	.devops-new-text {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-	}
-
-	.devops-new-title {
-		font-size: var(--text-sm);
-		font-weight: 600;
-	}
-
-	.devops-new-desc,
-	.devops-new-hint {
-		font-size: var(--text-xs, 0.75rem);
-		color: var(--color-text-secondary);
-	}
-
-	.devops-new-hint {
-		margin: 4px 2px 0;
-	}
-
 	.form {
 		display: flex;
 		flex-direction: column;

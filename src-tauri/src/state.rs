@@ -68,6 +68,8 @@ pub enum SessionKind {
     /// Amazon S3 or an S3-compatible store (MinIO, R2…), shown in the
     /// full-pane file manager; see `crate::s3`.
     S3,
+    /// An MQTT broker: its topics as they arrive, publishing; see `crate::mqtt`.
+    Mqtt,
 }
 
 impl SessionKind {
@@ -293,6 +295,10 @@ pub struct SessionConfig {
     /// certificates it trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3: Option<crate::s3::S3Options>,
+    /// MQTT only: transport, client ID, topic filters, client certificate
+    /// and the certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mqtt: Option<crate::mqtt::MqttOptions>,
 }
 
 /// How to wake a session's machine over the network.
@@ -715,6 +721,8 @@ pub struct AppState {
     pub proxmox_manager: Arc<crate::proxmox::ProxmoxManager>,
     /// Open S3 sessions.
     pub s3_manager: Arc<crate::s3::S3Manager>,
+    /// Open MQTT sessions.
+    pub mqtt_manager: Arc<crate::mqtt::MqttManager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -767,6 +775,7 @@ impl AppState {
             bmc_manager: Arc::new(crate::bmc::BmcManager::new()),
             proxmox_manager: Arc::new(crate::proxmox::ProxmoxManager::new()),
             s3_manager: Arc::new(crate::s3::S3Manager::new()),
+            mqtt_manager: Arc::new(crate::mqtt::MqttManager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),

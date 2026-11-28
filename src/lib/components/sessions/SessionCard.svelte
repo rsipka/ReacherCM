@@ -217,6 +217,9 @@
 					{:else if session.kind === 'proxmox'}
 						<!-- Proxmox's own mark. -->
 						<path d={brandIcons.proxmox.path} fill="currentColor" stroke="none" />
+					{:else if session.kind === 'mqtt'}
+						<!-- A hub with spokes: topics branching off a broker. -->
+						<circle cx="12" cy="12" r="2" /><path d="M12 10V4M13.7 13l5.3 3M10.3 13 5 16" /><circle cx="12" cy="4" r="1" /><circle cx="19" cy="16" r="1" /><circle cx="5" cy="16" r="1" />
 					{:else if session.kind === 'bmc'}
 						<!-- A rack server with a pulse: its management controller. -->
 						<path d="M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01M11 17h2l1-2 2 4 1-2h1" />
@@ -350,6 +353,9 @@
 		{:else if session.kind === 'proxmox'}
 			<!-- Talks to Proxmox VE's API. -->
 			<span class="auth-badge" title={t('proxmox.badge_hint')}>{session.port === 8007 ? (session.proxmox?.token_id ? t('proxmox.badge_pbs_token') : 'PBS') : session.proxmox?.token_id ? t('proxmox.badge_token') : t('proxmox.badge')}</span>
+		{:else if session.kind === 'mqtt'}
+			<!-- How it reaches the broker. -->
+			<span class="auth-badge" title={t('mqtt.badge_hint')}>{session.mqtt?.transport === 'tls' ? 'MQTTS' : session.mqtt?.transport === 'ws' ? 'WS' : session.mqtt?.transport === 'wss' ? 'WSS' : 'MQTT'}</span>
 		{:else if session.kind === 'bmc'}
 			<!-- Talks Redfish to the server's management controller. -->
 			<span class="auth-badge" title={t('bmc.badge_hint')}>{t('bmc.badge')}</span>
