@@ -4259,6 +4259,7 @@
   "sync_account.preference_input": "Input and shortcuts",
   "sync_account.preference_selected": "{{count}} selected",
   "sync_account.preference_device_only": "Device only",
+  "sync_account.synced_mark": "Synced with your Reacher CM account",
   "sync_account.preference_server_update": "Update the sync server to sync all the preferences selected here.",
   "sync_account.preference_fullscreen_position": "Full-screen button position",
   "sync_account.preference_key_biometrics": "Remember key passphrases with biometrics",

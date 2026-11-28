@@ -4259,6 +4259,7 @@
   "sync_account.preference_input": "Input e scorciatoie",
   "sync_account.preference_selected": "{{count}} selezionate",
   "sync_account.preference_device_only": "Solo su questo dispositivo",
+  "sync_account.synced_mark": "Sincronizzato con il tuo account Reacher CM",
   "sync_account.preference_server_update": "Aggiorna il server di sincronizzazione per sincronizzare tutte le preferenze selezionate qui.",
   "sync_account.preference_fullscreen_position": "Posizione del pulsante Schermo intero",
   "sync_account.preference_key_biometrics": "Ricorda le passphrase delle chiavi con la biometria",
