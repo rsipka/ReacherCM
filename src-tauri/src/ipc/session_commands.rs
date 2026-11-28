@@ -804,6 +804,7 @@ pub async fn session_create(
     ftp: Option<crate::ftp::FtpOptions>,
     proxmox: Option<crate::proxmox::ProxmoxOptions>,
     bmc: Option<crate::bmc::BmcOptions>,
+    s3: Option<crate::s3::S3Options>,
     mqtt: Option<crate::mqtt::MqttOptions>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
@@ -932,6 +933,15 @@ pub async fn session_create(
                 p
             })
             .filter(|p| !p.is_empty()),
+        // Its region, bucket and address style as the editor sent them;
+        // certificates likewise.
+        s3: s3
+            .filter(|_| kind == crate::state::SessionKind::S3)
+            .map(|mut o| {
+                o.certs.clear();
+                o
+            })
+            .filter(|o| !o.is_empty()),
         // Its transport and topics as the editor sent them; certificates likewise.
         mqtt: mqtt
             .filter(|_| kind == crate::state::SessionKind::Mqtt)
@@ -1120,6 +1130,14 @@ async fn prepare_update(
     } else {
         None
     };
+    // An S3 session's settings likewise (see `s3_session_cert_trust`).
+    session.s3 = if session.kind == crate::state::SessionKind::S3 {
+        let mut o = session.s3.take().unwrap_or_default();
+        o.certs = stored.as_ref().and_then(|s| s.s3.as_ref()).map(|o| o.certs.clone()).unwrap_or_default();
+        Some(o).filter(|o| !o.is_empty())
+    } else {
+        None
+    };
     // An MQTT session's settings likewise (see `mqtt_session_cert_trust`).
     session.mqtt = if session.kind == crate::state::SessionKind::Mqtt {
         let mut m = session.mqtt.take().unwrap_or_default();
@@ -1176,6 +1194,9 @@ pub use bmc::*;
 pub(crate) mod proxmox;
 pub use proxmox::*;
 
+#[path = "session_s3_cmds.rs"]
+mod s3;
+pub use s3::*;
 #[path = "session_mqtt_cmds.rs"]
 mod mqtt;
 pub use mqtt::*;

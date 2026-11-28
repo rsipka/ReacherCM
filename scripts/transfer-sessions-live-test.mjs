@@ -194,7 +194,7 @@ try {
 	await card('Web hosting').locator('.edit-btn').click();
 	check('the editor opens on Transfers', await until(async () => (await page.locator('.category-tab.active').innerText().catch(() => '')) === 'Transfers'));
 	const protos = await page.locator('.protocol-toggle .auth-btn').allInnerTexts();
-	check('Transfers has SFTP, SCP and FTP', JSON.stringify(protos) === JSON.stringify(['SFTP', 'SCP', 'FTP / FTPS']), JSON.stringify(protos));
+	check('Transfers has SFTP, SCP, FTP and S3', JSON.stringify(protos) === JSON.stringify(['SFTP', 'SCP', 'FTP / FTPS', 'S3 storage']), JSON.stringify(protos));
 	check('FTP is the one picked', (await page.locator('.protocol-toggle .auth-btn.active').innerText()) === 'FTP / FTPS');
 	check('the encryption choice is there', (await page.locator('#ftp-tls').count()) === 1);
 	await page.locator('#ftp-tls').selectOption('implicit');

@@ -316,7 +316,7 @@ fn has_login(kind: SessionKind) -> bool {
 
 /// The kinds the session editor offers a saved credential for.
 fn takes_credential(kind: SessionKind) -> bool {
-    matches!(kind, SessionKind::Ssh | SessionKind::Rdp | SessionKind::Telnet | SessionKind::Winbox | SessionKind::Web | SessionKind::Bmc | SessionKind::Proxmox | SessionKind::Mqtt)
+    matches!(kind, SessionKind::Ssh | SessionKind::Rdp | SessionKind::Telnet | SessionKind::Winbox | SessionKind::Web | SessionKind::Bmc | SessionKind::Proxmox | SessionKind::Mqtt | SessionKind::S3)
 }
 
 /// The kinds the session editor offers a WireGuard tunnel for.

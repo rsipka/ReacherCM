@@ -54,7 +54,7 @@ function kindOf(s: Pick<SessionConfig, 'kind'>): SessionKind {
 /** The kinds the session editor offers a saved credential for. */
 export function takesCredential(s: Pick<SessionConfig, 'kind'>): boolean {
 	const k = kindOf(s);
-	return k === 'ssh' || k === 'rdp' || k === 'telnet' || k === 'winbox' || k === 'web' || k === 'bmc' || k === 'proxmox' || k === 'mqtt';
+	return k === 'ssh' || k === 'rdp' || k === 'telnet' || k === 'winbox' || k === 'web' || k === 'bmc' || k === 'proxmox' || k === 'mqtt' || k === 's3';
 }
 
 /** Whether a saved credential fills in the session's login, once the

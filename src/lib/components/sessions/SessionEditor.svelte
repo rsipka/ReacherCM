@@ -54,6 +54,7 @@
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
 	import type { ProxmoxOptions } from '#lib/ipc/proxmox.js';
+	import { S3_PROVIDERS, type S3Options } from '#lib/ipc/s3.js';
 	import { MQTT_PORTS, type MqttOptions } from '#lib/ipc/mqtt.js';
 	import { parseResolution, type RdpOptions } from '#lib/ipc/rdp.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
@@ -125,6 +126,45 @@
 		const realm = pveRealm === 'other' ? pveRealmOther.trim() : pveRealm;
 		const id = pveTokenId.trim();
 		return { realm: realm || null, token_id: id || null, token_secret: id ? pveTokenSecret.trim() || null : null };
+	}
+	/* An S3 session: the region it signs for, how buckets are addressed,
+	 * the bucket it opens in, and plain HTTP for a store on this network. */
+	let s3Region = $state('');
+	let s3Style = $state<'' | 'path' | 'virtual'>('');
+	let s3Bucket = $state('');
+	let s3Http = $state(false);
+	let s3Certs: string[] = [];
+	function fillS3(o: S3Options | null): void {
+		s3Region = o?.region ?? '';
+		s3Style = o?.path_style == null ? '' : o.path_style ? 'path' : 'virtual';
+		s3Bucket = o?.bucket ?? '';
+		s3Http = o?.http ?? false;
+		s3Certs = o?.certs ?? [];
+	}
+	function s3OptionsToSave(): S3Options {
+		return {
+			region: s3Region.trim() || null,
+			path_style: s3Style === '' ? null : s3Style === 'path',
+			bucket: s3Bucket.trim().replace(/^\/+|\/+$/g, '') || null,
+			http: s3Http,
+			certs: s3Certs,
+		};
+	}
+	/** A provider preset: its usual host and port. */
+	function pickS3Provider(id: string): void {
+		const p = S3_PROVIDERS.find((x) => x.id === id);
+		if (!p) return;
+		host = p.host;
+		portStr = String(p.port);
+		s3Http = !!p.http;
+		if (p.id === 'minio' && s3Style === '') s3Style = 'path';
+	}
+	/** Plain HTTP or HTTPS; the port follows between 80 and 443 unless typed in. */
+	function setS3Http(next: boolean): void {
+		// A number once typed into (the port field is type=number).
+		const cur = String(portStr ?? '').trim();
+		if (cur === '80' || cur === '443' || cur === '') portStr = next ? '80' : '443';
+		s3Http = next;
 	}
 	/* An MQTT session: how it reaches the broker, what it subscribes to,
 	 * and a client certificate for brokers that want one. */
@@ -458,7 +498,7 @@
 
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
-	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox' || kind === 'mqtt');
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox' || kind === 'mqtt' || kind === 's3');
 	/** The session or the folder it takes its login from asks each person
 	 *  for their own (only offered in a shared vault). Its login is then
 	 *  nobody's here: only a user name is kept with the session. */
@@ -585,7 +625,7 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006', mqtt: '1883' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006', mqtt: '1883', s3: '443' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
@@ -593,7 +633,7 @@
 		{ id: 'terminal', kinds: ['ssh', 'telnet', 'serial', 'wsl'] },
 		{ id: 'desktop', kinds: ['rdp', 'vnc', 'spice'] },
 		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
-		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] },
+		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp', 's3'] },
 		// Neither a terminal nor a remote desktop: a server's management
 		// controller over Redfish, a device's web page, an MQTT broker,
 		// MikroTik's own app.
@@ -764,7 +804,7 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc', 'mqtt'];
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc', 'mqtt', 's3'];
 	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
@@ -789,7 +829,7 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && kind !== 'mqtt' && !filesProto);
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && kind !== 'mqtt' && kind !== 's3' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
@@ -864,6 +904,7 @@
 	function fillForm(editSession: SessionConfig | undefined): void {
 		osCleared = false;
 		fillProxmox(editSession?.proxmox ?? null);
+		fillS3(editSession?.s3 ?? null);
 		fillMqtt(editSession?.mqtt ?? null);
 		osChoice = editSession?.os_manual ? (editSession.detected_os ?? '') : '';
 		if (editSession) {
@@ -1077,8 +1118,10 @@
 		/** Jump hosts, proxies, login shells and ssh_config are SSH's alone. */
 		const bmc = kind === 'bmc';
 		const pve = kind === 'proxmox';
+		const s3 = kind === 's3';
+		const s3ToSave: S3Options | null = s3 ? s3OptionsToSave() : null;
 		const mqtt = kind === 'mqtt';
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve || mqtt;
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve || mqtt || s3;
 		const proxmoxToSave = pve ? proxmoxOptionsToSave() : null;
 		const mqttToSave = mqtt ? mqttOptionsToSave() : null;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
@@ -1126,7 +1169,7 @@
 		const notesToSave = notes.trim() ? notes : null;
 		// Remote desktops paint their own screen, and WinBox is its own
 		// program: no terminal colours.
-		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || bmc || pve || !!filesProto;
+		const noTerminal = kind === 'rdp' || kind === 'vnc' || kind === 'spice' || winbox || ftp || s3 || bmc || pve || !!filesProto;
 		const themeToSave = noTerminal ? null : terminalTheme || null;
 		const cursorToSave = noTerminal ? null : cursorChoice || null;
 		const blinkToSave = noTerminal || !blinkChoice ? null : blinkChoice === 'on';
@@ -1255,6 +1298,7 @@
 					bmc: bmc ? { ...editSession.bmc, vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
+					s3: s3ToSave,
 					spice: spiceToSave,
 					vnc: vncToSave,
 					ssh_options: sshOptionsToSave,
@@ -1315,6 +1359,7 @@
 					bmc: bmc ? { vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
+					s3: s3ToSave,
 					spice: spiceToSave,
 					vnc: vncToSave,
 					credentialId: credential,
@@ -1626,7 +1671,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={personal ? t('credential.personal_username') : kind === 'telnet' ? t('session.telnet_username') : kind === 'mqtt' ? t('session.username_optional') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' || kind === 'mqtt' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
+			<Input label={personal ? t('credential.personal_username') : kind === 's3' ? t('s3.access_key') : kind === 'telnet' ? t('session.telnet_username') : kind === 'mqtt' ? t('session.username_optional') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 's3' ? 'AKIAIOSFODNN7EXAMPLE' : kind === 'ftp' || kind === 'mqtt' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -2182,6 +2227,42 @@
 					<option value="none">{t('ftp.tls_none')}</option>
 				</select>
 				<p class="shell-hint">{ftpTls === 'none' ? t('ftp.tls_none_hint') : t('ftp.tls_hint')}</p>
+			</div>
+		{:else if kind === 's3'}
+			<!-- Access key (the user name) and secret key (the password). -->
+			{#if !usedCredential && !personal}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('s3.secret_key')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+				</div>
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="s3-provider">{t('s3.provider')}</label>
+				<select id="s3-provider" class="via-select" value="" onchange={(e) => { pickS3Provider(e.currentTarget.value); e.currentTarget.value = ''; }} disabled={saving}>
+					<option value="">{t('s3.provider_pick')}</option>
+					{#each S3_PROVIDERS as p (p.id)}
+						<option value={p.id}>{p.label}</option>
+					{/each}
+				</select>
+				<p class="shell-hint">{t('s3.provider_hint')}</p>
+			</div>
+			<Input label={t('s3.region')} bind:value={s3Region} placeholder={t('s3.region_auto')} disabled={saving} />
+			<Input label={t('s3.bucket')} bind:value={s3Bucket} placeholder={t('s3.bucket_all')} disabled={saving} />
+			<div class="shell-field">
+				<label class="via-label" for="s3-style">{t('s3.addressing')}</label>
+				<select id="s3-style" class="via-select" bind:value={s3Style} disabled={saving}>
+					<option value="">{t('s3.addressing_auto')}</option>
+					<option value="path">{t('s3.addressing_path')}</option>
+					<option value="virtual">{t('s3.addressing_virtual')}</option>
+				</select>
+				<p class="shell-hint">{t('s3.addressing_hint')}</p>
+			</div>
+			<div class="shell-field">
+				<label class="jump-toggle">
+					<input type="checkbox" checked={s3Http} onchange={(e) => setS3Http(e.currentTarget.checked)} disabled={saving} />
+					<span class="jump-toggle-text">{t('s3.http')}</span>
+				</label>
+				{#if s3Http}<p class="shell-hint">{t('s3.http_hint')}</p>{/if}
 			</div>
 		{:else if kind === 'bmc'}
 			<!-- A Redfish login: the BMC's own user (root on an iDRAC,

@@ -1,6 +1,7 @@
 pub mod ansible;
 pub mod bmc;
 pub mod proxmox;
+pub mod s3;
 pub mod mqtt;
 pub mod plugin;
 pub mod pwmanager;
@@ -705,6 +706,10 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            s3_connect,
+            s3_disconnect,
+            s3_presign,
+            s3_session_cert_trust,
             mqtt_connect,
             mqtt_disconnect,
             mqtt_publish,
@@ -1369,6 +1374,10 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            s3_connect,
+            s3_disconnect,
+            s3_presign,
+            s3_session_cert_trust,
             mqtt_connect,
             mqtt_disconnect,
             mqtt_publish,
