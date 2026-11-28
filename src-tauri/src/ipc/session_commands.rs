@@ -804,6 +804,7 @@ pub async fn session_create(
     ftp: Option<crate::ftp::FtpOptions>,
     proxmox: Option<crate::proxmox::ProxmoxOptions>,
     bmc: Option<crate::bmc::BmcOptions>,
+    mqtt: Option<crate::mqtt::MqttOptions>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -931,6 +932,14 @@ pub async fn session_create(
                 p
             })
             .filter(|p| !p.is_empty()),
+        // Its transport and topics as the editor sent them; certificates likewise.
+        mqtt: mqtt
+            .filter(|_| kind == crate::state::SessionKind::Mqtt)
+            .map(|mut m| {
+                m.certs.clear();
+                m
+            })
+            .filter(|m| !m.is_empty()),
     };
     session.tidy_documentation();
 
@@ -1111,6 +1120,14 @@ async fn prepare_update(
     } else {
         None
     };
+    // An MQTT session's settings likewise (see `mqtt_session_cert_trust`).
+    session.mqtt = if session.kind == crate::state::SessionKind::Mqtt {
+        let mut m = session.mqtt.take().unwrap_or_default();
+        m.certs = stored.as_ref().and_then(|s| s.mqtt.as_ref()).map(|m| m.certs.clone()).unwrap_or_default();
+        Some(m).filter(|m| !m.is_empty())
+    } else {
+        None
+    };
 
     // A login sent is the session's own, unless it is one a credential
     // filled in (the editor shows that one): then the stored own login stays.
@@ -1158,6 +1175,10 @@ pub use bmc::*;
 #[path = "session_proxmox_cmds.rs"]
 pub(crate) mod proxmox;
 pub use proxmox::*;
+
+#[path = "session_mqtt_cmds.rs"]
+mod mqtt;
+pub use mqtt::*;
 pub use hostkeys::*;
 
 #[path = "session_password_history_cmds.rs"]

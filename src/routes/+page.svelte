@@ -18,6 +18,7 @@
 	import FtpPanel from '#lib/components/explorer/FtpPanel.svelte';
 	import BmcPanel from '#lib/components/bmc/BmcPanel.svelte';
 	import ProxmoxPanel from '#lib/components/proxmox/ProxmoxPanel.svelte';
+	import MqttPanel from '#lib/components/mqtt/MqttPanel.svelte';
 	import { stopExternalEdits } from '#lib/explorer/external-edit.js';
 	import { dropQueue } from '#lib/explorer/transfer-queue.svelte.js';
 	import RdpPanel from '#lib/components/rdp/RdpPanel.svelte';
@@ -441,6 +442,10 @@
 							{:else if tab.type === 'proxmox'}
 								<div class="pane-body">
 									<ProxmoxPanel {tab} active={focused} />
+								</div>
+							{:else if tab.type === 'mqtt'}
+								<div class="pane-body">
+									<MqttPanel {tab} active={focused} />
 								</div>
 							{:else if tab.type === 'bmc'}
 								<div class="pane-body">

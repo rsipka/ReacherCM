@@ -90,6 +90,15 @@ pub type RefusedSlot = Arc<Mutex<Option<String>>>;
 /// put in the returned slot. Also used by server management sessions
 /// (`crate::bmc`), whose BMCs mostly have self-signed certificates.
 pub fn pinning_config(trusted: &[String]) -> Result<(ClientConfig, RefusedSlot), String> {
+    pinning_config_with(trusted, None)
+}
+
+/// A client certificate chain and its private key, to log in with.
+pub type ClientAuth = (Vec<CertificateDer<'static>>, rustls::pki_types::PrivateKeyDer<'static>);
+
+/// [`pinning_config`], logging in with a client certificate when given
+/// one (MQTT brokers may ask for it; see `crate::mqtt`).
+pub fn pinning_config_with(trusted: &[String], client: Option<ClientAuth>) -> Result<(ClientConfig, RefusedSlot), String> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let roots = RootCertStore { roots: webpki_roots::TLS_SERVER_ROOTS.to_vec() };
     let webpki = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider.clone())
@@ -101,8 +110,11 @@ pub fn pinning_config(trusted: &[String]) -> Result<(ClientConfig, RefusedSlot),
         .with_safe_default_protocol_versions()
         .map_err(|e| format!("TLS setup failed: {e}"))?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(verifier))
-        .with_no_client_auth();
+        .with_custom_certificate_verifier(Arc::new(verifier));
+    let config = match client {
+        Some((chain, key)) => config.with_client_auth_cert(chain, key).map_err(|e| format!("The client certificate cannot be used: {e}"))?,
+        None => config.with_no_client_auth(),
+    };
     Ok((config, refused))
 }
 

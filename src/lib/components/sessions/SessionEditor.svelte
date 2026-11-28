@@ -46,6 +46,7 @@
 	import { DEFAULT_SERIAL_OPTIONS, SERIAL_BAUD_RATES, serialListPorts, type SerialOptions, type SerialPortInfo } from '#lib/ipc/serial.js';
 	import type { SpiceOptions } from '#lib/ipc/spice.js';
 	import type { ProxmoxOptions } from '#lib/ipc/proxmox.js';
+	import { MQTT_PORTS, type MqttOptions } from '#lib/ipc/mqtt.js';
 	import { parseResolution, type RdpOptions } from '#lib/ipc/rdp.js';
 	import type { HistoryMode } from '#lib/ipc/history.js';
 	import type { CursorStyle } from '#lib/terminal/cursor.js';
@@ -116,6 +117,45 @@
 		const realm = pveRealm === 'other' ? pveRealmOther.trim() : pveRealm;
 		const id = pveTokenId.trim();
 		return { realm: realm || null, token_id: id || null, token_secret: id ? pveTokenSecret.trim() || null : null };
+	}
+	/* An MQTT session: how it reaches the broker, what it subscribes to,
+	 * and a client certificate for brokers that want one. */
+	let mqttTransport = $state<'tcp' | 'tls' | 'ws' | 'wss'>('tcp');
+	let mqttWsPath = $state('');
+	let mqttClientId = $state('');
+	let mqttKeepAlive = $state('');
+	let mqttSubscriptions = $state('');
+	let mqttClientCert = $state('');
+	let mqttClientKey = $state('');
+	function fillMqtt(o: MqttOptions | null): void {
+		const tr = o?.transport ?? 'tcp';
+		mqttTransport = tr === 'tls' || tr === 'ws' || tr === 'wss' ? tr : 'tcp';
+		mqttWsPath = o?.ws_path ?? '';
+		mqttClientId = o?.client_id ?? '';
+		mqttKeepAlive = o?.keep_alive ? String(o.keep_alive) : '';
+		mqttSubscriptions = (o?.subscriptions ?? []).join('\n');
+		mqttClientCert = o?.client_cert ?? '';
+		mqttClientKey = o?.client_key ?? '';
+	}
+	function mqttOptionsToSave(): MqttOptions {
+		const ka = Number.parseInt(mqttKeepAlive, 10);
+		const secure = mqttTransport === 'tls' || mqttTransport === 'wss';
+		const ws = mqttTransport === 'ws' || mqttTransport === 'wss';
+		return {
+			transport: mqttTransport === 'tcp' ? null : mqttTransport,
+			ws_path: ws && mqttWsPath.trim() ? mqttWsPath.trim() : null,
+			client_id: mqttClientId.trim() || null,
+			keep_alive: ka > 0 && ka <= 65535 ? ka : null,
+			subscriptions: mqttSubscriptions.split('\n').map((s) => s.trim()).filter(Boolean),
+			client_cert: secure && mqttClientCert.trim() ? mqttClientCert.trim() + '\n' : null,
+			client_key: secure && mqttClientKey.trim() ? mqttClientKey.trim() + '\n' : null,
+		};
+	}
+	/** The transport; the port follows its usual one unless typed in. */
+	function setMqttTransport(next: 'tcp' | 'tls' | 'ws' | 'wss'): void {
+		const usual = Object.values(MQTT_PORTS).map(String);
+		if (usual.includes(portStr) || portStr.trim() === '') portStr = String(MQTT_PORTS[next]);
+		mqttTransport = next;
 	}
 	/** The protocol as the editor shows it: SFTP and SCP are SSH underneath. */
 	let proto = $derived<Protocol>(filesProto || kind);
@@ -410,7 +450,7 @@
 
 	/** The kinds with a *Login* picker. Another kind (FTP, VNC…) keeps its
 	 *  own fields even when a credential was picked before switching to it. */
-	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox');
+	let takesCredential = $derived(kind === 'ssh' || kind === 'rdp' || kind === 'telnet' || kind === 'winbox' || kind === 'web' || kind === 'bmc' || kind === 'proxmox' || kind === 'mqtt');
 	/** The session or the folder it takes its login from asks each person
 	 *  for their own (only offered in a shared vault). Its login is then
 	 *  nobody's here: only a user name is kept with the session. */
@@ -537,7 +577,7 @@
 		return list.length ? list : null;
 	}
 
-	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006' };
+	const DEFAULT_PORT: Record<SessionKind, string> = { ssh: '22', rdp: '3389', vnc: '5900', spice: '5900', wsl: '0', telnet: '23', serial: '0', winbox: '8291', web: '443', ftp: '21', bmc: '443', proxmox: '8006', mqtt: '1883' };
 
 	/** The session kinds by what they are, in the editor's first row. A group
 	 *  with nothing to offer here (Transfers, until it has protocols) is not shown. */
@@ -547,8 +587,9 @@
 		// Files in the full-pane file manager; SFTP and SCP are SSH sessions.
 		{ id: 'transfer', kinds: ['sftp', 'scp', 'ftp'] },
 		// Neither a terminal nor a remote desktop: a server's management
-		// controller over Redfish, a device's web page, MikroTik's own app.
-		{ id: 'other', kinds: ['web', 'bmc', 'proxmox', 'winbox'] }
+		// controller over Redfish, a device's web page, an MQTT broker,
+		// MikroTik's own app.
+		{ id: 'other', kinds: ['web', 'bmc', 'proxmox', 'mqtt', 'winbox'] }
 	];
 
 	/** Whether this computer can open a kind. The one being edited always shows. */
@@ -699,7 +740,7 @@
 	/** The WireGuard profile the connection goes through; '' for none. SSH and Telnet. */
 	let wireguardId = $state('');
 	const wgProfiles = $derived(wireguardProfiles().map((p) => ({ id: p.id, name: p.name })));
-	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc'];
+	const wireguardKinds = ['ssh', 'telnet', 'rdp', 'vnc', 'spice', 'web', 'winbox', 'ftp', 'bmc', 'mqtt'];
 	const wireguardToSave = () => (wireguardKinds.includes(kind) && wireguardId ? wireguardId : null);
 	let jumpHops = $state<Array<{host: string; port: string; username: string; authType: 'Password' | 'Key' | 'Agent' | 'Manager'; password: string; keyPath: string; keyPassphrase: string; passwordRef: SecretRef | null; keyPassphraseRef: SecretRef | null; credentialId: string; read: JumpHostConfig | null}>>([]);
 	let proxyEnabled = $state(false);
@@ -724,11 +765,11 @@
 	let wide = $derived(!isMobile() && windowWidth >= WIDE_MIN_WINDOW);
 	/** Whether this kind opens in a terminal, so its right column holds
 	 *  terminal settings too. */
-	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && !filesProto);
+	let opensTerminal = $derived(kind !== 'rdp' && kind !== 'vnc' && kind !== 'spice' && kind !== 'winbox' && kind !== 'web' && kind !== 'ftp' && kind !== 'bmc' && kind !== 'proxmox' && kind !== 'mqtt' && !filesProto);
 	let canSave = $derived(
 		name.trim().length > 0 &&
 		(kind === 'wsl' ? wslDistro.trim().length > 0 : host.trim().length > 0) &&
-		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || !!usedCredential || personal || username.trim().length > 0) &&
+		(kind === 'vnc' || kind === 'spice' || kind === 'wsl' || kind === 'telnet' || kind === 'serial' || kind === 'web' || kind === 'ftp' || kind === 'mqtt' || !!usedCredential || personal || username.trim().length > 0) &&
 		!saving
 	);
 
@@ -799,6 +840,7 @@
 	function fillForm(editSession: SessionConfig | undefined): void {
 		osCleared = false;
 		fillProxmox(editSession?.proxmox ?? null);
+		fillMqtt(editSession?.mqtt ?? null);
 		osChoice = editSession?.os_manual ? (editSession.detected_os ?? '') : '';
 		if (editSession) {
 			kind = sessionKind(editSession);
@@ -1011,8 +1053,10 @@
 		/** Jump hosts, proxies, login shells and ssh_config are SSH's alone. */
 		const bmc = kind === 'bmc';
 		const pve = kind === 'proxmox';
-		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve;
+		const mqtt = kind === 'mqtt';
+		const desktop = rdp || vnc || spice || wsl || telnet || serial || winbox || web || ftp || bmc || pve || mqtt;
 		const proxmoxToSave = pve ? proxmoxOptionsToSave() : null;
+		const mqttToSave = mqtt ? mqttOptionsToSave() : null;
 		const filesToSave = kind === 'ssh' && filesProto ? filesProto : null;
 		const ftpToSave: FtpOptions | null = ftp ? { tls: ftpTls || null } : null;
 		const vncToSave: VncOptions | null = vnc && vncEncryption ? { encryption: vncEncryption } : null;
@@ -1183,6 +1227,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? { ...webToSave(), certs: webCerts } : null,
 					proxmox: proxmoxToSave,
+					mqtt: mqttToSave ? { ...mqttToSave, certs: editSession.mqtt?.certs } : null,
 					bmc: bmc ? { ...editSession.bmc, vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
@@ -1242,6 +1287,7 @@
 					serial: serial ? { ...serialOptions } : null,
 					web: web ? webToSave() : null,
 					proxmox: proxmoxToSave,
+					mqtt: mqttToSave,
 					bmc: bmc ? { vnc: bmcVncToSave() } : null,
 					files: filesToSave,
 					ftp: ftpToSave,
@@ -1418,7 +1464,7 @@
 		<div class="columns" class:wide>
 		<div class="column">
 		{#if wide}<span class="column-title">{t('session.column_connection')}</span>{/if}
-		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : kind === 'proxmox' ? 'pve1' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
+		<Input label={t('session.name')} bind:value={name} placeholder={kind === 'rdp' ? 'Office PC' : kind === 'telnet' ? 'Core switch' : kind === 'serial' ? 'Switch console' : kind === 'winbox' ? 'Router' : kind === 'web' ? 'iDRAC rack 3' : kind === 'bmc' ? 'iLO rack 2' : kind === 'proxmox' ? 'pve1' : kind === 'mqtt' ? 'Home broker' : proto === 'ftp' || filesProto ? 'File server' : 'My Server'} disabled={saving} />
 
 		{#if kind === 'wsl'}
 			<div class="shell-field">
@@ -1547,7 +1593,7 @@
 		{/if}
 
 		{#if kind !== 'vnc' && kind !== 'spice' && kind !== 'wsl' && kind !== 'serial' && !usedCredential}
-			<Input label={personal ? t('credential.personal_username') : kind === 'telnet' ? t('session.telnet_username') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
+			<Input label={personal ? t('credential.personal_username') : kind === 'telnet' ? t('session.telnet_username') : kind === 'mqtt' ? t('session.username_optional') : t('session.username')} bind:value={username} placeholder={kind === 'rdp' ? 'Administrator' : kind === 'ftp' || kind === 'mqtt' ? 'anonymous' : kind === 'telnet' || kind === 'winbox' || kind === 'web' ? 'admin' : kind === 'bmc' ? 'root / Administrator' : 'root'} disabled={saving} />
 		{/if}
 
 		{#if kind === 'rdp'}
@@ -2151,6 +2197,46 @@
 				<Input label={t('proxmox.token_secret')} type="password" bind:value={pveTokenSecret} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" disabled={saving} />
 			{/if}
 			<p class="shell-hint">{t('proxmox.editor_hint')}</p>
+		{:else if kind === 'mqtt'}
+			<!-- A broker login (optional), how to reach the broker, and what
+			     to subscribe to on connect. -->
+			{#if !usedCredential && !personal}
+				<div class="shell-field">
+					<SecretRefField approvable label={t('session.password_optional')} bind:value={password} bind:secretRef={passwordRef} placeholder={t('session.stored_encrypted')} disabled={saving} onpick={(e) => (username = nameFromEntry(username, e))} />
+					{@render pastPasswords()}
+				</div>
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="mqtt-transport">{t('mqtt.transport')}</label>
+				<select id="mqtt-transport" class="via-select" value={mqttTransport} onchange={(e) => setMqttTransport(e.currentTarget.value as 'tcp' | 'tls' | 'ws' | 'wss')} disabled={saving}>
+					<option value="tcp">{t('mqtt.transport_tcp')}</option>
+					<option value="tls">{t('mqtt.transport_tls')}</option>
+					<option value="ws">{t('mqtt.transport_ws')}</option>
+					<option value="wss">{t('mqtt.transport_wss')}</option>
+				</select>
+				{#if mqttTransport === 'tcp' || mqttTransport === 'ws'}
+					<p class="shell-hint">{t('mqtt.transport_plain_hint')}</p>
+				{/if}
+			</div>
+			{#if mqttTransport === 'ws' || mqttTransport === 'wss'}
+				<Input label={t('mqtt.ws_path')} bind:value={mqttWsPath} placeholder="/mqtt" disabled={saving} />
+			{/if}
+			<div class="shell-field">
+				<label class="via-label" for="mqtt-subs">{t('mqtt.subscriptions')}</label>
+				<textarea id="mqtt-subs" class="spice-ca" rows="3" bind:value={mqttSubscriptions} placeholder={'#\n$SYS/#'} spellcheck="false" disabled={saving}></textarea>
+				<p class="shell-hint">{t('mqtt.subscriptions_hint')}</p>
+			</div>
+			<Input label={t('mqtt.client_id')} bind:value={mqttClientId} placeholder={t('mqtt.client_id_placeholder')} disabled={saving} />
+			<Input label={t('mqtt.keep_alive')} bind:value={mqttKeepAlive} type="number" placeholder="60" disabled={saving} />
+			{#if mqttTransport === 'tls' || mqttTransport === 'wss'}
+				<div class="shell-field">
+					<label class="via-label" for="mqtt-cert">{t('mqtt.client_cert')}</label>
+					<textarea id="mqtt-cert" class="spice-ca" rows="3" bind:value={mqttClientCert} placeholder="-----BEGIN CERTIFICATE-----" spellcheck="false" disabled={saving}></textarea>
+					<label class="via-label" for="mqtt-key">{t('mqtt.client_key')}</label>
+					<textarea id="mqtt-key" class="spice-ca" rows="3" bind:value={mqttClientKey} placeholder="-----BEGIN PRIVATE KEY-----" spellcheck="false" disabled={saving}></textarea>
+					<p class="shell-hint">{t('mqtt.client_cert_hint')}</p>
+				</div>
+			{/if}
 		{:else if kind === 'winbox'}
 			<!-- WinBox logs in by itself with what is saved here; how the
 			     password reaches it is Settings' choice (Sessions). -->
