@@ -1,6 +1,7 @@
 pub mod ansible;
 pub mod bmc;
 pub mod proxmox;
+pub mod s3;
 pub mod plugin;
 pub mod pwmanager;
 pub mod ipc;
@@ -704,6 +705,10 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            s3_connect,
+            s3_disconnect,
+            s3_presign,
+            s3_session_cert_trust,
             // This computer's files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
@@ -1362,6 +1367,10 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            s3_connect,
+            s3_disconnect,
+            s3_presign,
+            s3_session_cert_trust,
             drag_preview_icon,
             drag_cache_dir,
             dragout_start,

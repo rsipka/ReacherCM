@@ -65,6 +65,9 @@ pub enum SessionKind {
     /// A Proxmox VE node or cluster over its API: guests, power, snapshots,
     /// tasks and consoles; see `crate::proxmox`.
     Proxmox,
+    /// Amazon S3 or an S3-compatible store (MinIO, R2…), shown in the
+    /// full-pane file manager; see `crate::s3`.
+    S3,
 }
 
 impl SessionKind {
@@ -286,6 +289,10 @@ pub struct SessionConfig {
     /// Proxmox only: realm, API token and the certificates it trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxmox: Option<crate::proxmox::ProxmoxOptions>,
+    /// S3 only: region, address style, bucket, plain HTTP and the
+    /// certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3: Option<crate::s3::S3Options>,
 }
 
 /// How to wake a session's machine over the network.
@@ -706,6 +713,8 @@ pub struct AppState {
     pub bmc_manager: Arc<crate::bmc::BmcManager>,
     /// Open Proxmox sessions.
     pub proxmox_manager: Arc<crate::proxmox::ProxmoxManager>,
+    /// Open S3 sessions.
+    pub s3_manager: Arc<crate::s3::S3Manager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -757,6 +766,7 @@ impl AppState {
             ftp_manager: Arc::new(crate::ftp::FtpManager::new()),
             bmc_manager: Arc::new(crate::bmc::BmcManager::new()),
             proxmox_manager: Arc::new(crate::proxmox::ProxmoxManager::new()),
+            s3_manager: Arc::new(crate::s3::S3Manager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),

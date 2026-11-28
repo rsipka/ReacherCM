@@ -1420,6 +1420,13 @@
 	 * Open a saved FTP session in the full-pane file manager. Its panel
 	 * connects it, asking for a password or about a certificate there.
 	 */
+	/** Open a saved S3 session in the file manager, in a tab of its own. */
+	function openS3(session: SessionConfig): void {
+		setActivePage('terminal');
+		const tab = createTab('s3', session.host, undefined, session.name, null);
+		tab.s3ConnectParams = { sessionId: session.id, host: session.host, port: session.port, username: session.username };
+	}
+
 	function openFtp(session: SessionConfig): void {
 		setActivePage('terminal');
 		const tab = createTab('ftp', session.host, undefined, session.name, null);
@@ -1904,6 +1911,10 @@
 		}
 		if (sessionKind(session) === 'ftp') {
 			openFtp(session);
+			return;
+		}
+		if (sessionKind(session) === 's3') {
+			openS3(session);
 			return;
 		}
 		if (sessionKind(session) === 'bmc') {

@@ -49,9 +49,11 @@
 		terminal?: boolean;
 		/** An SCP session's connection: copies go through scp. */
 		scp?: boolean;
+		/** More menu items for one server file (an S3 session's share link). */
+		remoteFileItems?: (entry: FileEntry) => MenuItem[];
 	}
 
-	let { connectionId, active, onclose = () => {}, terminal = true, scp = false }: Props = $props();
+	let { connectionId, active, onclose = () => {}, terminal = true, scp = false, remoteFileItems }: Props = $props();
 
 	const local = new Pane('local', (path) => localListDir(path));
 	const remote = new Pane('remote', async (path) => {
@@ -508,6 +510,7 @@
 			items.push({ label: t('explorer.copy_path'), action: () => void copyText(sel.map((e) => e.path).join('\n')) });
 		}
 		if (one?.isDirectory && p.kind === 'remote' && terminal) items.push({ label: t('explorer.cd_here'), action: () => cdTerminal(one.path) });
+		if (file && p.kind === 'remote' && remoteFileItems) items.push(...remoteFileItems(file));
 		if (one && p.kind === 'local' && !mobile) items.push({ label: t('files.reveal'), action: () => void reveal(one.path) });
 		return items;
 	}

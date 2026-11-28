@@ -804,6 +804,7 @@ pub async fn session_create(
     ftp: Option<crate::ftp::FtpOptions>,
     proxmox: Option<crate::proxmox::ProxmoxOptions>,
     bmc: Option<crate::bmc::BmcOptions>,
+    s3: Option<crate::s3::S3Options>,
 ) -> Result<SessionConfig, String> {
     let mut manager = state.vault_manager.lock().await;
     let kind = kind.unwrap_or_default();
@@ -931,6 +932,15 @@ pub async fn session_create(
                 p
             })
             .filter(|p| !p.is_empty()),
+        // Its region, bucket and address style as the editor sent them;
+        // certificates likewise.
+        s3: s3
+            .filter(|_| kind == crate::state::SessionKind::S3)
+            .map(|mut o| {
+                o.certs.clear();
+                o
+            })
+            .filter(|o| !o.is_empty()),
     };
     session.tidy_documentation();
 
@@ -1111,6 +1121,14 @@ async fn prepare_update(
     } else {
         None
     };
+    // An S3 session's settings likewise (see `s3_session_cert_trust`).
+    session.s3 = if session.kind == crate::state::SessionKind::S3 {
+        let mut o = session.s3.take().unwrap_or_default();
+        o.certs = stored.as_ref().and_then(|s| s.s3.as_ref()).map(|o| o.certs.clone()).unwrap_or_default();
+        Some(o).filter(|o| !o.is_empty())
+    } else {
+        None
+    };
 
     // A login sent is the session's own, unless it is one a credential
     // filled in (the editor shows that one): then the stored own login stays.
@@ -1158,6 +1176,10 @@ pub use bmc::*;
 #[path = "session_proxmox_cmds.rs"]
 pub(crate) mod proxmox;
 pub use proxmox::*;
+
+#[path = "session_s3_cmds.rs"]
+mod s3;
+pub use s3::*;
 pub use hostkeys::*;
 
 #[path = "session_password_history_cmds.rs"]

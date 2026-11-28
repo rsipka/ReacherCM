@@ -11,6 +11,11 @@ fn ftp_conn(state: &AppState, connection_id: &str) -> Option<std::sync::Arc<crat
     state.ftp_manager.get(connection_id)
 }
 
+/// The S3 session a connection id names, if it is one: the same way.
+fn s3_conn(state: &AppState, connection_id: &str) -> Option<std::sync::Arc<crate::s3::S3Conn>> {
+    state.s3_manager.get(connection_id)
+}
+
 fn emit_transfer_error(app: &tauri::AppHandle, id: &str, error: impl std::fmt::Display, cancelled: bool) {
     if cancelled {
         let _ = app.emit(&format!("transfer-cancelled-{id}"), ());
@@ -29,6 +34,9 @@ pub async fn sftp_list_dir(
 ) -> Result<Vec<RemoteEntry>, String> {
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::list_dir(&ftp, &path).await.map_err(|e| e.to_string());
+    }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::list_dir(&s3, &path).await.map_err(|e| e.to_string());
     }
     info!("sftp_list_dir called: conn={}, path={}", connection_id, path);
     let fs = {
@@ -147,6 +155,27 @@ pub async fn sftp_upload(
         });
         return Ok(transfer_id);
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        let transfer_id = transfer_id_from(transfer_id)?;
+        let tid = transfer_id.clone();
+        let cancel = register_transfer(&state, &transfer_id, &connection_id);
+        let transfers = state.transfers.clone();
+        tokio::spawn(async move {
+            let name = crate::ftp::list::base_name(&local_path.replace('\\', "/")).to_string();
+            let progress = |done: u64, total: u64| crate::sftp::transfer::emit_progress(&app, &tid, &name, done, total);
+            let result = crate::s3::ops::upload(&s3, &local_path, &remote_path, &cancel, &progress).await;
+            if result.is_ok() {
+                let _ = app.emit(&format!("transfer-complete-{}", tid), ());
+            }
+            if let Ok(mut map) = transfers.lock() {
+                map.remove(&tid);
+            }
+            if let Err(e) = result {
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::s3::S3Error::Cancelled));
+            }
+        });
+        return Ok(transfer_id);
+    }
     let transfer_id = transfer_id_from(transfer_id)?;
     let tid = transfer_id.clone();
     let plugin_mgr = state.plugin_manager.clone();
@@ -208,6 +237,27 @@ pub(crate) async fn sftp_download(
         });
         return Ok(transfer_id);
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        let transfer_id = transfer_id_from(transfer_id)?;
+        let tid = transfer_id.clone();
+        let cancel = register_transfer(&state, &transfer_id, &connection_id);
+        let transfers = state.transfers.clone();
+        tokio::spawn(async move {
+            let name = crate::ftp::list::base_name(&remote_path).to_string();
+            let progress = |done: u64, total: u64| crate::sftp::transfer::emit_progress(&app, &tid, &name, done, total);
+            let result = crate::s3::ops::download(&s3, &remote_path, &local_path, &cancel, &progress).await;
+            if result.is_ok() {
+                let _ = app.emit(&format!("transfer-complete-{}", tid), ());
+            }
+            if let Ok(mut map) = transfers.lock() {
+                map.remove(&tid);
+            }
+            if let Err(e) = result {
+                emit_transfer_error(&app, &tid, &e, matches!(e, crate::s3::S3Error::Cancelled));
+            }
+        });
+        return Ok(transfer_id);
+    }
     let transfer_id = transfer_id_from(transfer_id)?;
     let tid = transfer_id.clone();
     let plugin_mgr = state.plugin_manager.clone();
@@ -248,6 +298,9 @@ pub async fn sftp_delete(
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::delete(&ftp, &path).await.map_err(|e| e.to_string());
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::delete(&s3, &path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -268,6 +321,9 @@ pub async fn sftp_rename(
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::rename(&ftp, &old_path, &new_path).await.map_err(|e| e.to_string());
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::rename(&s3, &old_path, &new_path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -287,6 +343,9 @@ pub async fn sftp_touch(
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::touch(&ftp, &path).await.map_err(|e| e.to_string());
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::touch(&s3, &path).await.map_err(|e| e.to_string());
+    }
     let fs = {
         let manager = state.ssh_manager.lock().await;
         manager.get_fs(&connection_id).map_err(|e| e.to_string())?
@@ -305,6 +364,9 @@ pub async fn sftp_read_file(
 ) -> Result<String, String> {
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::read_text(&ftp, &path).await.map_err(|e| e.to_string());
+    }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::read_text(&s3, &path).await.map_err(|e| e.to_string());
     }
     info!("sftp_read_file called: conn={}, path={}", connection_id, path);
     let fs = {
@@ -327,6 +389,9 @@ pub async fn sftp_write_file(
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::write_text(&ftp, &path, &content).await.map_err(|e| e.to_string());
     }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::write_text(&s3, &path, &content).await.map_err(|e| e.to_string());
+    }
     info!("sftp_write_file called: conn={}, path={}", connection_id, path);
     let fs = {
         let manager = state.ssh_manager.lock().await;
@@ -346,6 +411,9 @@ pub async fn sftp_mkdir(
 ) -> Result<(), String> {
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return crate::ftp::ops::make_dir(&ftp, &path).await.map_err(|e| e.to_string());
+    }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return crate::s3::ops::make_dir(&s3, &path).await.map_err(|e| e.to_string());
     }
     let fs = {
         let manager = state.ssh_manager.lock().await;
@@ -373,7 +441,7 @@ pub async fn sftp_archive_tools(
     state: tauri::State<'_, AppState>,
     connection_id: String,
 ) -> Result<ArchiveTools, String> {
-    if ftp_conn(&state, &connection_id).is_some() {
+    if ftp_conn(&state, &connection_id).is_some() || s3_conn(&state, &connection_id).is_some() {
         return Ok(ArchiveTools::parse(""));
     }
     let handle = {
@@ -652,8 +720,8 @@ pub async fn sftp_terminal_cwd(
     state: tauri::State<'_, AppState>,
     connection_id: String,
 ) -> Result<Option<String>, String> {
-    // An FTP session has no terminal to follow.
-    if ftp_conn(&state, &connection_id).is_some() {
+    // An FTP or S3 session has no terminal to follow.
+    if ftp_conn(&state, &connection_id).is_some() || s3_conn(&state, &connection_id).is_some() {
         return Ok(None);
     }
     let handle = {
@@ -675,6 +743,9 @@ pub async fn sftp_home(
 ) -> Result<Option<String>, String> {
     if let Some(ftp) = ftp_conn(&state, &connection_id) {
         return Ok(Some(ftp.home.clone()));
+    }
+    if let Some(s3) = s3_conn(&state, &connection_id) {
+        return Ok(Some(s3.home()));
     }
     let fs = {
         let manager = state.ssh_manager.lock().await;

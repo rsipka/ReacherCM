@@ -7,6 +7,7 @@ import type { SerialConnectParams } from '#lib/ipc/serial.js';
 import { ftpDisconnect } from '#lib/ipc/ftp.js';
 import { bmcDisconnect } from '#lib/ipc/bmc.js';
 import { proxmoxDisconnect } from '#lib/ipc/proxmox.js';
+import { s3Disconnect } from '#lib/ipc/s3.js';
 import { dropQueue } from '#lib/explorer/transfer-queue.svelte.js';
 import type { FilesProtocol } from '#lib/ipc/sessions.js';
 import type { HistoryMode } from '#lib/ipc/history.js';
@@ -14,7 +15,7 @@ import * as splits from '#lib/terminal/split.js';
 import { isMobile } from '#lib/platform.js';
 import type { Direction, Layout, Side } from '#lib/terminal/split.js';
 
-export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial' | 'ftp' | 'bmc' | 'proxmox' | 'devops';
+export type TabType = 'local' | 'ssh' | 'rdp' | 'vnc' | 'spice' | 'telnet' | 'serial' | 'ftp' | 'bmc' | 'proxmox' | 's3' | 'devops';
 
 /** The DevOps workspaces a `devops` tab can show (see #lib/state/devops). */
 export type DevopsTabTool = 'ansible' | 'tofu' | 'databases' | 'containers' | 'kubernetes';
@@ -107,6 +108,10 @@ export interface Tab {
 	proxmoxConnectParams?: FtpConnectParams;
 	/** A Proxmox tab's open API login. */
 	proxmoxConnectionId?: string;
+	/** What an S3 tab connects to; its panel connects it. */
+	s3ConnectParams?: FtpConnectParams;
+	/** An S3 tab's open store connection. */
+	s3ConnectionId?: string;
 	/** A remote desktop tab whose desktop is up (set by its panel); unset
 	 *  while it connects, and once it closed. */
 	desktopUp?: boolean;
@@ -274,7 +279,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 
 	const tab: Tab = {
 		id,
-		title: title ?? numbered(type === 'local' ? 'Local' : type === 'rdp' ? 'RDP' : type === 'vnc' ? 'VNC' : type === 'spice' ? 'SPICE' : type === 'telnet' ? 'Telnet' : type === 'serial' ? 'Serial' : type === 'ftp' ? 'FTP' : type === 'bmc' ? 'BMC' : type === 'proxmox' ? 'Proxmox' : 'SSH'),
+		title: title ?? numbered(type === 'local' ? 'Local' : type === 'rdp' ? 'RDP' : type === 'vnc' ? 'VNC' : type === 'spice' ? 'SPICE' : type === 'telnet' ? 'Telnet' : type === 'serial' ? 'Serial' : type === 'ftp' ? 'FTP' : type === 'bmc' ? 'BMC' : type === 'proxmox' ? 'Proxmox' : type === 's3' ? 'S3' : 'SSH'),
 		type,
 		connectionId,
 		active: true,
@@ -297,7 +302,7 @@ export function createTab(type: TabType, title?: string, connectionId?: string, 
 const released = new Set<string>();
 
 function connectionIds(tab: Tab): string[] {
-	return [tab.id, tab.connectionId, tab.telnetConnectionId, tab.serialConnectionId, tab.ftpConnectionId, tab.bmcConnectionId, tab.proxmoxConnectionId].filter((x): x is string => !!x);
+	return [tab.id, tab.connectionId, tab.telnetConnectionId, tab.serialConnectionId, tab.ftpConnectionId, tab.bmcConnectionId, tab.proxmoxConnectionId, tab.s3ConnectionId].filter((x): x is string => !!x);
 }
 
 /** Was this tab or connection handed to another window? */
@@ -357,6 +362,9 @@ export function closeTab(id: string): void {
 	} else if (tabs[index].type === 'ftp' && tabs[index].ftpConnectionId) {
 		dropQueue(tabs[index].ftpConnectionId!);
 		void ftpDisconnect(tabs[index].ftpConnectionId!).catch(() => {});
+	} else if (tabs[index].type === 's3' && tabs[index].s3ConnectionId) {
+		dropQueue(tabs[index].s3ConnectionId!);
+		void s3Disconnect(tabs[index].s3ConnectionId!).catch(() => {});
 	} else if (tabs[index].type === 'bmc' && tabs[index].bmcConnectionId) {
 		void bmcDisconnect(tabs[index].bmcConnectionId!).catch(() => {});
 	} else if (tabs[index].type === 'proxmox' && tabs[index].proxmoxConnectionId) {
@@ -446,7 +454,7 @@ export function setDesktopUp(id: string, up: boolean): void {
 /** The saved session a tab was opened from: remote desktops keep it in
  *  their connect params only. */
 export function tabSessionId(tab: Tab): string | undefined {
-	return tab.sessionId ?? tab.ftpConnectParams?.sessionId ?? tab.bmcConnectParams?.sessionId ?? tab.proxmoxConnectParams?.sessionId ?? tab.rdpConnectParams?.sessionId ?? tab.vncConnectParams?.sessionId ?? tab.spiceConnectParams?.sessionId ?? undefined;
+	return tab.sessionId ?? tab.ftpConnectParams?.sessionId ?? tab.bmcConnectParams?.sessionId ?? tab.proxmoxConnectParams?.sessionId ?? tab.s3ConnectParams?.sessionId ?? tab.rdpConnectParams?.sessionId ?? tab.vncConnectParams?.sessionId ?? tab.spiceConnectParams?.sessionId ?? undefined;
 }
 
 /** Is the tab's connection up: not dropped, not still connecting? A local
@@ -462,6 +470,8 @@ export function isTabConnected(tab: Tab): boolean {
 			return !!tab.serialConnectionId;
 		case 'ftp':
 			return !!tab.ftpConnectionId;
+		case 's3':
+			return !!tab.s3ConnectionId;
 		case 'bmc':
 			return !!tab.bmcConnectionId;
 		case 'proxmox':
@@ -513,6 +523,11 @@ export function setTelnetConnection(tabId: string, connectionId: string): void {
 export function setSerialConnection(tabId: string, connectionId: string): void {
 	const tab = tabs.find((t) => t.id === tabId);
 	if (tab) tab.serialConnectionId = connectionId;
+}
+
+export function setS3Connection(tabId: string, connectionId: string | undefined): void {
+	const tab = tabs.find((t) => t.id === tabId);
+	if (tab) tab.s3ConnectionId = connectionId;
 }
 
 export function setProxmoxConnection(tabId: string, connectionId: string | undefined): void {

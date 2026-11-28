@@ -54,7 +54,7 @@
 		if (unavailableKey) addToast(t(unavailableKey), 'info');
 	}
 	/** A session that opens in the file manager: which protocol, for its badge. */
-	let filesBadge = $derived(session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
+	let filesBadge = $derived(session.kind === 's3' ? 'S3' : session.kind === 'ftp' ? (session.ftp?.tls === 'none' ? 'FTP' : 'FTPS') : session.files === 'scp' ? 'SCP' : session.files === 'sftp' ? 'SFTP' : '');
 	/** WinBox only ever manages a MikroTik, a Server management session a
 	 *  BMC: their logo until another is found or picked. */
 	let osId = $derived(session.detected_os ?? defaultSessionOs(session.kind, session.web?.login));
@@ -220,6 +220,9 @@
 					{:else if session.kind === 'bmc'}
 						<!-- A rack server with a pulse: its management controller. -->
 						<path d="M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01M11 17h2l1-2 2 4 1-2h1" />
+					{:else if session.kind === 's3'}
+						<!-- A bucket: objects in a store. -->
+						<path d="M4 6c0-1.1 3.6-2 8-2s8 .9 8 2-3.6 2-8 2-8-.9-8-2zM4 6l2 13c.2 1.1 2.9 2 6 2s5.8-.9 6-2l2-13" />
 					{:else if session.kind === 'ftp'}
 						<!-- A folder: files on a server. -->
 						<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
