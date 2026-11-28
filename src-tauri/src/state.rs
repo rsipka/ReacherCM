@@ -65,6 +65,8 @@ pub enum SessionKind {
     /// A Proxmox VE node or cluster over its API: guests, power, snapshots,
     /// tasks and consoles; see `crate::proxmox`.
     Proxmox,
+    /// An MQTT broker: its topics as they arrive, publishing; see `crate::mqtt`.
+    Mqtt,
 }
 
 impl SessionKind {
@@ -286,6 +288,10 @@ pub struct SessionConfig {
     /// Proxmox only: realm, API token and the certificates it trusts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxmox: Option<crate::proxmox::ProxmoxOptions>,
+    /// MQTT only: transport, client ID, topic filters, client certificate
+    /// and the certificates it trusts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mqtt: Option<crate::mqtt::MqttOptions>,
 }
 
 /// How to wake a session's machine over the network.
@@ -706,6 +712,8 @@ pub struct AppState {
     pub bmc_manager: Arc<crate::bmc::BmcManager>,
     /// Open Proxmox sessions.
     pub proxmox_manager: Arc<crate::proxmox::ProxmoxManager>,
+    /// Open MQTT sessions.
+    pub mqtt_manager: Arc<crate::mqtt::MqttManager>,
     pub vnc_manager: Arc<tokio::sync::Mutex<VncManager>>,
     pub spice_manager: Arc<tokio::sync::Mutex<SpiceManager>>,
     pub vault_manager: Arc<tokio::sync::Mutex<VaultManager>>,
@@ -757,6 +765,7 @@ impl AppState {
             ftp_manager: Arc::new(crate::ftp::FtpManager::new()),
             bmc_manager: Arc::new(crate::bmc::BmcManager::new()),
             proxmox_manager: Arc::new(crate::proxmox::ProxmoxManager::new()),
+            mqtt_manager: Arc::new(crate::mqtt::MqttManager::new()),
             vnc_manager: Arc::new(tokio::sync::Mutex::new(VncManager::new())),
             spice_manager: Arc::new(tokio::sync::Mutex::new(SpiceManager::new())),
             vault_manager: Arc::new(tokio::sync::Mutex::new(VaultManager::new(app_dir.clone()))),

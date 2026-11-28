@@ -1,6 +1,7 @@
 pub mod ansible;
 pub mod bmc;
 pub mod proxmox;
+pub mod mqtt;
 pub mod plugin;
 pub mod pwmanager;
 pub mod ipc;
@@ -704,6 +705,12 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            mqtt_connect,
+            mqtt_disconnect,
+            mqtt_publish,
+            mqtt_subscribe,
+            mqtt_unsubscribe,
+            mqtt_session_cert_trust,
             // This computer's files, for the full-pane file manager
             local_list_dir,
             local_mkdir,
@@ -1362,6 +1369,12 @@ pub fn run() {
             proxmox_pbs_verify,
             proxmox_pbs_protect,
             proxmox_pbs_forget,
+            mqtt_connect,
+            mqtt_disconnect,
+            mqtt_publish,
+            mqtt_subscribe,
+            mqtt_unsubscribe,
+            mqtt_session_cert_trust,
             drag_preview_icon,
             drag_cache_dir,
             dragout_start,
