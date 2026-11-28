@@ -27,6 +27,9 @@
 	import { isMobile } from '#lib/platform.js';
 	import { GROUPS, PAGES, isPageId, type PageId, type SettingsPage } from './settings-pages.js';
 	import { SETTINGS_INDEX, searchSettings, type IndexedRow } from './settings-index.js';
+	import { syncedMarks } from './synced-marks.js';
+	import { getSyncAccount, preferenceSync } from '#lib/state/preference-sync.svelte.js';
+	import { PREFERENCE_CATALOG, PREFERENCE_KEYS, unavailablePreferenceKeys } from '#lib/sync/preference-catalog.js';
 
 	interface Props {
 		open: boolean;
@@ -52,6 +55,19 @@
 	let page = $derived(PAGES.find((p) => p.id === pageId) ?? PAGES[0]);
 	let results = $derived(searchSettings(query, t, (id) => pageName(id), mobile));
 	let searching = $derived(query.trim().length > 0);
+
+	// Rows whose value syncs through the Reacher CM account right now: signed
+	// in, preference sync on, the row not kept local on this device, and (once
+	// known) supported by the server.
+	const unavailableOnDevice = unavailablePreferenceKeys(mobile);
+	let synced = $derived({
+		labels: new Set(getSyncAccount() && preferenceSync.enabled
+			? PREFERENCE_KEYS.filter((key) => !preferenceSync.skipped.includes(key) && !unavailableOnDevice.includes(key)
+				&& (preferenceSync.supported === null || preferenceSync.supported.includes(key)))
+				.map((key) => t(PREFERENCE_CATALOG[key].label).trim())
+			: []),
+		tip: t('sync_account.synced_mark'),
+	});
 
 	function pageName(id: PageId): string {
 		return t(PAGES.find((p) => p.id === id)?.label ?? id);
@@ -315,14 +331,14 @@
 			{#if showingMenu}
 				<div class="phone-scroll">{@render menu()}</div>
 			{:else}
-				<div class="settings-content phone-scroll" bind:this={contentEl}>
+				<div class="settings-content phone-scroll" bind:this={contentEl} use:syncedMarks={synced}>
 					{@render pageBody(pageId)}
 				</div>
 			{/if}
 		{:else}
 			<div class="settings-layout">
 				{@render menu()}
-				<div class="settings-content" bind:this={contentEl}>
+				<div class="settings-content" bind:this={contentEl} use:syncedMarks={synced}>
 					{#if searching}
 						<h2 class="page-title">{t('settings.search_results')}</h2>
 						{@render resultList()}
@@ -337,6 +353,14 @@
 </Modal>
 
 <style>
+	.settings-content :global(.synced-mark) {
+		display: inline-flex;
+		vertical-align: -1px;
+		margin-left: 6px;
+		color: var(--color-text-secondary);
+		opacity: 0.8;
+	}
+
 	/* The frame is fixed by the Modal; the two columns fill it and the content
 	   column scrolls on its own. Switching pages never moves an edge. */
 	.settings-layout {

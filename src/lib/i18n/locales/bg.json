@@ -4259,6 +4259,7 @@
   "sync_account.preference_input": "Въвеждане и клавишни комбинации",
   "sync_account.preference_selected": "Избрани: {{count}}",
   "sync_account.preference_device_only": "Само на това устройство",
+  "sync_account.synced_mark": "Синхронизира се с профила ви в Reacher CM",
   "sync_account.preference_server_update": "Обновете сървъра за синхронизация, за да синхронизирате всички предпочитания, избрани тук.",
   "sync_account.preference_fullscreen_position": "Позиция на бутона за цял екран",
   "sync_account.preference_key_biometrics": "Запомняне на паролите за ключове чрез биометрия",

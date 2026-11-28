@@ -4259,6 +4259,7 @@
   "sync_account.preference_input": "输入与快捷键",
   "sync_account.preference_selected": "已选 {{count}} 项",
   "sync_account.preference_device_only": "仅限本机",
+  "sync_account.synced_mark": "已与您的 Reacher CM 账户同步",
   "sync_account.preference_server_update": "请更新同步服务器以同步此处选中的所有偏好设置。",
   "sync_account.preference_fullscreen_position": "全屏按钮位置",
   "sync_account.preference_key_biometrics": "使用生物识别记住密钥密码短语",
