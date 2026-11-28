@@ -2927,7 +2927,7 @@
 				<button class="context-item" onclick={() => { if (contextMenu?.session) handleConnect(contextMenu.session); closeContextMenu(); }} type="button">
 					{t('session.connect')}
 				</button>
-				{#if (sessionKind(contextMenu.session) === 'ssh' || sessionKind(contextMenu.session) === 'rdp') && !isMobile()}
+				{#if sessionKind(contextMenu.session) === 'ssh' || sessionKind(contextMenu.session) === 'rdp'}
 					<button class="context-item" onclick={() => { if (contextMenu?.session) openFileManager(contextMenu.session); closeContextMenu(); }} type="button" title={sessionKind(contextMenu.session) === 'rdp' ? t('session.rdp_files_hint') : undefined}>
 						{sessionKind(contextMenu.session) === 'rdp' ? t('session.open_file_manager_sftp') : t('session.open_file_manager')}
 					</button>
