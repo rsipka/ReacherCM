@@ -49,7 +49,7 @@
 	import { sessionList } from '#lib/ipc/sessions.js';
 	import { t } from '#lib/state/i18n.svelte.js';
 	import { activateTab, type Tab } from '#lib/state/tabs.svelte.js';
-	import { otherTabShowing, takeNewDevopsItem, wantsNewDevopsItem } from '#lib/state/navigation.svelte.js';
+	import { otherTabShowing } from '#lib/state/navigation.svelte.js';
 	import { clustersChanged } from '#lib/state/k8s.svelte.js';
 	import { NAV, loadLast, saveLast, selId, type Ctx, type Selection, type View } from './model';
 
@@ -173,10 +173,6 @@
 		if (want && clustersLoaded && want !== clusterId && clusters.some((c) => c.id === want)) connect(want);
 	});
 
-	// New session → DevOps → Kubernetes cluster: the add editor, in the tab in front.
-	$effect(() => {
-		if (wantsNewDevopsItem('kubernetes') && (!tab || tab.active) && takeNewDevopsItem('kubernetes')) editor = { initial: null };
-	});
 
 	onDestroy(() => {
 		if (opened) k8sClose(opened.key).catch(() => {});
