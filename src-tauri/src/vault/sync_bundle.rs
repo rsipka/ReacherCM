@@ -439,7 +439,11 @@ pub async fn sync(target: &Target, local: &Connection, store: &mut Store) -> Res
         let counter = body.counter.max(seen) + 1;
         let new_body = Body {
             counter,
-            restore_counter: body.restore_counter,
+            // A replayed server bundle must not erase a restore this device
+            // already applied when it republishes its current state.
+            restore_counter: body.restore_counter
+                .filter(|&marker| marker >= local_restore && marker <= body.counter)
+                .or_else(|| (local_restore > 0).then_some(local_restore)),
             records: entries.into_iter().map(|(id, sealed)| (id, BASE64.encode(sealed))).collect(),
         };
         let data = seal(&target.key, &sync_engine::turso::read_header(local).await?, &new_body)?;
